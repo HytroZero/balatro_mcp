@@ -9,7 +9,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { record, type Data } from '../env/contract.ts';
 
 const health = { status: 'ok', bridge: 'balatro_mcp_mod', protocol: 1, instanceId: 'mcp-test', gameVersion: '1.0.1o-FULL',
-  luaRuntime: 'LuaJIT 2.0.5', preservesTiming: true, ready: true, capabilities: ['observe', 'card_observe', 'act', 'operation'] };
+  luaRuntime: 'LuaJIT 2.0.5', preservesTiming: true, ready: true, capabilities: ['observe', 'deck_observe', 'act', 'operation'] };
 const snapshot = (revision = 1, state = 'MENU') => ({ contract: 1, backend: 'balatro_mcp_mod', revision: 'mcp-test:' + revision,
   runId: 'test-run', gameVersion: '1.0.1o', terminal: false, outcome: 'ongoing', ready: true,
   state: { state, deck: 'RED', stake: 'WHITE', seed: 'TEST', money: 4, hand: { count: 2, limit: 8, cards: [
@@ -32,7 +32,7 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
         value = health; break;
       }
       case 'sf.observe': value = current; break;
-      case 'sf.card_observe': value = { revision: current.revision, runId: current.runId, remainingCards: 2, previewCards: 2, uncertainCards: 0,
+      case 'sf.deck_observe': value = { revision: current.revision, runId: current.runId, remainingCards: 2, previewCards: 2, uncertainCards: 0,
         cards: [{ rank: 'Ace', suit: 'Spades', enhancement: 'c_base', count: 2 }] }; break;
       case 'sf.act': {
         mutations++;
@@ -89,7 +89,7 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.match(instructions, /balatro:\/\/skills/);
     assert.match(instructions, /balatro:\/\/rules/);
     assert.doesNotMatch(instructions, /## Phase policy/);
-    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'card_observe', 'game_start', 'game_action', 'memory_query', 'memory_record', 'game_health', 'game_operation'].sort());
+    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'memory_query', 'memory_record', 'game_health', 'game_operation'].sort());
     for (const tool of tools) { assert.ok(tool.outputSchema); assert.ok(tool.annotations); assert.equal(tool.inputSchema.type, 'object'); }
     for (const name of ['file_read', 'file_write']) {
       await assert.rejects(h.call(name, { path: 'notes.txt', content: 'removed' }), /not found/);
@@ -108,7 +108,7 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.equal(observed.v,3);assert.equal(observed.full,true);assert.equal(observed.phase,'MENU');
     assert.deepEqual(observed.state,{});
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
-    assert.equal(record(record((await h.call('card_observe')).structuredContent).value).remainingCards, 2);
+    assert.equal(record(record((await h.call('deck_observe')).structuredContent).value).remainingCards, 2);
     assert.equal(h.mutations, 0);
   } finally { await h.close(); }
 });
@@ -176,7 +176,7 @@ test('internal reads never establish a delivered baseline; stale failures and de
     const recovered = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
     assert.equal(recovered.full,true);
     h.externalChange();
-    await h.call('card_observe'); // A different deck revision cannot move the observation baseline.
+    await h.call('deck_observe'); // A different deck revision cannot move the observation baseline.
     const afterDeck = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
     assert.equal(afterDeck.full,true);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);

@@ -11,7 +11,7 @@ Target Strategy Forge's PC Balatro **1.0.1o-FULL** contract. Read the game's obs
 
 ## Execute through the agent's tools
 
-The available loadout is `game_observe`, `card_observe`, `game_start`, `game_action`, `memory_query`, `memory_record`, `file_read`, and `file_write`.
+The available loadout is `game_observe`, `deck_observe`, `game_start`, `game_action`, `memory_query`, `memory_record`, `file_read`, and `file_write`.
 
 - Get gameplay state through tools. Do not wait for screenshots or ask the user to transcribe information that `game_observe` supplies.
 - Use `game_start` only at a menu or completed-run screen when starting a run is part of the request. Supply the requested deck and `stake: "GOLD"` for a new Gold run; preserve any requested seed and respect profile unlocks. If no deck was requested, choose an unlocked deck deliberately. Never replace an ongoing run or silently lower the stake after a lock error.
@@ -28,7 +28,7 @@ The available loadout is `game_observe`, `card_observe`, `game_start`, `game_act
 
 Card strings begin with explicit **zero-based** indices. Choose indices from the current area, never from remembered positions. Hidden cards expose only their index and selection flags. Include forced cards in selections when required; `highlight` alone does not establish an optimal play. `availableMethods` lists phase candidates, so still check affordability, capacity, target requirements, sellability, and Boss restrictions.
 
-Call `card_observe({})` when remaining composition could change a discard or deck-building decision. It gives grouped multiplicities, no draw order or action indices. `previewCards` may include uncertain face-down held cards; `uncertainCards` does not identify them. Do not turn that preview into an exact draw probability when membership is uncertain. If its revision differs from the retained game state, obtain a full `game_observe` before acting.
+Call `deck_observe({})` when remaining composition could change a discard or deck-building decision. It gives grouped multiplicities, no draw order or action indices. `previewCards` may include uncertain face-down held cards; `uncertainCards` does not identify them. Do not turn that preview into an exact draw probability when membership is uncertain. If its revision differs from the retained game state, obtain a full `game_observe` before acting.
 
 ### Handle pauses and failed actions
 

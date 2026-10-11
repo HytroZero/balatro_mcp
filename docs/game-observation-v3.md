@@ -4,7 +4,7 @@
 
 适用范围：`game_observe`、`game_start`、`game_action` 成功时返回的模型可见投影（`env/compact.ts`）。Lua HTTP 协议 1、动作参数、零基索引、revision 校验、错误 envelope 和 `uncertain_outcome` 恢复流程都不变。
 
-[game-observation-design.md](game-observation-design.md) 里的这些原则继续有效：只返回玩家可见信息、观察不推进 RNG、在稳定边界投递结果、未知不能伪装成已知、`card_observe` 单独提供。本文替换的是它的**字段形状和合并规则**（第 2–6、9、11 节）。
+[game-observation-design.md](game-observation-design.md) 里的这些原则继续有效：只返回玩家可见信息、观察不推进 RNG、在稳定边界投递结果、未知不能伪装成已知、`deck_observe` 单独提供。本文替换的是它的**字段形状和合并规则**（第 2–6、9、11 节）。
 
 ## 1. 现状问题（实测）
 
@@ -413,7 +413,7 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
  "result":"Picked The Hierophant on 2 cards; pack closed."}
 ```
 
-`shop` 在 PACK 期间仍然有效，所以返回商店时不必重发。`pack`、`hand`、`deck` 因阶段切换自动失效。被修改的两张牌不在当前可见区域里，详细牌组内容按需调用 `card_observe` 查看。
+`shop` 在 PACK 期间仍然有效，所以返回商店时不必重发。`pack`、`hand`、`deck` 因阶段切换自动失效。被修改的两张牌不在当前可见区域里，详细牌组内容按需调用 `deck_observe` 查看。
 
 ### 9.8 示意：出售小丑（区域成员变化）
 

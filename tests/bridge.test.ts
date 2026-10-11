@@ -14,24 +14,24 @@ async function server(handler: (request: Data,response: ServerResponse) => void)
   const address=http.address(); assert.ok(address && typeof address === 'object');
   return {endpoint:`http://127.0.0.1:${address.port}`,requests,close:async () => {http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve()));}};
 }
-const health={status:'ok',bridge:'balatro_mcp_mod',protocol:1,instanceId:'instance-a',gameVersion:'1.0.1o-FULL',preservesTiming:true,capabilities:['observe','card_observe','act','operation']};
+const health={status:'ok',bridge:'balatro_mcp_mod',protocol:1,instanceId:'instance-a',gameVersion:'1.0.1o-FULL',preservesTiming:true,capabilities:['observe','deck_observe','act','operation']};
 const observation=(revision='instance-a:1',state='MENU') => ({contract:1,backend:'balatro_mcp_mod',revision,runId:'run-1',gameVersion:'1.0.1o',ready:true,terminal:false,outcome:'ongoing',state:{state},availableMethods:state==='MENU'?['start']:['select'],legality:'backend-authoritative'});
 function result(response: ServerResponse,request: Data,value: unknown) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,result:value}));}
 function failure(response: ServerResponse,request: Data,code: string) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:code,data:{code,applied:false}}}));}
 const action={method:'start' as const,deck:'RED' as const,stake:'WHITE' as const};
-test('card observation is read-only and rejects malformed or inconsistent deck responses',async () => {
+test('deck observation is read-only and rejects malformed or inconsistent deck responses',async () => {
   const deck={revision:'instance-a:1',runId:'run-1',remainingCards:2,previewCards:3,uncertainCards:1,
     cards:[{rank:'Ace',suit:'Hearts',enhancement:'m_steel',edition:'foil',seal:'Red',count:3}]};
   let value: unknown=deck;
   const mock=await server((req,res) => result(res,req,req.method==='sf.health'?health:value));
   try {
     const client=new ForgeBridgeBackend(mock.endpoint,1000);
-    assert.deepEqual(await client.observeCards(),deck);
+    assert.deepEqual(await client.observeDeck(),deck);
     for (const malformed of [{...deck,revision:'foreign:1'},{...deck,previewCards:4},{...deck,uncertainCards:4},
       {...deck,remainingCards:4},{...deck,cards:[{...deck.cards[0],id:'HIDDEN_CARD'}]}]) {
-      value=malformed; await assert.rejects(client.observeCards(),/Invalid bridge deck/);
+      value=malformed; await assert.rejects(client.observeDeck(),/Invalid bridge deck/);
     }
-    assert.ok(mock.requests.every(req => req.method==='sf.health' || req.method==='sf.card_observe'));
+    assert.ok(mock.requests.every(req => req.method==='sf.health' || req.method==='sf.deck_observe'));
   } finally {await mock.close();}
 });
 test('standalone client submits one action then polls its correlated completion',async () => {
@@ -47,10 +47,10 @@ test('standalone client submits one action then polls its correlated completion'
     const sent=mock.requests.find(v=>v.method==='sf.act')?.params as Data; assert.equal(sent.instanceId,'instance-a'); assert.equal(sent.revision,before.revision);
   } finally {await mock.close();}
 });
-test('card_observe reports an outdated installed mod before attempting the unsupported RPC',async () => {
+test('deck_observe reports an outdated installed mod before attempting the unsupported RPC',async () => {
   const mock=await server((req,res) => result(res,req,{...health,capabilities:['observe','act','operation']}));
   try {
-    await assert.rejects(new ForgeBridgeBackend(mock.endpoint,1000).observeCards(),error => error instanceof BackendError && error.code==='incompatible_backend' && /restart Balatro/.test(error.message));
+    await assert.rejects(new ForgeBridgeBackend(mock.endpoint,1000).observeDeck(),error => error instanceof BackendError && error.code==='incompatible_backend' && /restart Balatro/.test(error.message));
     assert.equal(mock.requests.length,1); assert.equal(mock.requests[0]?.method,'sf.health');
   } finally {await mock.close();}
 });

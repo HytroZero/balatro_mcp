@@ -109,7 +109,7 @@ npm run launch:macos -- --port 23456 --action-timeout 120
 2026-10-10 在 Apple Silicon Mac 上完成真实安装、启动与 stdio MCP 只读调用。
 实测 Balatro `1.0.1o-FULL`、Lovely `0.10.0`、Steamodded `26.1002.0`、
 LuaJIT `2.1.1700008891`，主菜单返回 `ready=true`。
-`game_health`、`game_observe`、`card_observe` 均成功，未开始新对局。
+`game_health`、`game_observe`、`deck_observe` 均成功，未开始新对局。
 历史自动化测试、类型检查与构建通过；当前覆盖范围见根目录 README。
 Intel 架构经过安装计划测试，未做 Intel 硬件实测。
 详见 [脱敏只读结果（重命名前的历史桥接身份与工具数）](MACOS-LIVE-VALIDATION.json)。

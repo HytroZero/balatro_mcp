@@ -23,7 +23,7 @@ JSON-RPC 2.0 uses `POST /`, `Content-Type: application/json` and a required `Con
 | --- | --- | --- |
 | `sf.health` | `{}` | Read bridge identity, protocol 1, version and readiness |
 | `sf.observe` | `{}` | Read shared observation contract 1 and server revision |
-| `sf.card_observe` | `{}` | Read grouped remaining deck preview, multiplicities, modifiers and hidden-card uncertainty; no draw order or card IDs |
+| `sf.deck_observe` | `{}` | Read grouped remaining deck preview, multiplicities, modifiers and hidden-card uncertainty; no draw order or card IDs |
 | `sf.act` | `instanceId`, `revision`, `actionId`, `action` | Atomically check freshness and legality, dispatch once, return pending operation |
 | `sf.operation` | `instanceId`, `actionId` | Read pending/completed/failed operation |
 
@@ -43,7 +43,7 @@ Actions cover start, blind select/skip, Boss reroll, play/discard, cash-out, ord
 
 The agent-facing `game_start` tool observes a fresh revision and sends the `start` action with deck, stake and optional seed. It is available at the menu and after a win/loss; an ongoing run cannot be replaced. Result-screen starts use the original `setup_run` / `start_run` handlers and await the normal screen wipe before reporting completion. Sessions may attach to an existing run; changing `runId` does not invalidate the conversation. Bridge-instance changes and uncertain effects still block execution.
 
-Ordinary observations omit deck composition and all face-down identity/modifiers. The separate `sf.card_observe` exposes grouped remaining composition according to the original unplayed-deck UI: physical draw-pile cards plus `wheel_flipped` cards, with an uncertainty count and no membership mapping, IDs or draw order. It includes enhancements, editions, seals, bonus/permanent chips and debuffs. Stone cards have no effective rank/suit. Deck composition also participates in the internal revision fingerprint, so deck-only edits invalidate stale actions. Card queries do not mutate the game or clear uncertain-operation locks.
+Ordinary observations omit deck composition and all face-down identity/modifiers. The separate `sf.deck_observe` exposes grouped remaining composition according to the original unplayed-deck UI: physical draw-pile cards plus `wheel_flipped` cards, with an uncertainty count and no membership mapping, IDs or draw order. It includes enhancements, editions, seals, bonus/permanent chips and debuffs. Stone cards have no effective rank/suit. Deck composition also participates in the internal revision fingerprint, so deck-only edits invalidate stale actions. Card queries do not mutate the game or clear uncertain-operation locks.
 
 The visible-state extractor exposes position, bridge-local stable card ID, forced selection, visible tooltips, costs, slot limits, remaining resources, active and upcoming blinds, hand levels and seed. Tool formatting uses short English card strings and action-specific observations while retaining complete backend state in details. Creating tooltip text disposes generated UI objects. Reordering only touches the per-area sequence and positions, not shared card-center prototypes. Exact legal actions are not enumerated; phase candidates still require action-specific validation.
 

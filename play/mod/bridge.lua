@@ -28,9 +28,9 @@ return function(json, game, clock, instance, timeout)
       reason = poisoned and 'Previous action needs manual inspection' or pending and 'Waiting for the current action' or not ready and reason or nil
       return {status='ok',bridge='balatro_mcp_mod',protocol=1,instanceId=instance,gameVersion=G.VERSION,luaRuntime=jit and jit.version,
         ready=ready,notReadyReason=reason,preservesTiming=true,transport='http-jsonrpc',
-        capabilities=json.array({'observe','card_observe','act','operation','reroll_boss','buy_and_use','decision_state'})}
+        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state'})}
     elseif method == 'sf.observe' then exact(params, {}); return snapshot()
-    elseif method == 'sf.card_observe' then
+    elseif method == 'sf.deck_observe' then
       exact(params, {})
       local current = snapshot(); local cards = game.cards()
       cards.revision = current.revision; cards.runId = current.runId

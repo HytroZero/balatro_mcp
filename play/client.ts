@@ -17,7 +17,7 @@ export class ForgeBridgeBackend implements Backend {
   readonly name = 'balatro_mcp_mod';
   private requestId = 0;
   private instanceId?: string;
-  private cardObserveSupported = false;
+  private deckObserveSupported = false;
   private uncertain = false;
   private busy = false;
   private endpoint: URL;
@@ -77,7 +77,7 @@ export class ForgeBridgeBackend implements Backend {
       this.uncertain = false; this.lastActionId = undefined;
     }
     this.instanceId = health.instanceId;
-    this.cardObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('card_observe');
+    this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
   }
   private observation(value: unknown): Observation {
     if (!Check(ObservationSchema,value) || value.gameVersion !== this.gameVersion || !value.revision.startsWith(this.instanceId + ':') || typeof value.state.state !== 'string') throw new BackendError('backend_failure','Invalid bridge observation contract.');
@@ -99,11 +99,11 @@ export class ForgeBridgeBackend implements Backend {
     this.remaining(context);
     return observation;
   }
-  async observeCards(request?: RequestContext): Promise<DeckObservation> {
+  async observeDeck(request?: RequestContext): Promise<DeckObservation> {
     const context = this.context(request);
     await this.identity(context);
-    if (!this.cardObserveSupported) throw new BackendError('incompatible_backend','The installed mod does not support card_observe. Update the balatro_mcp_mod mod and restart Balatro.');
-    const value = await this.rpc('sf.card_observe',{},false,context);
+    if (!this.deckObserveSupported) throw new BackendError('incompatible_backend','The installed mod does not support deck_observe. Update the balatro_mcp_mod mod and restart Balatro.');
+    const value = await this.rpc('sf.deck_observe',{},false,context);
     if (!Check(DeckObservationSchema,value) || !value.revision.startsWith(this.instanceId + ':') || value.cards.reduce((sum,card) => sum + card.count,0) !== value.previewCards ||
       value.uncertainCards > value.previewCards || value.remainingCards > value.previewCards) throw new BackendError('backend_failure','Invalid bridge deck observation contract.');
     return value;

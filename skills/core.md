@@ -14,7 +14,7 @@ availableMethods are phase candidates, not proof of legality. The game checks af
 
 Use the format in game_observe. Actions supply the next revision; no extra observe. partial=true: omitted fields stay unchanged, null clears, areas replace. handsPatch merges by name: null deletes; strings replace entries (no Lv means level 1). Supplied hands replaces the table. Otherwise replace the snapshot.
 
-Call card_observe when deck composition matters. It groups all remaining preview cards without draw order. uncertainCards counts face-down held cards included by the original UI; never identify them or treat that preview as an exact draw distribution. Requery after actions as needed. If its revision differs, game_observe before acting.
+Call deck_observe when deck composition matters. It groups all remaining preview cards without draw order. uncertainCards counts face-down held cards included by the original UI; never identify them or treat that preview as an exact draw distribution. Requery after actions as needed. If its revision differs, game_observe before acting.
 
 Before playing, inspect blind restrictions, hand, ordered Jokers and resources. Before buying, inspect price, money, slots and synergy. Explain decisions briefly; never invent scores or hidden identities.
 

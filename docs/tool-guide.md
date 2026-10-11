@@ -23,7 +23,7 @@ context and original source documents. Skill text cannot authorize gameplay by i
 `game_observe` and `game_start` return a full v3 snapshot: `{v:3, full:true, rev,
 phase, actions, state}`. `game_action` returns `{rev, phase, actions, result, state?}`
 with only the state keys that changed; it falls back to a full snapshot when no
-matching baseline exists. `card_observe` returns grouped remaining-deck composition
+matching baseline exists. `deck_observe` returns grouped remaining-deck composition
 without draw order or action indices. If its rev differs, observe again before acting.
 `game_start` starts only from the menu or a finished run; deck/stake names are uppercase.
 
@@ -112,7 +112,7 @@ it. Staging does not reload the game. `game_health` reports `notReadyReason`.
 ## Examples
 
 1. Attach to a run: `game_health({})`, `game_observe({})`, then
-   `card_observe({})` if composition matters.
+   `deck_observe({})` if composition matters.
 2. Start from the menu: `game_start({"deck":"RED","stake":"WHITE","seed":"MCPTEST"})`.
 3. With the returned rev, select a blind:
    `game_action({"revision":"<rev>","action":{"method":"select"}})`.

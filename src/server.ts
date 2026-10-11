@@ -43,7 +43,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
   }
   const tools = createTools(backend, memory, trace, () => {}, options.timeoutMs);
   for (const tool of tools) {
-    const readOnly = ['game_observe', 'card_observe', 'memory_query'].includes(tool.name);
+    const readOnly = ['game_observe', 'deck_observe', 'memory_query'].includes(tool.name);
     server.registerTool(tool.name, {
       title: tool.name.replaceAll('_', ' '), description: tool.description,
       // SDK v2 accepts Standard Schema: preserve TypeBox's exact JSON Schema,

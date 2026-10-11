@@ -74,7 +74,7 @@
 
 `game_observe` 始终返回完整快照，不提供 fields/filter 参数，不让调用者通过省略字段建立不完整基线。完整快照恢复以下全部受支持信息：运行配置、资源、持有物、可见牌型数值、盲注路线及规则、标签、凭证，以及当前阶段数据。
 
-“完整”仍受玩家可见性限制；`card_observe` 的详细剩余牌组预览保持独立，不塞进每次 game_observe。
+“完整”仍受玩家可见性限制；`deck_observe` 的详细剩余牌组预览保持独立，不塞进每次 game_observe。
 
 ### 3.2 增量
 
@@ -362,7 +362,7 @@ phase 的规范值是 MENU、BLIND_SELECT、SELECTING_HAND、ROUND_EVAL、SHOP�
 | 解除 Boss 效果 | B、Q/H/J 中实际受影响的块 |
 | 无法提前归类的效果 | 比较完整规范化观察，发送全部实际变化 |
 
-D 只表示数量与受支持摘要。详细牌组变化仍通过 card_observe 按需查看；game_action 不额外泄露牌组成员映射。
+D 只表示数量与受支持摘要。详细牌组变化仍通过 deck_observe 按需查看；game_action 不额外泄露牌组成员映射。
 
 ### 6.2 容量、价格与资格的连带变化
 

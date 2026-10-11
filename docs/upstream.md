@@ -55,7 +55,7 @@ local configuration generation, and source distribution boundaries.
 
 Historical read-only Apple Silicon validation on 2026-10-10 used Balatro
 1.0.1o-FULL, Lovely 0.10.0, Steamodded 26.1002.0, and LuaJIT 2.1.1700008891.
-`game_health`, `game_observe`, and `card_observe` succeeded at the main menu;
+`game_health`, `game_observe`, and `deck_observe` succeeded at the main menu;
 no new run or gameplay mutation was performed. The
 [sanitized capture](MACOS-LIVE-VALIDATION.json) predates mod renaming and removal
 of two file tools: its `strategy-forge` bridge identity and ten-tool count are

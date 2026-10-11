@@ -59,7 +59,7 @@ export interface Backend {
   readonly name: string;
   observe(context?: RequestContext): Promise<Observation>;
   /** Read-only deck preview; protocol doubles may omit this capability. */
-  observeCards?(context?: RequestContext): Promise<DeckObservation>;
+  observeDeck?(context?: RequestContext): Promise<DeckObservation>;
   act(action: Action, revision: string, context?: RequestContext): Promise<Observation>;
   close(): Promise<void>;
 }

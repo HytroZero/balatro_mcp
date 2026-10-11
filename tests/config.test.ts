@@ -9,7 +9,7 @@ test('configuration has project-relative data defaults and explicit flags overri
     BALATRO_BRIDGE_URL: 'http://127.0.0.1:9999', BALATRO_TIMEOUT_MS: '123', BALATRO_DATA_DIR: '/tmp/ignored',
   });
   assert.equal(options.endpoint, 'http://localhost:2345'); assert.equal(options.timeoutMs, 456);
-  assert.equal(options.dataDir, '/tmp/balatro-test');
+  assert.equal(options.dataDir, resolve('/tmp/balatro-test'));
 });
 
 test('configuration rejects unknown flags and invalid action deadlines', () => {
