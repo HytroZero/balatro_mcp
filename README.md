@@ -2,39 +2,91 @@
 
 Let your AI play Balatro.
 
-Connect your favorite LLM agent to the game, talk through a tricky hand, or let
-it take the controls for a run. Balatro MCP reads the game state and performs
-actions through a local mod. Your agent client provides the AI, so there are no model
-settings or API keys to configure here.
+Balatro MCP is a local [Model Context Protocol](https://modelcontextprotocol.io/)
+server plus a small game mod. It lets an AI agent read the live game state and
+take actions in the real game: play and discard cards, shop, open packs, use
+consumables, and start new runs. Your agent client supplies the model, so there
+are no API keys or model settings to configure here.
+
+
+## Highlights
+
+- 🏆 **Codex with GPT 6.1 SOL (High reasoning) beat Blue Deck on Blue Stake**,
+  playing a full run end to end through this MCP server on Windows.
+- Two gameplay skills ship with the server. See
+  [Included skills](#included-skills).
+- Observations are compact, indexed text with incremental deltas, so long runs
+  fit in an agent's context.
 
 ## What can it do?
 
-- Read your hand, Jokers, shop, and blinds to help with decisions.
-- Play and discard cards, buy items, use consumables, and start new runs.
-- Consult included game rules and strategy guides while playing.
+- Read your hand, Jokers, consumables, shop, blinds, and remaining deck.
+- Play and discard cards, buy and sell items, open packs, use consumables,
+  reroll, and start new runs.
+- Consult the bundled rules reference and strategy skills while playing.
 - Save gameplay notes locally and look them up in later sessions.
 
-You can ask for advice or hand over a run. For example:
+Ask for advice or hand over a whole run:
 
 > Look at my current hand and Jokers. What would you play, and why?
 
 > Start a Red Deck run on White Stake. Read the rules and available strategy
-> guides first, then play through the run.
+> skills first, then play through the run.
 
 > Review this run and save the useful lessons for next time.
 
+## Included skills
+
+The server publishes its gameplay skills as MCP resources (`balatro://skills`)
+and as `skill:<name>` prompts, so any MCP client can load them on demand.
+`skills/core.md` is the always-on decision protocol. The two skills below are
+additional contributions that agents load when a decision calls for them.
+
+### `balatro-gold-stake-coach`
+
+A strategy coach for complete runs aimed at Gold Stake. It covers blind
+selection and skipping, hand and discard choices, shops and cash flow, packs and
+consumables, Joker ordering, and Boss Blind preparation, with the goal of a
+reliable Ante 8 win rather than a high endless score. It works from observed
+game values instead of numbers remembered from older guides, and it ends each
+run with an evidence-based review.
+
+- Entry point: [`skills/balatro-gold-stake-coach/SKILL.md`](skills/balatro-gold-stake-coach/SKILL.md)
+- References: decision tables, plus notes on mechanics and their sources
+
+### `balatro-wiki-rules`
+
+A versioned rules knowledge base built from a [Balatro Wiki](https://balatrowiki.org/)
+snapshot (2026-10-02, game version 1.0.1o-FULL). It has 12 chapters, from the
+run lifecycle and the scoring sequence to Boss Blinds, the shop economy, RNG,
+and validation. The object catalog covers 366 objects, including all 150 Jokers,
+and a lookup script finds any of them by name:
+
+```sh
+python skills/balatro-wiki-rules/scripts/lookup.py Blueprint
+```
+
+Agents use it to resolve mechanics questions during play. It also serves as the
+reference when implementing or testing a simulator.
+
+- Entry point: [`skills/balatro-wiki-rules/SKILL.md`](skills/balatro-wiki-rules/SKILL.md)
+- Sources and license: [`references/sources.md`](skills/balatro-wiki-rules/references/sources.md)
+
+See [`skills/README.md`](skills/README.md) to add your own skill.
+
 ## Quick start
 
-**Recommended: Ask Codex or Claude Code to install the mod and MCP**
+> **Tip:** Codex or Claude Code can do the whole setup for you. Open the
+> project folder and ask: *"Install the Balatro MCP mod and connect the server."*
 
 You'll need:
 
-- **Balatro 1.0.1o** installed through Steam on macOS or Windows.
+- **Balatro 1.0.1o**, installed through Steam on Windows or macOS.
 - **[Node.js](https://nodejs.org/en/download/) 24.13 or newer**, with npm.
-- An AI client that supports local MCP servers, tools, and resources.
+- An AI client that supports local MCP servers, tools, and resources, such as
+  Codex or Claude Code.
 
 ### 1. Set up the server
-
 
 Open a terminal in the project folder and run:
 
@@ -43,24 +95,13 @@ npm ci
 npm run setup
 ```
 
-This prepares the server and game mod, then creates `mcp.local.json` with the
-correct paths for your computer.
+This builds the server, stages the game mod, and writes `mcp.local.json` with
+the correct paths for your computer.
 
 ### 2. Install the mod and open Balatro
 
 Close the game before installing. The installer backs up your game profile and
-installs missing mod loaders for you.
-
-**macOS**
-
-```sh
-npm run install:macos
-npm run launch:macos
-```
-
-Keep this terminal open while playing. Use `launch:macos` to start the game with
-the mod loaded. See the [macOS guide](docs/macos.md) for custom install locations
-and other options.
+installs any missing mod loaders (Lovely and Steamodded).
 
 **Windows**
 
@@ -72,32 +113,43 @@ Then start Balatro through Steam. You can also double-click
 `scripts/install-mod.cmd` to install the mod. See the
 [Windows guide](docs/windows.md) if you need help.
 
+**macOS**
+
+```sh
+npm run install:macos
+npm run launch:macos
+```
+
+Keep this terminal open while you play. Always start the game with
+`launch:macos` so the mod loads. See the [macOS guide](docs/macos.md) for custom
+install locations and other options.
+
 Wait until the game reaches the main menu before continuing.
 
 ### 3. Connect your AI client
 
-Open `mcp.local.json` and add its `balatro` server entry to your client's MCP
-configuration. Keep any other servers you already have, then restart or reconnect
-the client. The generated configuration includes the paths you need.
+Open `mcp.local.json` and copy its `balatro` server entry into your client's
+MCP configuration. Keep any servers you already have, then restart or reconnect
+the client.
 
 Try this first:
 
 > Check the Balatro connection and describe the current game screen. Don't start
 > a run yet.
 
-Once connected, ask it to help with a hand or play a run.
+Once that works, ask it to help with a hand or play a run.
 
 ## Need a hand?
 
 **The client can't connect to the game**
 
-With Balatro open, run this in another terminal from the project folder:
+With Balatro open, run this from the project folder in another terminal:
 
 ```sh
 npm run doctor
 ```
 
-Look for `ok: true` and `ready: true`. If the game isn't ready yet, wait for the
+Look for `ok: true` and `ready: true`. If the game isn't ready, wait for the
 animation to finish or close any open dialogs. On macOS, make sure you started
 Balatro with `npm run launch:macos`.
 
@@ -113,45 +165,47 @@ npm run mcp:config -- --force
 
 The installer keeps existing loaders. You can also copy the entire
 `build/balatro-mcp-mod/balatro_mcp_mod` folder into your game's `Mods` directory
-and restart. Keep only one copy of this mod.
+and restart. Keep only one copy of the mod.
 
 **Where are notes and backups stored?**
 
 Gameplay notes and logs live in `data/`. Installation backups live in
-`build/mod-install-backups/`. Both folders, along with `mcp.local.json`, are
-excluded from Git. Keep backups you need before deleting the project.
+`build/mod-install-backups/`. Git ignores both folders and `mcp.local.json`.
+Copy any backups you need before deleting the project.
 
 ## Platform support
 
 | Platform | Status |
 | --- | --- |
+| Windows | Installer provided; full run won on hardware (Blue Deck, Blue Stake) |
 | macOS · Apple Silicon | Connection and read-only game access verified on hardware |
 | macOS · Intel | Installer and launcher provided; hardware testing needed |
-| Windows | Installer provided |
 | Linux / Steam Deck | No automated installation yet |
 
-The project is still early. AI play quality depends on your model, and full-run
-gameplay hasn't been validated on hardware. If you run into trouble, an issue
-with your platform, game version, and error message helps us investigate.
+The project is still early, and play quality depends heavily on your model. If
+you run into trouble, open an issue with your platform, game version, and the
+error message.
 
 ## Documentation
 
-- [macOS setup and troubleshooting](docs/macos.md)
 - [Windows setup and troubleshooting](docs/windows.md)
+- [macOS setup and troubleshooting](docs/macos.md)
 - [Tools and gameplay workflow](docs/tool-guide.md)
 - [Observation field design and staged implementation](docs/game-observation-design.md)
 - [Game rules and strategy context](docs/context.md)
+- [Gameplay skills](skills/README.md)
 - [Source attribution and validation](docs/upstream.md)
 - [Preparing a release](docs/releasing.md)
 
 For server options, run `node dist/src/index.js --help`. A manual client
-configuration template is available in [`mcp.example.json`](mcp.example.json).
+configuration template is in [`mcp.example.json`](mcp.example.json).
 
 ## Contributing
 
-Issues and pull requests are welcome, especially installation feedback from
-Windows and Intel Mac users. Please remove private paths and personal information
-from logs before sharing them.
+Issues and pull requests are welcome. Installation feedback from macOS and
+Linux users, new gameplay skills, and full-run reports (model, deck, stake, and
+result) are especially useful. Please remove private paths and personal
+information from logs before sharing them.
 
 To check a change locally:
 
@@ -162,7 +216,8 @@ npm test
 
 ## License
 
-Code is licensed under [MIT](LICENSE). Included Wiki-derived reference material
-retains its [CC BY-NC-SA 3.0 license and attribution](skills/balatro-wiki-rules/references/sources.md).
+Code is licensed under [MIT](LICENSE). The Wiki-derived reference material in
+`skills/balatro-wiki-rules` keeps its
+[CC BY-NC-SA 3.0 license and attribution](skills/balatro-wiki-rules/references/sources.md).
 
-Balatro is a separate game and is not included in this project.
+Balatro is a separate game by LocalThunk and is not included in this project.
