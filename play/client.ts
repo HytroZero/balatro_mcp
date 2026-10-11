@@ -1,4 +1,4 @@
-import { randomUUID } from 'node:crypto';
+import { nextId } from '../src/ids.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 import { Check } from 'typebox/value';
@@ -129,7 +129,7 @@ export class ForgeBridgeBackend implements Backend {
       if (before.revision !== revision) throw new BackendError('stale_state','State changed; observe again.');
       if (before.ready === false || !before.availableMethods.includes(action.method)) throw new BackendError('illegal_action','Game is not ready for this action.');
       this.remaining(context);
-      this.lastActionId = randomUUID();
+      this.lastActionId = nextId('action');
       let result = record(await this.rpc('sf.act',{action,revision,instanceId:this.instanceId,actionId:this.lastActionId},true,context));
       dispatched = true;
       while (true) {

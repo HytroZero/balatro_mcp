@@ -139,6 +139,7 @@ with your platform, game version, and error message helps us investigate.
 - [macOS setup and troubleshooting](docs/macos.md)
 - [Windows setup and troubleshooting](docs/windows.md)
 - [Tools and gameplay workflow](docs/tool-guide.md)
+- [Observation field design and staged implementation](docs/game-observation-design.md)
 - [Game rules and strategy context](docs/context.md)
 - [Source attribution and validation](docs/upstream.md)
 - [Preparing a release](docs/releasing.md)

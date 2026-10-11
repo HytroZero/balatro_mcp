@@ -276,34 +276,17 @@ return function(json, decision)
     local state = {hidden=card.facing == 'back',highlight=card.highlighted == true,forced=card.ability and card.ability.forced_selection == true,debuff=card.debuff == true}
     if state.hidden then return {index=index,id=ids[card],state=state} end
     local base, ability, center = card.base or {}, card.ability or {}, card.config and card.config.center or {}
-    local effect = ''
-    -- Read localized UI text and dispose only the temporary objects created for it.
-    if card.generate_UIBox_ability_table then
-      local ok, ui = pcall(card.generate_UIBox_ability_table, card)
-      if ok and type(ui) == 'table' then
-        local texts, visited, objects = {}, {}, {}
-        local function walk(node)
-          if type(node) ~= 'table' or visited[node] then return end; visited[node] = true
-          if type(node.config) == 'table' then
-            if type(node.config.text) == 'string' then texts[#texts + 1] = node.config.text end
-            if node.config.object then objects[node.config.object] = true end
-          end
-          local keys={}; for key in pairs(node) do if key~='config' then keys[#keys+1]=key end end
-          table.sort(keys,function(a,b)
-            if type(a)=='number' and type(b)=='number' then return a<b end
-            return type(a)..tostring(a)<type(b)..tostring(b)
-          end)
-          for _,key in ipairs(keys) do walk(node[key]) end
-        end
-        walk(ui); effect = table.concat(texts, ' ')
-        for object in pairs(objects) do if type(object.remove) == 'function' then pcall(object.remove, object) end end
-      end
-    end
-    local modifier = {seal=card.seal,edition=card.edition and card.edition.type,enhancement=center.key,eternal=ability.eternal,perishable=ability.perish_tally,rental=ability.rental,
+    local label, effect, rulesKnown = decision.card(card)
+    -- Only playing cards have enhancements; other centers' keys are their identity, not a modifier.
+    local playing = ability.set == 'Default' or ability.set == 'Enhanced'
+    local modifier = {seal=card.seal,edition=card.edition and card.edition.type,enhancement=playing and center.key or nil,eternal=ability.eternal,perishable=ability.perish_tally,rental=ability.rental,
       bonusChips=ability.bonus,permanentChips=ability.perma_bonus}
-    return {index=index,id=ids[card],key=center.key,label=ability.name,set=ability.set,value={rank=base.value,suit=base.suit,effect=effect},modifier=modifier,state=state,
+    local target = {min=ability.consumeable and ability.consumeable.min_highlighted,max=ability.consumeable and ability.consumeable.max_highlighted,aura=ability.name == 'Aura'}
+    if target.max and not target.min then target.min = 1 end
+    if target.aura then target.min, target.max = 1, 1 end
+    return {index=index,id=ids[card],key=center.key,label=label,set=ability.set,value={rank=base.value,suit=base.suit,effect=effect,rulesKnown=rulesKnown},modifier=modifier,state=state,
       cost={buy=card.cost,sell=card.sell_cost},canSell=card.can_sell_card and card:can_sell_card() or false,
-      target={min=ability.consumeable and ability.consumeable.min_highlighted,max=ability.consumeable and ability.consumeable.max_highlighted,aura=ability.name == 'Aura'}}
+      target=target}
   end
   local function areaData(area)
     if not area or area.REMOVED then return end
@@ -342,7 +325,8 @@ return function(json, decision)
     local activeKey = run.blind and run.blind.config and run.blind.config.blind and run.blind.config.blind.key
     local state = {state=phase,deck=deck,stake=stake,seed=run.pseudorandom and run.pseudorandom.seed,won=run.won == true,money=run.dollars,
       creditLimit=-(run.bankrupt_at or 0),round_num=run.round,ante_num=run.round_resets and run.round_resets.ante,
-      remainingCards=G.deck and G.deck.cards and #G.deck.cards,packChoices=run.pack_choices,
+      remainingCards=G.deck and G.deck.cards and #G.deck.cards,totalCards=G.playing_cards and #G.playing_cards,
+      routeAnte=run.round_resets and run.round_resets.blind_ante,packChoices=phase == 'PACK' and run.pack_choices or nil,
       round={hands_left=round.hands_left,discards_left=round.discards_left,reroll_cost=round.reroll_cost,chips=run.chips},
       currentBlind=run.blind_on_deck,blind=run.blind and {name=run.blind.name,chips=run.blind.chips,disabled=run.blind.disabled,blockPlay=run.blind.block_play},
       hand=areaData(G.hand),jokers=areaData(G.jokers),consumables=areaData(G.consumeables)}
@@ -353,7 +337,8 @@ return function(json, decision)
     end
     state.tags = decision.tags(run)
     if phase == 'MENU' or phase == 'GAME_OVER' or run.won then state.profileOptions = decision.profile(deckKeys,stakes) end
-    if phase == 'SHOP' then state.shop=areaData(G.shop_jokers); state.vouchers=areaData(G.shop_vouchers); state.packs=areaData(G.shop_booster) end
+    -- A booster opened from the shop leaves the shop in place; leaving the shop removes G.shop.
+    if phase == 'SHOP' or phase == 'PACK' and G.shop then state.shop=areaData(G.shop_jokers); state.vouchers=areaData(G.shop_vouchers); state.packs=areaData(G.shop_booster) end
     if phase == 'PACK' then state.pack=areaData(G.pack_cards) end
     local hands = {}; for name, hand in pairs(run.hands or {}) do if hand.visible then hands[name]={level=hand.level,chips=hand.chips,mult=hand.mult,played=hand.played} end end
     state.hands = hands
@@ -369,6 +354,57 @@ return function(json, decision)
       blinds[name] = details
     end
     state.blinds = blinds
+    -- Same pure target calculation used by the original blind-choice UI. It reads
+    -- the retained blind_ante, not the already advanced current Ante at cash-out.
+    local function blindTarget(center, ante)
+      if type(get_blind_amount) ~= 'function' or type(ante) ~= 'number' or type(center.mult) ~= 'number' or
+          not run.starting_params or type(run.starting_params.ante_scaling) ~= 'number' then return end
+      local ok, amount = pcall(get_blind_amount, ante)
+      if ok and type(amount) == 'number' then return amount * center.mult * run.starting_params.ante_scaling end
+    end
+    for role, details in pairs(blinds) do
+      local center = G.P_BLINDS and G.P_BLINDS[details.key] or {}
+      details.target = blindTarget(center,state.routeAnte)
+      if phase == 'SELECTING_HAND' and role == run.blind_on_deck then details.target = run.blind.chips end
+    end
+    if phase == 'ROUND_EVAL' then
+      local key = run.round_resets and run.round_resets.blind_choices and run.round_resets.blind_choices[run.blind_on_deck]
+      local center = key and G.P_BLINDS and G.P_BLINDS[key] or {}
+      state.completedRound = {ante=state.routeAnte,blindKey=key,blindName=center.name,target=blindTarget(center,state.routeAnte),
+        defeated=blinds[run.blind_on_deck] and blinds[run.blind_on_deck].status == 'Defeated'}
+      state.cashOut = {amount=round.dollars or json.null,known=type(round.dollars) == 'number',lines=json.array(),linesKnown=false}
+    end
+    state.redeemedVouchers = json.array()
+    for key in pairs(vouchers) do
+      local center = G.P_CENTERS and G.P_CENTERS[key]
+      local label, effect, known = decision.card({ability=center and center.config or {},config={center=center or {key=key,set='Voucher'}}})
+      state.redeemedVouchers[#state.redeemedVouchers+1] = {key=key,name=label,effect=effect or json.null,rulesKnown=known}
+    end
+    table.sort(state.redeemedVouchers,function(a,b) return a.key < b.key end)
+    local controls = {}
+    local function button(handler, price)
+      local available = findButton(handler) ~= nil
+      return {available=available,price=price,reason=not available and 'button_unavailable' or json.null}
+    end
+    if phase == 'SELECTING_HAND' then
+      local forced, limit = json.array(), G.hand and G.hand.config.highlighted_limit or 5
+      for index, card in ipairs(G.hand and G.hand.cards or {}) do if card.ability and card.ability.forced_selection then forced[#forced+1] = index-1 end end
+      controls = {play={minCards=1,maxCards=math.min(5,limit),forcedIndices=forced},
+        discard={available=(round.discards_left or 0)>0,minCards=1,maxCards=math.min(5,limit)},
+        scoringRequirements=run.blind and not run.blind.disabled and state.blind.rules or json.array()}
+    elseif phase == 'SHOP' then controls={reroll=button('reroll_shop',round.reroll_cost),nextRound=button('toggle_shop')}
+    elseif phase == 'BLIND_SELECT' then controls={select=button('select_blind'),skip=button('skip_blind'),rerollBoss=button('reroll_boss')}
+    elseif phase == 'ROUND_EVAL' then controls={cashOut=button('cash_out')}
+    elseif phase == 'PACK' then
+      controls={packSkip=button('skip_booster')}
+      for name, value in pairs(G.STATES or {}) do if value == run.PACK_INTERRUPT then state.packReturnPhase=name end end
+      local booster = SMODS and SMODS.OPENED_BOOSTER
+      if booster and booster.config and booster.config.center then
+        state.packKey = booster.config.center.key
+        state.packName = decision.card(booster)
+      end
+    end
+    state.controls=controls
     return state
   end
   function game.methods()

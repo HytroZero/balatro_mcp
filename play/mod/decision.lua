@@ -1,7 +1,31 @@
 -- Player-visible decision inputs only. No constructors, gameplay hooks or RNG.
-return function(json)
+return function(json, english)
   local decision = {}
+  -- Load the game's own English data without changing G.localization/language.
+  if not english and love and love.filesystem and love.filesystem.load then
+    local ok, chunk = pcall(love.filesystem.load, 'localization/en-us.lua')
+    if ok and type(chunk) == 'function' then local loaded, value = pcall(chunk); if loaded and type(value) == 'table' then english = value end end
+  end
+  local function entry(key, set)
+    return english and english.descriptions and english.descriptions[set] and english.descriptions[set][key]
+  end
+  local function render(key, set, vars)
+    local source = entry(key, set); local lines, known = json.array(), true
+    if not source or type(source.text) ~= 'table' then return lines, false end
+    for _, line in ipairs(source.text) do
+      line = line:gsub('{[^}]*}', ''):gsub('#(%d+)#', function(index)
+        local value = vars and vars[tonumber(index)]
+        if value == '?' or type(value) ~= 'string' and type(value) ~= 'number' then known = false; return '?' end
+        return tostring(value)
+      end)
+      lines[#lines+1] = line
+    end
+    return lines, known
+  end
   local function name(key, set, fallback)
+    local source = entry(key, set)
+    if source and type(source.name) == 'string' then return source.name end
+    if english then return fallback or key end
     if type(localize) == 'function' then
       local ok, value = pcall(localize, {type='name_text',key=key,set=set})
       if ok and type(value) == 'string' then return value end
@@ -9,6 +33,7 @@ return function(json)
     return fallback or key
   end
   local function descriptions(key, set, vars)
+    if english then return render(key, set, vars) end
     local lines = json.array()
     if type(localize) ~= 'function' then return lines, false end
     local ok, value = pcall(localize, {type='raw_descriptions',key=key,set=set,vars=vars or {}})
@@ -18,11 +43,88 @@ return function(json)
   end
   local function pokerName(hand)
     if type(hand) ~= 'string' then return '?' end
+    if english then return hand end
     if type(localize) == 'function' then
       local ok, value = pcall(localize, hand, 'poker_hands')
       if ok and type(value) == 'string' then return value end
     end
     return hand
+  end
+  -- Display bindings read visible ability values. Unknown bindings remain '?';
+  -- never run tooltip constructors (Misprint's UI can inspect hidden deck cards).
+  local bindings = {}
+  local function bind(names, fields)
+    for value in names:gmatch('[^|]+') do bindings[value] = fields end
+  end
+  bind('Joker|Swashbuckler', {'mult'})
+  bind('Popcorn', {'mult','extra'})
+  bind('Green Joker|Red Card|Ride the Bus|Flash Card', {'extra','mult'})
+  bind('Hologram|Vampire|Madness|Obelisk|Lucky Cat|Campfire|Throwback', {'extra','x_mult'})
+  bind('Ramen', {'x_mult','extra'})
+  bind('Jolly Joker|Zany Joker|Mad Joker|Crazy Joker|Droll Joker', {'t_mult','type'})
+  bind('Sly Joker|Wily Joker|Clever Joker|Devious Joker|Crafty Joker', {'t_chips','type'})
+  bind('Greedy Joker|Lusty Joker|Wrathful Joker|Gluttonous Joker', {'extra.s_mult','extra.suit'})
+  bind('Mystic Summit', {'extra.mult','extra.d_remaining'})
+  bind('Scholar', {'extra.mult','extra.chips'})
+  bind('Walkie Talkie', {'extra.chips','extra.mult'})
+  bind('Square Joker|Wee Joker', {'extra.chips','extra.chip_mod'})
+  bind('Ice Cream', {'extra.chips','extra.chip_mod'})
+  bind('Rocket', {'extra.dollars','extra.increase'})
+  bind('Turtle Bean', {'extra.h_size','extra.h_mod'})
+  bind('Stuntman', {'extra.chip_mod','extra.h_size'})
+  bind('Gros Michel', {'extra.mult','@probability','extra.odds'})
+  bind('Cavendish', {'extra.Xmult','@probability','extra.odds'})
+  bind('Bloodstone', {'@probability','extra.odds','extra.Xmult'})
+  bind('Reserved Parking', {'extra.dollars','@probability','extra.odds'})
+  bind('Space Joker|Business Card|8 Ball|Hallucination', {'@probability','extra'})
+  bind('Invisible Joker', {'extra','invis_rounds'})
+  bind("Driver's License", {'extra','driver_tally'})
+  bind('Caino', {'extra','caino_xmult'})
+  bind('Yorick', {'extra.xmult','extra.discards','yorick_discards','x_mult'})
+  bind('Card Sharp', {'extra.Xmult'})
+  bind('Glass Joker', {'extra','x_mult'})
+  bind('The Duo|The Trio|The Family|The Order|The Tribe', {'x_mult','type'})
+  bind('Misprint', {'extra.min','extra.max'})
+  local function field(raw, path)
+    if path == '@probability' then return G.GAME and G.GAME.probabilities and G.GAME.probabilities.normal end
+    for key in path:gmatch('[^.]+') do raw = type(raw) == 'table' and raw[key] or nil end
+    return raw
+  end
+  function decision.card(card)
+    local a, center = card.ability or {}, card.config and card.config.center or {}
+    local key, set, vars = center.key, center.set or a.set, {}
+    if set == 'Joker' then
+      if bindings[a.name] then for i, path in ipairs(bindings[a.name]) do vars[i] = field(a,path) end
+      elseif type(a.extra) == 'number' then vars[1] = a.extra end
+      if a.name == 'Abstract Joker' then vars = {a.extra, G.jokers and G.jokers.cards and type(a.extra) == 'number' and #G.jokers.cards * a.extra or nil} end
+      if a.name == 'Spare Trousers' then vars = {a.extra,'Two Pair',a.mult} end
+      if a.name == 'To Do List' then vars = {field(a,'extra.dollars'), pokerName(a.to_do_poker_hand)} end
+      if a.name == 'Bull' then vars = {a.extra, type(a.extra) == 'number' and G.GAME and type(G.GAME.dollars) == 'number' and a.extra * math.max(0,G.GAME.dollars) or nil} end
+      if a.name == 'Satellite' and type(a.extra) == 'number' and G.GAME and type(G.GAME.consumeable_usage) == 'table' then
+        local planets = 0
+        for _, usage in pairs(G.GAME.consumeable_usage) do if type(usage) == 'table' and usage.set == 'Planet' then planets = planets + 1 end end
+        vars = {a.extra, planets * a.extra}
+      end
+    elseif set == 'Planet' then
+      local h = G.GAME and G.GAME.hands and G.GAME.hands[a.hand_type or center.config and center.config.hand_type] or {}
+      vars = {h.level,a.hand_type or center.config and center.config.hand_type,h.l_mult,h.l_chips}
+    elseif set == 'Tarot' then
+      vars = {a.consumeable and a.consumeable.max_highlighted or a.max_highlighted or a.planets or a.tarots or a.extra}
+      local enhancement = a.mod_conv or center.config and center.config.mod_conv
+      if enhancement then vars[2] = name(enhancement,'Enhanced',enhancement) end
+      if key == 'c_wheel_of_fortune' then vars = {field(a,'@probability'),a.extra} end
+      if key == 'c_fool' then local last = G.GAME.last_tarot_planet; local c = last and G.P_CENTERS[last]; vars = {c and name(last,c.set,c.name) or 'None'} end
+    elseif set == 'Spectral' then
+      vars = {type(a.extra) == 'number' and a.extra or nil}
+      if key == 'c_immolate' and type(a.extra) == 'table' then vars = {a.extra.destroy,a.extra.dollars} end
+      if key == 'c_ectoplasm' then vars = {G.GAME.ecto_minus or 1} end
+    elseif set == 'Voucher' then vars = {a.extra}
+    elseif set == 'Booster' then
+      key, set = (key or ''):gsub('_%d+$',''), 'Other'
+      vars = {center.config and center.config.choose,a.extra}
+    end
+    local lines, known = render(key,set,vars)
+    return name(key,set,a.name or center.name or center.key), #lines > 0 and table.concat(lines,' ') or nil, known
   end
   function decision.blind(key, center, active)
     center = center or {}; local run = G.GAME or {}; local round = run.current_round or {}

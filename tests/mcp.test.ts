@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
-import { mkdtemp, readFile, rm, lstat } from 'node:fs/promises';
+import { mkdtemp, readFile, rm, lstat, readdir } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
@@ -104,7 +104,9 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.ok(String(record(fullContext.contents[0]).text).includes((await readFile(resolve('model/context/balatro.md'),'utf8')).trim()));
     assert.equal(record((await h.call('game_health')).structuredContent).ok, true);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);
-    assert.equal(observed.revision, 'mcp-test:1');
+    assert.equal(observed.rev, '1');
+    assert.equal(observed.v,3);assert.equal(observed.full,true);assert.equal(observed.phase,'MENU');
+    assert.deepEqual(observed.state,{});
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
     assert.equal(record(record((await h.call('card_observe')).structuredContent).value).remainingCards, 2);
     assert.equal(h.mutations, 0);
@@ -114,13 +116,26 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
 test('stdio game tools start once, return a next revision, reject stale/invalid actions and serialize competing calls', async () => {
   const h = await harness();
   try {
+    // A bare counter is only meaningful once this connection has issued it.
+    const unissued = await h.call('game_action', { revision: '1', action: { method: 'select' } });
+    assert.equal(record(unissued.structuredContent).code, 'stale_state'); assert.equal(h.mutations, 0);
     const start = await h.call('game_start', { deck: 'RED', stake: 'WHITE', seed: 'TEST' });
     assert.equal(start.isError, false);
-    const revision = record(record(start.structuredContent).value).revision;
-    assert.equal(revision, 'mcp-test:2'); assert.equal(h.mutations, 1);
+    const revision = record(record(start.structuredContent).value).rev;
+    assert.equal(record(record(start.structuredContent).value).full,true);
+    assert.equal(revision, '2'); assert.equal(h.mutations, 1);
     const action = { method: 'select' };
     const results = await Promise.all([h.call('game_action', { revision, action }), h.call('game_action', { revision, action })]);
     assert.equal(results.filter(result => !result.isError).length, 1);
+    const success=record(record(results.find(result=>!result.isError)?.structuredContent).value);
+    assert.equal('full' in success,false);assert.equal(success.rev,'3');assert.equal(success.phase,'BLIND_SELECT');
+    assert.equal(typeof success.result,'string');
+    for (const absent of ['actionId','baseRevision','runId','source']) assert.equal(absent in success,false,absent);
+    const [traceFile] = await readdir(resolve(h.root,'traces'));
+    const rows = (await readFile(resolve(h.root,'traces',traceFile!),'utf8')).trim().split('\n').map(line=>JSON.parse(line));
+    const logged = rows.find(row=>row.data.name==='game_action' && row.data.result.isError===false);
+    assert.equal(logged.data.details.value.contract,1);
+    assert.equal(logged.data.details.value.state.state,'BLIND_SELECT');
     assert.equal(record(results.find(result => result.isError)?.structuredContent).code, 'stale_state');
     assert.equal(h.mutations, 2);
     for (const args of [
@@ -138,6 +153,36 @@ test('stdio game tools start once, return a next revision, reject stale/invalid 
     const stale = await h.call('game_action', { revision, action });
     assert.equal(record(stale.structuredContent).code, 'stale_state'); assert.equal(h.mutations, 2);
     assert.equal((await h.call('game_start', { deck: 'RED', stake: 'WHITE' })).isError, true);
+  } finally { await h.close(); }
+});
+
+test('internal reads never establish a delivered baseline; stale failures and deck reads recover with full state', async () => {
+  const h = await harness();
+  try {
+    h.externalChange();
+    await h.call('memory_query',{query:''}); // Internally observes revision 77.
+    const first = await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}});
+    const full = record(record(first.structuredContent).value);
+    assert.equal(full.full,true);
+    assert.equal(full.rev,'78');
+    const second = await h.call('game_action',{revision:full.rev,action:{method:'select'}});
+    const delta = record(record(second.structuredContent).value);
+    assert.equal('full' in delta,false);
+    assert.equal(delta.rev,'79');
+    assert.deepEqual(JSON.parse(String(record(second.content[0]).text)),second.structuredContent);
+    h.externalChange();
+    const failed = await h.call('game_action',{revision:delta.rev,action:{method:'select'}});
+    assert.equal(record(failed.structuredContent).code,'stale_state');
+    const recovered = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
+    assert.equal(recovered.full,true);
+    h.externalChange();
+    await h.call('card_observe'); // A different deck revision cannot move the observation baseline.
+    const afterDeck = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
+    assert.equal(afterDeck.full,true);
+    const observed = record(record((await h.call('game_observe')).structuredContent).value);
+    assert.equal(observed.full,true);
+    assert.equal(record(observed.state).setup,'RED deck, WHITE stake, seed TEST');
+    assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
   } finally { await h.close(); }
 });
 
@@ -167,7 +212,7 @@ test('lost action reply remains uncertain and operation inspection never replays
     const operation = await h.call('game_operation');
     assert.equal(record(record(operation.structuredContent).value).status, 'completed'); assert.equal(h.mutations, 1);
     const observed = await h.call('game_observe');
-    assert.equal(record(record(observed.structuredContent).value).revision, 'mcp-test:2'); assert.equal(h.mutations, 1);
+    assert.equal(record(record(observed.structuredContent).value).rev, '2'); assert.equal(h.mutations, 1);
   } finally { await h.close(); }
 });
 
@@ -182,7 +227,7 @@ test('stdio cancellation during preflight reaches the backend and prevents dispa
     const settled = h.call('game_health');
     gate.release(); await settled;
     assert.equal(h.mutations,0);
-    assert.equal(record(record((await h.call('game_observe')).structuredContent).value).revision,'mcp-test:1');
+    assert.equal(record(record((await h.call('game_observe')).structuredContent).value).rev,'1');
   } finally { gate.release(); await h.close(); }
 });
 

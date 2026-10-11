@@ -28,3 +28,4 @@ Thumbs.db
 .pi/
 __pycache__/
 *.pyc
+agent_conversation/**

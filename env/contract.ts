@@ -77,7 +77,8 @@ export interface DeckObservation {
 // Only information shown in the game may cross into the model transcript.
 export function playerState(raw: Data): Data {
   const state: Data = {};
-  for (const key of ['state','round_num','ante_num','money','won','deck','stake','seed','used_vouchers','hands','round','blinds','blind','currentBlind','creditLimit','remainingCards','packChoices','tags','profileOptions']) {
+  for (const key of ['state','round_num','ante_num','money','won','deck','stake','seed','used_vouchers','hands','round','blinds','blind','currentBlind','creditLimit','remainingCards','packChoices','tags','profileOptions',
+    'totalCards','routeAnte','completedRound','cashOut','controls','redeemedVouchers','packKey','packName','packReturnPhase']) {
     if (raw[key] !== undefined) state[key] = structuredClone(raw[key]);
   }
   for (const name of ['hand','jokers','consumables','shop','vouchers','packs','pack']) {
@@ -89,7 +90,7 @@ export function playerState(raw: Data): Data {
         const card = record(value);
         const cardState = record(card.state);
         if (cardState.hidden === true) return { index,id:card.id,state:{hidden:true,highlight:cardState.highlight === true,forced:cardState.forced === true} };
-        return { index, ...Object.fromEntries(['id','key','set','label','value','modifier','state','cost','canSell','target'].filter(k => card[k] !== undefined).map(k => [k, structuredClone(card[k])])) };
+        return { index, ...Object.fromEntries(['id','key','set','label','value','modifier','state','cost','canSell','target','operations'].filter(k => card[k] !== undefined).map(k => [k, structuredClone(card[k])])) };
       }) };
   }
   const remaining = record(raw.cards);

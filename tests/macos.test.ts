@@ -133,7 +133,8 @@ test('macOS upgrade backs up and removes the legacy mod so only the renamed brid
     await assert.rejects(lstat(legacy), /ENOENT/);
     assert.equal(await readFile(resolve(result.backup, 'profile/Mods/strategy_forge/strategy_forge.lua'), 'utf8'), '-- old entry');
     const manifest = JSON.parse(await readFile(resolve(f.mods, 'balatro_mcp_mod/balatro_mcp_mod.json'), 'utf8'));
-    assert.equal(manifest.id, 'balatro_mcp_mod'); assert.equal(manifest.name, 'balatro_mcp_mod');
+    assert.equal(manifest.id, 'balatro_mcp_mod'); assert.equal(manifest.name, 'Balatro MCP mod');
+    assert.deepEqual(manifest.author, ['HytroZero']);
     assert.equal(manifest.main_file, 'balatro_mcp_mod.lua');
     assert.ok((await lstat(resolve(f.mods, 'balatro_mcp_mod', manifest.main_file))).isFile());
     await macLaunchCommand({}, f.context);

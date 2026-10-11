@@ -1,6 +1,5 @@
 import { appendFile, mkdir, readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { randomUUID } from 'node:crypto';
 import type { Observation } from '../env/contract.ts';
 
 export interface Experience {
@@ -11,6 +10,7 @@ export interface Experience {
 export class MemoryStore {
   readonly root: string;
   private snapshot: Experience[] = [];
+  private sequence = 0;
   private readOnly: boolean;
   private online: boolean;
   constructor(root: string, readOnly = false, online = false) {
@@ -21,6 +21,7 @@ export class MemoryStore {
     try {
       this.snapshot = (await readFile(resolve(this.root,'experience.jsonl'),'utf8')).split('\n').filter(Boolean).map(line => JSON.parse(line) as Experience);
     } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+    this.sequence = this.snapshot.reduce((max, entry) => Math.max(max, /^memory-(\d+)$/.test(entry.id) ? Number(entry.id.slice(7)) : 0), this.snapshot.length);
   }
   initialSnapshot(): Experience[] { return structuredClone(this.snapshot); }
   restoreSnapshot(snapshot: Experience[]): void { this.snapshot = structuredClone(snapshot); }
@@ -31,7 +32,7 @@ export class MemoryStore {
   }
   async remember(input: Pick<Experience,'kind'|'text'|'evidence'>, observation: Observation): Promise<Experience> {
     if (this.readOnly) throw new Error('Memory is read-only in fixed-policy evaluation.');
-    const entry: Experience = { ...input, id: randomUUID(), timestamp: new Date().toISOString(), runId: observation.runId,
+    const entry: Experience = { ...input, id: `memory-${++this.sequence}`, timestamp: new Date().toISOString(), runId: observation.runId,
       gameVersion: observation.gameVersion, revision: observation.revision, deck: observation.state.deck, stake: observation.state.stake, seed: observation.state.seed };
     await appendFile(resolve(this.root,'experience.jsonl'), JSON.stringify(entry) + '\n', 'utf8');
     if (this.online) this.snapshot.push(entry);

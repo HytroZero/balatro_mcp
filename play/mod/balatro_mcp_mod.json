@@ -1,7 +1,7 @@
 {
   "id": "balatro_mcp_mod",
-  "name": "balatro_mcp_mod",
-  "author": ["Strategy Forge"],
+  "name": "Balatro MCP mod",
+  "author": ["HytroZero"],
   "description": "Standalone local JSON-RPC bridge for Balatro MCP.",
   "prefix": "bmcp",
   "main_file": "balatro_mcp_mod.lua",

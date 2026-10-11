@@ -1,4 +1,3 @@
-import { randomUUID } from 'node:crypto';
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { McpServer, fromJsonSchema, type CallToolResult } from '@modelcontextprotocol/server';
@@ -10,6 +9,7 @@ import { Trace } from '../model/trace.ts';
 import { createTools } from '../tools/index.ts';
 import { projectRoot, type Options } from './config.ts';
 import { loadGameplayContext, registerGameplayResources } from './context.ts';
+import { nextId } from './ids.ts';
 
 const envelopeSchema = z.object({
   ok: z.boolean(), value: z.unknown().optional(), code: z.string().optional(),
@@ -22,11 +22,11 @@ function failure(error: unknown): CallToolResult {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };
 }
 
-/** A process owns one tool context; serialize calls to preserve compact observation baselines. */
+/** A process owns one tool context; serialize calls and game mutations. */
 export async function createBalatroServer(options: Options, backend: Backend = new ForgeBridgeBackend(options.endpoint, options.timeoutMs)) {
   const context = await loadGameplayContext();
   const memory = new MemoryStore(resolve(options.dataDir, 'memory'), options.readOnlyMemory, options.onlineMemory);
-  const trace = new Trace(resolve(options.dataDir, 'traces', randomUUID() + '.jsonl'));
+  const trace = new Trace(resolve(options.dataDir, 'traces', nextId('trace') + '.jsonl'));
   await Promise.all([memory.init(), trace.init()]);
   const server = new McpServer({ name: 'balatro-mcp-server', version: '0.1.0' }, {
     instructions: context.instructions,
@@ -49,16 +49,18 @@ export async function createBalatroServer(options: Options, backend: Backend = n
       // SDK v2 accepts Standard Schema: preserve TypeBox's exact JSON Schema,
       // including uniqueItems and strict action unions, without a lossy Zod conversion.
       inputSchema: fromJsonSchema<Record<string, unknown>>({ ...tool.parameters, additionalProperties: false }),
-      outputSchema: envelopeSchema,
+      outputSchema: ['game_observe','game_start','game_action'].includes(tool.name) ? fromJsonSchema<Record<string, unknown>>(JSON.parse(JSON.stringify(tool.outputSchema))) : envelopeSchema,
       annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, idempotentHint: readOnly, openWorldHint: false },
     }, async (params, context) => sequential(async () => {
       if (context.mcpReq.signal.aborted) return failure(new BackendError('cancelled', 'Call cancelled before execution; no action dispatched.'));
       let result: CallToolResult;
+      let details: unknown;
       try {
-        const native = await tool.execute(randomUUID(), params, context.mcpReq.signal);
+        const native = await tool.execute(nextId('call'), params, context.mcpReq.signal);
+        details = native.details;
         result = { content: native.content, structuredContent: record(native.structuredContent), isError: native.isError ?? false };
       } catch (error) { result = failure(error); }
-      await log({ name: tool.name, arguments: params, result });
+      await log({ name: tool.name, arguments: params, result, details });
       return result;
     }));
   }

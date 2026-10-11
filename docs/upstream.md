@@ -67,6 +67,41 @@ have not been validated on hardware. Mock tests do not establish full gameplay
 compatibility. [`evaluation.xml`](evaluation.xml) holds read-only contract questions;
 no model-provider evaluation is implied.
 
+## Observation projection update (2026-10-11)
+
+Superseded by observation v3 ([game-observation-v3.md](game-observation-v3.md)):
+flat state with line-text items, short revisions and per-member deltas. The
+paragraphs below describe the earlier contract 2.
+
+Model-facing observations now use contract 2. game_observe and game_start return
+full snapshots; game_action derives action-specific deltas from the same complete
+projection and the last delivered baseline. Normal phase transitions carry new
+decision blocks and old block clears; all actual changes are included, with
+handValuesPatch for changed poker-hand values. Missing baselines, start/new run,
+source/readiness changes and terminal outcomes use full snapshots.
+Action arguments, the Lua protocol 1 transport, revision checks, original game
+handlers and uncertain-operation gates remain unchanged. Structured action facts
+from the design document remain deferred. Operation/call/trace identifiers use
+process-scoped counters; persistent memory uses sequential record IDs. Full raw
+observations are retained in MCP trace details alongside the model projection.
+
+The Lua observer reads the game's English localization data without changing the
+UI language or constructing tooltips. Display bindings use current visible ability
+values; unsupported variables are explicitly unknown. Blind targets follow the
+unchanged original blind-choice UI calculation, including blind_ante and the
+actual ante scaling. Settlement retains blind_ante rather than inferring it from
+the advanced current Ante. No original game source is copied or patched by this
+update. The raw backend observation is retained separately from the model view.
+
+Validation: TypeScript type checking/build and the observation, bridge, context
+and real stdio MCP regressions passed. Lua decision tests and full-observation
+tests passed, including the unchanged original 1.0.1o English localization.
+The broad TypeScript run had 52 passes, 2 existing failures and 2 skips. The
+failures are the config test's POSIX path expectation on Windows and the source
+exporter's missing required licenses directory; their code was not changed.
+No live game action, mod installation, game restart or live reload was performed
+for this update. Staged files require separate installation and game restart.
+
 ## Public source distribution
 
 The release exporter preserves attribution while excluding local runtime files
