@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "balatro": {
+      "command": "node",
+      "args": ["/absolute/path/to/balatro-mcp/dist/src/index.js"],
+      "env": {
+        "BALATRO_BRIDGE_URL": "http://127.0.0.1:12347"
+      }
+    }
+  }
+}

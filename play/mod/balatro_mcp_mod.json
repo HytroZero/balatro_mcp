@@ -1,0 +1,11 @@
+{
+  "id": "balatro_mcp_mod",
+  "name": "balatro_mcp_mod",
+  "author": ["Strategy Forge"],
+  "description": "Standalone local JSON-RPC bridge for Balatro MCP.",
+  "prefix": "bmcp",
+  "main_file": "balatro_mcp_mod.lua",
+  "version": "0.2.0",
+  "priority": 10,
+  "dependencies": ["Steamodded (>=1.~)"]
+}
