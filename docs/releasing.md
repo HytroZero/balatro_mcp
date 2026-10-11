@@ -52,6 +52,6 @@ CI 在 Ubuntu 和 macOS 上执行类型检查、测试、mod 打包和源码脱�
 它不会下载/启动游戏，也不代表 Windows 或 Intel 硬件已经实测。
 源码包保留 `package-lock.json`，新用户使用 `npm ci` 和 `npm run setup`。
 
-代码使用 MIT；保留 `LICENSE`、`licenses/` 以及技能中的第三方署名和授权说明。
+代码使用 MIT；保留 `LICENSE` 以及技能中的第三方署名和授权说明。
 Wiki 衍生资料仍使用其 CC BY-NC-SA 3.0 许可，不纳入代码的 MIT 授权。
 保留来源信息和代码哈希；去除私人机器路径及 Git 身份不影响第三方署名。

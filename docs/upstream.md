@@ -31,8 +31,8 @@ Use the root README for setup.
 ## Licenses
 
 Project code is distributed under the root [MIT license](../LICENSE).
-Pi packages are pinned to 1.0.4; their MIT notice is retained in
-[`licenses/pi-MIT.txt`](../licenses/pi-MIT.txt). Pi's skill discovery and formatting
+Pi packages are pinned to 1.0.4; their MIT notice is included in the installed
+packages. Pi's skill discovery and formatting
 functions are reused without enabling an agent session, coding tools, or ambient
 skill discovery. Other installed dependencies retain their own licenses.
 

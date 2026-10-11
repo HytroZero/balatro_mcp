@@ -1,5 +1,22 @@
 # Validation
 
+## Source distribution directory fix — 2026-10-11
+
+Removed the unused `licenses/` directory from the distribution allowlist and
+corrected its documentation references. Replaced a raw bridge-instance example
+in the observation design document with placeholders so the source audit passes.
+
+Executed checks:
+
+- `npm run check` and `npm run build` — passed.
+- `node --test tests/distribution.test.ts` — 2 passed, zero failures, including
+  source copy, archive metadata and symlink rejection.
+- `npm run release:check` — passed (91 source files).
+- `npm run stage-mod` — passed; inspected staged mod files and provenance.
+- `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+These are focused Windows checks. GitHub's macOS/Ubuntu jobs were not rerun.
+
 ## Observation projection v3 — 2026-10-11
 
 Implemented [game-observation-v3.md](game-observation-v3.md): flat state, line-text

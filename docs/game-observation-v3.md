@@ -24,7 +24,7 @@
 
 1. **每次回合结束都重发全部 5 张小丑（1260 字符）**，其实只有 Popcorn 的 +16→+12 一个数字变了。区域只能整体替换，没有元素级更新。
 2. **每次阶段切换都重发整条 route（620–1010 字符）**，里面多数是固定值：`targetKnown:true`、`rulesKnown:true`、`disabled:false`、`ruleState:{active:true}`、`displayName` 与 `name` 重复、`values:{}`、`triggered:false`。
-3. **envelope 每次约 420 字符**：`contract`、`partial`、`notReadyReason:null`、`terminal:false`、`outcome:"ongoing"`、`runId`、`baseRevision`、`actionId`，以及 `"table: 0x012f88b8:1791719807:31"` 这种长 revision。正常情况下这些都是默认值，或者是请求里已经有的值。
+3. **envelope 每次约 420 字符**：`contract`、`partial`、`notReadyReason:null`、`terminal:false`、`outcome:"ongoing"`、`runId`、`baseRevision`、`actionId`，以及 `"<bridge-instance>:<timestamp>:<counter>"` 这种长 revision（此处使用占位符）。正常情况下这些都是默认值，或者是请求里已经有的值。
 4. **物品对象的元数据多于内容**。每张小丑都带 `key`、`kind`、`rulesKnown`、`modifiers.enhancement`、`sell.available/value/reason`；一个 effect 字符串外面包着大约 200 字符的结构。
 5. **同一个事实出现多次**：`shop.reroll` 和 `controls.reroll` 重复；`availableMethods` 列出了 `reroll_boss`/`skip`，`controls` 却说不可用；`round.target` 和 `route` 目标重复；阶段之外反复发送空手牌 `{count:0,capacity:8,selectionLimit:5,cards:[]}`；`shop:null`/`round:null` 这类清空标记也一直在发。
 6. **`summary` 没有信息量**，例如 "Played cards. Phase: ROUND_EVAL."。真正需要的打出牌型和得分，只能从 roundResult 和 handValuesPatch 里拼出来。
