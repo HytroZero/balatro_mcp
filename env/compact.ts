@@ -11,6 +11,8 @@ export const phaseViews: Readonly<Record<string, readonly Phase[]>> = {
     shop: ['SHOP', 'PACK'], pack: ['PACK'], profiles: ['MENU', 'GAME_OVER'], runResult: ['GAME_OVER'],
 };
 const validIn = (key: string, phase: Phase | null): boolean => !(key in phaseViews) || phase !== null && phaseViews[key]!.includes(phase);
+// Run keys a phase decides on. Entering the phase resends them whole, so the decision does not rest on a delta from an earlier phase.
+const phaseFocus: Partial<Record<Phase, readonly string[]>> = { BLIND_SELECT: ['blind', 'blinds'] };
 // "?" is the single unknown marker; null inside a patched object deletes that member.
 const known = Type.Union([Type.Number(), Type.Literal('?')]);
 const lines = Type.Array(Type.String());
@@ -236,7 +238,10 @@ function describe(action: Action, after: Observation, before?: Observation): str
         case 'start': out = `Started a ${action.deck} deck run on ${action.stake} stake.`; break;
         case 'select': out = `Selected ${text(record(a.blind).name) ?? 'the blind'}.`; break;
         case 'skip': {
-            const gained = before ? list(a.tags).slice(list(b.tags).length).map(t => tagName(record(t))) : [];
+            // Tags that fire on pickup (Orbital, Economy, ...) never reach the held list; name the offered reward instead.
+            const reward = record(record(record(b.blinds)[String(b.currentBlind)]).skipReward);
+            const held = before ? list(a.tags).slice(list(b.tags).length).map(t => tagName(record(t))) : [];
+            const gained = held.length || !Object.keys(reward).length || reward.hidden === true ? held : [tagName(reward)];
             out = `Skipped the ${typeof b.currentBlind === 'string' ? b.currentBlind + ' ' : ''}Blind.` + (gained.length ? ` Got ${gained.join(', ')}.` : '');
             break;
         }
@@ -284,9 +289,12 @@ function diff(previous: FullObservation, next: FullObservation, before: Observat
     const p = previous.state as Data, n = next.state as Data, out: Data = {};
     for (const key of Object.keys(p))
         if (!(key in n) && validIn(key, next.phase)) return undefined;
+    const focus = previous.phase !== next.phase && next.phase !== null ? phaseFocus[next.phase] ?? [] : [];
     for (const [key, value] of Object.entries(n)) {
         const old = p[key];
         if (!(key in p) || !validIn(key, previous.phase)) out[key] = value;
+        else if (focus.includes(key))
+            out[key] = isObject(value) && isObject(old) ? { ...Object.fromEntries(Object.keys(old).map(name => [name, null])), ...value } : value;
         else if (isDeepStrictEqual(old, value)) continue;
         else if (Array.isArray(value) && Array.isArray(old) && ordered.includes(key) && old.length === value.length &&
             ids(before, key) !== null && isDeepStrictEqual(ids(before, key), ids(after, key)))

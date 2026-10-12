@@ -50,6 +50,9 @@ Results use `{ok:true,value:...}` or
    `consumables` or `hand` replaces only those elements; it is sent only while
    membership and order are unchanged.
 4. When the phase changes, drop views the new phase does not use (below).
+5. Entering `BLIND_SELECT` from another phase resends `blind` and `blinds` whole
+   (members that disappeared are null), even when they did not change, so the
+   skip Tag and Boss are always in the result that offers the choice.
 
 `result` is one English sentence of facts from this action; it is not state.
 Missing/mismatched baselines, start/new run, source or readiness changes and

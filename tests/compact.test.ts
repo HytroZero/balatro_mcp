@@ -132,11 +132,24 @@ test('round end, cash-out, next blind and selection drop and add phase views', (
     assert.equal(cashed.result, 'Cashed out $4.');
     assert.deepEqual(cashed.actions, ['buy', 'buy_and_use', 'reroll $5', 'next_round']);
     const blind = at(shop, 'i:10', { state: 'BLIND_SELECT', controls: { select: { available: true }, skip: { available: true }, rerollBoss: { available: false } } }, { availableMethods: ['select', 'skip', 'reroll_boss', 'use'] });
-    assert.deepEqual(checkDelta(shop, blind, { method: 'next_round' }), { rev: '10', phase: 'BLIND_SELECT', actions: ['select', 'skip'], result: 'Left the shop.' });
+    // blind and blinds did not change in the shop, but entering BLIND_SELECT resends them for the skip decision.
+    assert.deepEqual(checkDelta(shop, blind, { method: 'next_round' }), { rev: '10', phase: 'BLIND_SELECT', actions: ['select', 'skip'], result: 'Left the shop.',
+        state: { blind: 'Big', blinds: { Small: '300 [defeated]', Big: '450; skip: Juggle Tag (+3 hand size next round)', Boss: 'The Head 600: Hearts are debuffed' } } });
     const selected = at(blind, 'i:11', { state: 'SELECTING_HAND', round_num: 2, blind: { name: 'Big Blind', chips: 450 }, controls: {} }, { availableMethods: ['play', 'discard'] });
     const entered = checkDelta(blind, selected, { method: 'select' });
     assert.deepEqual(Object.keys(entered.state!).sort(), ['deck', 'hand', 'round', 'roundNo']);
     assert.equal(entered.result, 'Selected Big Blind.');
+});
+test('skip names the reward even when the Tag fires on pickup', () => {
+    const orbital = { key: 'tag_orbital', name: 'Orbital Tag', rules: ['Upgrade Pair by 3 levels'], rulesKnown: true };
+    const offer = at(observation(), 'i:8', { state: 'BLIND_SELECT', blinds: { ...record(observation().state.blinds),
+        Small: { name: 'Small Blind', status: 'Select', rules: [], rulesKnown: true, target: 300, skipReward: orbital } }, controls: {} }, { availableMethods: ['select', 'skip'] });
+    assert.equal(compactObservation(offer).state.blinds?.Small, '300; skip: Orbital Tag (Upgrade Pair by 3 levels)');
+    const skipped = (raw: Data) => at(offer, 'i:9', { currentBlind: 'Big', blinds: { ...record(offer.state.blinds),
+        Small: { name: 'Small Blind', status: 'Skipped', rules: [], rulesKnown: true, target: 300, skipReward: orbital } }, ...raw });
+    assert.equal(checkDelta(offer, skipped({}), { method: 'skip' }).result, 'Skipped the Small Blind. Got Orbital Tag.');
+    const held = checkDelta(offer, skipped({ tags: [{ key: 'tag_double', name: 'Double Tag', rules: [], rulesKnown: false }] }), { method: 'skip' });
+    assert.equal(held.result, 'Skipped the Small Blind. Got Double Tag.');
 });
 test('Boss settlement keeps the blinds Ante until the next Ante exists', () => {
     const full = compactObservation(observation({ state: 'ROUND_EVAL', ante_num: 2, routeAnte: 1, currentBlind: 'Boss', round: { chips: 1950 },
