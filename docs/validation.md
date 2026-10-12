@@ -1,5 +1,63 @@
 # Validation
 
+## Health once per bridge instance, trace encoding, guide in code — 2026-10-12
+
+`ForgeBridgeBackend` now runs `sf.health` once per bridge instance instead of
+before every observe and deck read. A revision with another instance prefix
+re-runs the identity check, so mod restarts still clear the client lock and
+expire old revisions. `game_operation` keeps the full health check. A
+`game_action` after the first call now sends `sf.observe` and `sf.act` rather
+than `sf.health`, `sf.observe` and `sf.act`. `Trace.encode` returns redacted text,
+and tool results and trace lines use it instead of sanitizing to an object and
+stringifying it again.
+
+`balatro://guide` moved from `docs/tool-guide.md`, which the server read at
+runtime, into `tools/guide.ts`. The phase view table and the `game_observe`
+phase view sentence are generated from `phaseViews`; row text stays in code.
+Rendered against the old file, only two table rows changed: `shop` and
+`runResult` now list the exact `phaseViews` phases, and their qualifiers
+(PACK only when opened from the shop; also sent with a won terminal result)
+moved to the content column. New `tests/guide.test.ts` checks that the rows
+cover every phase view once, and that the guide and description name every
+`StateSchema` key.
+
+Executed checks:
+
+- `npm run check` — passed.
+- `node --test tests/*.test.ts` after `npm run build` — 68 passed, 2 skipped,
+  zero failures (69 passed after the guide move). A new bridge test asserts the RPC sequence across two actions
+  and an instance change. The stdio preflight cancellation test now holds
+  `sf.observe`, and the shared-deadline test uses 100 ms because the action
+  preflight no longer spends a health round trip.
+- Mutation check: deleting the `pack` row from `phaseViewRows` failed two
+  guide tests; the file was restored.
+- `npm run release:check` — passed (94 source files).
+
+These are offline Windows checks. No Lua changes; the running game and an MCP
+client against it were not exercised. Restart the MCP process to load the change.
+
+## CI: Windows job, Lua tests and GNU tar on Windows — 2026-10-12
+
+Added `windows-latest` to the CI test matrix (with `fail-fast: false`) and a
+separate Ubuntu job that runs both Lua test files under LuaJIT. Running the
+suite from Git Bash on Windows showed the release archive test failing: GNU tar
+read the `C:` prefix of the archive path as a remote host. GNU tar now gets
+`--force-local`; bsdtar is unchanged.
+
+Executed checks:
+
+- `luajit tests/observation.test.lua` — 49 checks passed.
+- `luajit tests/decision.test.lua` — 38 checks passed.
+- `npm run check`, `npm run stage-mod`, `npm run release:check` (93 source
+  files) — passed under PowerShell.
+- `node --test tests/*.test.ts` — 65 passed, 2 skipped, zero failures under both
+  PowerShell (System32 bsdtar) and Git Bash (GNU tar, after the fix; it failed
+  before).
+
+These are local Windows checks. The new workflow has not run on GitHub yet, and
+the Ubuntu luajit package and GNU tar `--force-local` on Linux were not
+exercised locally. No mod installation or game run was involved.
+
 ## Source distribution directory fix — 2026-10-11
 
 Removed the unused `licenses/` directory from the distribution allowlist and

@@ -8,7 +8,7 @@
 
 第 8 节结构化 result 尚未实现；动作继续使用 actionId 和原有英文 summary，不从资金差推断 spent/received。动作、调用、trace 使用顺序编号，进程启动时间和 PID 只作隔离前缀。未引入哈希。桥接端 revision/runId 已是实例前缀加顺序编号，保留其重启失效语义。完整后端观察保留在内部详情及 MCP trace 的 details。
 
-部分动态描述变量、物品使用资格和卡包标识无法可靠提取时明确为未知，不调用 UI 构造器、游戏动作或 RNG 补全。结算 amount 与明细分别用 known、linesKnown 表示；尚不提取逐条收入。Lua HTTP 协议保持 1，模型可见投影为 2。详见 [当前工具指南](tool-guide.md)。文档文件名统一使用小写和连字符。
+部分动态描述变量、物品使用资格和卡包标识无法可靠提取时明确为未知，不调用 UI 构造器、游戏动作或 RNG 补全。结算 amount 与明细分别用 known、linesKnown 表示；尚不提取逐条收入。Lua HTTP 协议保持 1，模型可见投影为 2。详见 [当前工具指南](../tools/guide.ts)。文档文件名统一使用小写和连字符。
 
 适用范围：本仓库的 MCP `game_observe`、`game_start` 和 `game_action`，以及它们共用的观察投影。完整及增量使用 `contract: 2`；示例中的 result 字段仍属于后续设计，其他示意数据也不代表真实执行结果。
 
@@ -894,6 +894,6 @@ game_observe 仍返回完整 17 键 state，能可靠观察的块正常提供，
 - [MCP 服务与输出 envelope](../src/server.ts)：structuredContent、错误与顺序执行。
 - [Lua 可见观察](../play/mod/game.lua)：阶段、区域、价格、动态文本及原版动作调用。
 - [Lua 决策字段](../play/mod/decision.lua)：盲注规则、标签、历史完整性、解锁状态。
-- [当前工具指南](tool-guide.md)：已同步的 contract 2 完整与增量协议。
+- [当前工具指南](../tools/guide.ts)（以 `balatro://guide` 提供）：已同步的 contract 2 完整与增量协议。
 
 完整快照投影、动作增量、工具输出 schema 和只读 Lua 观察已实现；结构化 result 与更具体的动作摘要留待后续。代码构建/模组暂存不等于安装或重载，已安装配置不在本次修改范围内。

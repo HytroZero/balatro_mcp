@@ -1,4 +1,3 @@
-import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
@@ -6,7 +5,8 @@ import { errorEnvelope, type Backend } from '../env/contract.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { Trace } from '../model/trace.ts';
 import { registerGameTools } from '../tools/index.ts';
-import { projectRoot, type Options } from './config.ts';
+import { toolGuide } from '../tools/guide.ts';
+import type { Options } from './config.ts';
 import { loadGameplayContext, registerGameplayResources } from './context.ts';
 import { nextId } from './ids.ts';
 
@@ -60,7 +60,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
   server.registerResource('gameplay-guide', 'balatro://guide', {
     title: 'Tool and state guide', mimeType: 'text/markdown',
     description: 'The field contract of this server: every state key, how to merge game_action results, worked examples, and recovery after timeouts and uncertain outcomes. Starts with installation notes for people.',
-  }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: await readFile(resolve(projectRoot, 'docs/tool-guide.md'), 'utf8') }] }));
+  }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: toolGuide }] }));
   registerGameplayResources(server, context);
   return { server, async close() { await pending; await server.close(); await backend.close(); await trace.flush().catch(() => {}); } };
 }

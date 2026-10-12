@@ -5,8 +5,9 @@ permissions:
 jobs:
   test:
     strategy:
+      fail-fast: false
       matrix:
-        os: [ubuntu-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
@@ -19,3 +20,11 @@ jobs:
       - run: npm test
       - run: npm run stage-mod
       - run: npm run release:check
+  lua:
+    # The mod runs under Balatro's LuaJIT; its Lua code has no platform-specific paths.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update && sudo apt-get install -y luajit
+      - run: luajit tests/observation.test.lua
+      - run: luajit tests/decision.test.lua

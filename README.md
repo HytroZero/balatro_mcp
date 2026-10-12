@@ -197,7 +197,7 @@ error message.
 
 - [Windows setup and troubleshooting](docs/windows.md)
 - [macOS setup and troubleshooting](docs/macos.md)
-- [Tools and gameplay workflow](docs/tool-guide.md)
+- [Tools and gameplay workflow](tools/guide.ts) (served as `balatro://guide`)
 - [Observation field design and staged implementation](docs/game-observation-design.md)
 - [Game rules and strategy context](docs/context.md)
 - [Gameplay skills](skills/README.md)

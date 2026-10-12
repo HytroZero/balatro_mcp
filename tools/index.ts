@@ -3,6 +3,7 @@ import { Type, type Static, type TSchema } from 'typebox';
 import { ActionSchema, StartGameSchema, BackendError, errorEnvelope, type Action, type Backend, type Observation, type RequestContext } from '../env/contract.ts';
 import { compactActionObservation, compactDeckObservation, compactObservation, shortRevision, ObservationResultSchema, FullObservationResultSchema } from '../env/compact.ts';
 import type { Trace } from '../model/trace.ts';
+import { phaseViewSentence } from './guide.ts';
 
 type ToolValue = { value: unknown; observation?: Observation };
 type Sequential = <T>(operation: () => Promise<T>) => Promise<T>;
@@ -46,7 +47,7 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
         if (name === 'game_action' || name === 'game_start') delivered = undefined;
         compact = details = errorEnvelope(error);
       }
-      const encoded = JSON.stringify(trace.sanitize(compact));
+      const encoded = trace.encode(compact);
       const result: CallToolResult = { content: [{ type: 'text', text: encoded }], isError, structuredContent: JSON.parse(encoded) };
       // Internal preflight reads never establish the caller's baseline.
       if (observation) { delivered = structuredClone(observation); issued = observation.revision; }
@@ -56,7 +57,7 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
     }));
   }
   const empty = Type.Object({}, { additionalProperties: false });
-  tool('game_observe','Read the whole current state (full:true) with rev, phase and actions. state is flat. Run keys: setup, ante (the Ante that owns blinds), roundNo, money, credit (only when non-zero), handSize, jokerSlots, consumableSlots, hands ("<chips>x<mult>[ LvN][ played N]"), jokers, consumables, vouchers, tags (held), blind (current or next role: Small, Big or Boss) and blinds (role -> target, Boss rules and "skip: <Tag> (<effect>)"). Phase views exist only in their phases: hand and deck (SELECTING_HAND, PACK), round (SELECTING_HAND), cashOut (ROUND_EVAL), shop (SHOP, PACK), pack (PACK), profiles (MENU, GAME_OVER), runResult (GAME_OVER). Items read "<i>: <Name> [tags]: <effect>", where <i> is the zero-based index actions take. "?" means unknown. actions lists the phase methods with limits such as "play 1-5" or "reroll $5"; use, sell and rearrange are not listed but work whenever their area is non-empty. The game only rejects illegal actions, so check prices against money and slots yourself. Details: balatro://guide.',empty,async (_params,context) => observed(await backend.observe(context)));
+  tool('game_observe','Read the whole current state (full:true) with rev, phase and actions. state is flat. Run keys: setup, ante (the Ante that owns blinds), roundNo, money, credit (only when non-zero), handSize, jokerSlots, consumableSlots, hands ("<chips>x<mult>[ LvN][ played N]"), jokers, consumables, vouchers, tags (held), blind (current or next role: Small, Big or Boss) and blinds (role -> target, Boss rules and "skip: <Tag> (<effect>)"). Phase views exist only in their phases: ' + phaseViewSentence() + '. Items read "<i>: <Name> [tags]: <effect>", where <i> is the zero-based index actions take. "?" means unknown. actions lists the phase methods with limits such as "play 1-5" or "reroll $5"; use, sell and rearrange are not listed but work whenever their area is non-empty. The game only rejects illegal actions, so check prices against money and slots yourself. Details: balatro://guide.',empty,async (_params,context) => observed(await backend.observe(context)));
   tool('deck_observe','Read the cards left to draw as "<count>x <card> [attributes]" lines. There is no draw order and no index, so these lines cannot target actions. remainingCards is the draw-pile size. previewCards counts the in-game deck view, which also includes face-down cards held in hand; uncertainCards is how many of those there are, without saying which. Actions do not update this view; call it again when needed. If its rev differs from your latest game result, call game_observe before acting.',empty,async (_params,context) => {
     return { value: compactDeckObservation(await backend.observeDeck(context)) };
   });

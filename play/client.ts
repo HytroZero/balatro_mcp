@@ -79,14 +79,20 @@ export class ForgeBridgeBackend implements Backend {
     this.instanceId = health.instanceId;
     this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
   }
+  /** Health runs once per bridge instance; a revision from another instance means the mod restarted. */
+  private async ensureIdentity(context: RequestContext,revision?: unknown): Promise<void> {
+    if (!this.instanceId || typeof revision === 'string' && !revision.startsWith(this.instanceId + ':')) await this.identity(context);
+  }
   private observation(value: unknown): Observation {
     if (!Check(ObservationSchema,value) || value.gameVersion !== this.gameVersion || !value.revision.startsWith(this.instanceId + ':') || typeof value.state.state !== 'string') throw new BackendError('backend_failure','Invalid bridge observation contract.');
     return {...value,state:playerState(value.state)};
   }
   async observe(request?: RequestContext): Promise<Observation> {
     const context = this.context(request);
-    await this.identity(context);
-    const observation = this.observation(await this.rpc('sf.observe',{},false,context));
+    await this.ensureIdentity(context);
+    const raw = await this.rpc('sf.observe',{},false,context);
+    await this.ensureIdentity(context,record(raw).revision);
+    const observation = this.observation(raw);
     if (this.uncertain && !this.busy && this.lastActionId) {
       try {
         const operation = await this.inspectOperation(undefined,context);
@@ -101,9 +107,10 @@ export class ForgeBridgeBackend implements Backend {
   }
   async observeDeck(request?: RequestContext): Promise<DeckObservation> {
     const context = this.context(request);
-    await this.identity(context);
+    await this.ensureIdentity(context);
     if (!this.deckObserveSupported) throw new BackendError('incompatible_backend','The installed mod does not support deck_observe. Update the balatro_mcp_mod mod and restart Balatro.');
     const value = await this.rpc('sf.deck_observe',{},false,context);
+    await this.ensureIdentity(context,record(value).revision);
     if (!Check(DeckObservationSchema,value) || !value.revision.startsWith(this.instanceId + ':') || value.cards.reduce((sum,card) => sum + card.count,0) !== value.previewCards ||
       value.uncertainCards > value.previewCards || value.remainingCards > value.previewCards) throw new BackendError('backend_failure','Invalid bridge deck observation contract.');
     return value;

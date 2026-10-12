@@ -69,7 +69,8 @@ export async function archiveDistribution(destination: string): Promise<string> 
   const { stdout } = await exec('tar', ['--version']);
   const ownership = stdout.includes('bsdtar')
     ? ['--uid', '0', '--gid', '0', '--uname', 'root', '--gname', 'root', '--no-fflags']
-    : ['--owner=0', '--group=0', '--numeric-owner'];
+    // GNU tar reads "C:\..." as a remote host unless told the archive is local.
+    : ['--owner=0', '--group=0', '--numeric-owner', '--force-local'];
   const archive = destination + '.tar.gz';
   await exec('tar', ['--format=ustar', '--no-xattrs', '--no-acls', ...ownership,
     '-czf', archive, '-C', dirname(destination), basename(destination)],

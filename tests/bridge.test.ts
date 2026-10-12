@@ -219,7 +219,7 @@ test('a caller deadline is shared across observation and action instead of reset
     setTimeout(() => result(res,req,req.method === 'sf.health' ? health : observation()),40);
   });
   try {
-    const client = new ForgeBridgeBackend(mock.endpoint,1000), context = {deadline:performance.now() + 140};
+    const client = new ForgeBridgeBackend(mock.endpoint,1000), context = {deadline:performance.now() + 100};
     const before = await client.observe(context);
     await assert.rejects(client.act(action,before.revision,context), e => e instanceof BackendError && e.code === 'timeout' && e.applied === false);
     assert.equal(mock.requests.some(req => req.method === 'sf.act'),false);
@@ -249,5 +249,20 @@ test('an immediate action uses one preflight snapshot and one dispatch', async (
   try {
     await new ForgeBridgeBackend(mock.endpoint,1000).act(action,'instance-a:1');
     assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe','sf.act']);
+  } finally { await mock.close(); }
+});
+
+test('health runs once per bridge instance; later reads and actions skip it until the instance changes', async () => {
+  let instance = 'instance-a', counter = 1;
+  const mock = await server((req,res) => result(res,req,req.method === 'sf.health' ? {...health,instanceId:instance} : req.method === 'sf.observe' ? observation(instance + ':' + counter)
+    : {actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:observation(instance + ':' + ++counter)}));
+  try {
+    const client = new ForgeBridgeBackend(mock.endpoint,1000);
+    await client.act(action,(await client.observe()).revision);
+    await client.act(action,'instance-a:2');
+    assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe','sf.observe','sf.act','sf.observe','sf.act']);
+    mock.requests.length = 0; instance = 'instance-b';
+    assert.equal((await client.observe()).revision,'instance-b:3');
+    assert.deepEqual(mock.requests.map(req => req.method),['sf.observe','sf.health']);
   } finally { await mock.close(); }
 });

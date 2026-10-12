@@ -19,7 +19,7 @@ const snapshot = (revision = 1, state = 'MENU') => ({ contract: 1, backend: 'bal
 async function harness(extra: string[] = [], timeoutMs = 1000) {
   const root = await mkdtemp(resolve(tmpdir(), 'balatro-mcp-'));
   let current = snapshot(), mutations = 0, requests = 0, loseResponse = false;
-  let healthGate: Promise<void> | undefined, enteredHealth: (() => void) | undefined, preflightDelay = 0;
+  let observeGate: Promise<void> | undefined, enteredObserve: (() => void) | undefined, preflightDelay = 0;
   const operations = new Map<string, Data>();
   const rpc = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
@@ -28,11 +28,11 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
     if (preflightDelay && ['sf.health','sf.observe'].includes(String(request.method))) await new Promise(resolve => setTimeout(resolve,preflightDelay));
     let value: unknown;
     switch (request.method) {
-      case 'sf.health': {
-        if (healthGate) { const gate = healthGate; healthGate = undefined; enteredHealth?.(); await gate; }
-        value = health; break;
+      case 'sf.health': value = health; break;
+      case 'sf.observe': {
+        if (observeGate) { const gate = observeGate; observeGate = undefined; enteredObserve?.(); await gate; }
+        value = current; break;
       }
-      case 'sf.observe': value = current; break;
       case 'sf.deck_observe': value = { revision: current.revision, runId: current.runId, remainingCards: 2, previewCards: 2, uncertainCards: 0,
         cards: [{ rank: 'Ace', suit: 'Spades', enhancement: 'c_base', count: 2 }] }; break;
       case 'sf.act': {
@@ -64,10 +64,10 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
   }
   return { root, client, call, get mutations() { return mutations; }, get requests() { return requests; },
     delayPreflights(ms: number) { preflightDelay = ms; },
-    holdNextHealth() {
+    holdNextObserve() {
       let release!: () => void;
-      healthGate = new Promise<void>(resolve => { release = resolve; });
-      const entered = new Promise<void>(resolve => { enteredHealth = resolve; });
+      observeGate = new Promise<void>(resolve => { release = resolve; });
+      const entered = new Promise<void>(resolve => { enteredObserve = resolve; });
       return {entered,release};
     },
     loseResponse() { loseResponse = true; },
@@ -220,7 +220,7 @@ test('lost action reply remains uncertain and operation inspection never replays
 test('stdio cancellation during preflight reaches the backend and prevents dispatch', async () => {
   const h = await harness();
   const observed = record(record((await h.call('game_observe')).structuredContent).value);
-  const gate = h.holdNextHealth();
+  const gate = h.holdNextObserve();
   try {
     const controller = new AbortController();
     const pending = h.client.callTool({name:'game_action',arguments:{revision:observed.rev,action:{method:'start',deck:'RED',stake:'WHITE'}}},{signal:controller.signal});
