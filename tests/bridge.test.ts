@@ -105,18 +105,21 @@ test('pending operation obeys one overall deadline and never repeats mutation',a
 });
 test('observation verifies a late correlated completion before allowing a fresh action',async () => {
   let mutations=0, completed=false, id='';
+  const controller=new AbortController();
   const mock=await server((req,res)=>{
     if(req.method==='sf.health') result(res,req,health);
     else if(req.method==='sf.observe') result(res,req,observation(completed?'instance-a:2':'instance-a:1',completed?'BLIND_SELECT':'MENU'));
     else {
       if(req.method==='sf.act') {mutations++; id=String((req.params as Data).actionId);}
+      // Cancel only after the client has received the pending action and started polling.
+      if(req.method==='sf.operation' && !completed) {controller.abort(); return;}
       result(res,req,{actionId:id,status:completed?'completed':'pending',applied:true,
         ...(completed?{observation:observation('instance-a:2','BLIND_SELECT')}:{})});
     }
   });
   try {
-    const client=new ForgeBridgeBackend(mock.endpoint,100);
-    await assert.rejects(client.act(action,(await client.observe()).revision),error => error instanceof BackendError && error.code==='uncertain_outcome');
+    const client=new ForgeBridgeBackend(mock.endpoint,1000);
+    await assert.rejects(client.act(action,(await client.observe()).revision,{signal:controller.signal}),error => error instanceof BackendError && error.code==='uncertain_outcome' && error.applied===true);
     assert.equal(mutations,1);
     completed=true; const fresh=await client.observe();
     await assert.rejects(client.act(action,'instance-a:1'),/State changed/);
