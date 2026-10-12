@@ -3,9 +3,19 @@ local json = assert(loadfile('play/mod/json.lua'))()
 local english = arg[1] and assert(loadfile(arg[1]))() or {descriptions={
   Joker={j_popcorn={name='Popcorn',text={'+#1# Mult','Loses #2# Mult per round'}},j_smiley={name='Smiley Face',text={'Scored face cards give +#1# Mult'}},
     j_jolly={name='Jolly Joker',text={'+#1# Mult if played','hand contains','a #2#'}},j_bull={name='Bull',text={'+#1# Chips for','each $1 you have','(Currently +#2# Chips)'}},
-    j_todo_list={name='To Do List',text={'Earn $#1# if poker hand','is a #2#'}}},
+    j_todo_list={name='To Do List',text={'Earn $#1# if poker hand','is a #2#'}},
+    j_runner={name='Runner',text={'Gains {C:chips}+#2#{} Chips','if played hand','contains a {C:attention}Straight{}','{C:inactive}(Currently {C:chips}+#1#{C:inactive} Chips)'}},
+    j_green_joker={name='Green Joker',text={'{C:mult}+#1#{} Mult per hand played','{C:mult}-#2#{} Mult per discard','{C:inactive}(Currently {C:mult}+#3#{C:inactive} Mult)'}},
+    j_idol={name='The Idol',text={'Each played {C:attention}#2#','of {V:1}#3#{} gives','{X:mult,C:white} X#1# {} Mult when scored','{s:0.8}Card changes every round'}},
+    j_faceless={name='Faceless Joker',text={'Earn {C:money}$#1#{} if {C:attention}#2#{} or','more {C:attention}face cards{}','are discarded','at the same time'}},
+    j_juggler={name='Juggler',text={'{C:attention}+#1#{} hand size'}},
+    j_misprint={name='Misprint',text={''}},
+    j_seance={name='Séance',text={'If {C:attention}poker hand{} is a','{C:attention}#1#{}, create a','random {C:spectral}Spectral{} card'}},
+    j_mail={name='Mail-In Rebate',text={'Earn {C:money}$#1#{} for each','discarded {C:attention}#2#{}, rank','changes every round'}}},
   Blind={bl_small={name='Small Blind',text={}},bl_head={name='The Head',text={'Hearts are debuffed'}}},
-  Tarot={c_heirophant={name='The Hierophant',text={'Enhance #1# cards to #2#'}}},
+  Tarot={c_heirophant={name='The Hierophant',text={'Enhance #1# cards to #2#'}},
+    c_temperance={name='Temperance',text={'Gives the total sell','value of all current','Jokers {C:inactive}(Max of {C:money}$#1#{C:inactive})','{C:inactive}(Currently {C:money}$#2#{C:inactive})'}},
+    c_moon={name='The Moon',text={'Converts up to','{C:attention}#1#{} selected cards','to {V:1}#2#{}'}}},
   Enhanced={m_bonus={name='Bonus Card',text={'+#1# Chips'}}},
   Voucher={v_clearance_sale={name='Clearance Sale',text={'Cards cost #1#% less'}}},
 }}
@@ -59,6 +69,24 @@ local _,bull,bullKnown=decision.card(card('j_bull','Joker',{name='Bull',set='Jok
 check(bullKnown and bull:find('+8 Chips',1,true),'Bull reads current money')
 local _,todo,todoKnown=decision.card(card('j_todo_list','Joker',{name='To Do List',set='Joker',extra={dollars=4,poker_hand='High Card'},to_do_poker_hand='Flush'}))
 check(todoKnown and todo:find('$4',1,true) and todo:find('Flush',1,true),'To Do List reads its own target hand')
+-- Values the game's tooltip computes (card.lua/generate_card_ui) must not render as '?'.
+G.GAME.current_round.idol_card={rank='Queen',suit='Hearts'}; G.GAME.current_round.mail_card={rank='7'}
+local function effectOf(key,set,a,config)
+  local c=card(key,set,a); c.config.center.config=config
+  local _,text,ok=decision.card(c)
+  check(ok and text and not text:find('?',1,true),key..' description resolves every value')
+  return text
+end
+check(effectOf('j_runner','Joker',{name='Runner',set='Joker',extra={chips=30,chip_mod=15}}):find('+15 Chips.*+30 Chips'),'Runner reads chips and chip_mod')
+check(effectOf('j_green_joker','Joker',{name='Green Joker',set='Joker',mult=4,extra={hand_add=1,discard_sub=1}}):find('-1 Mult per discard.*+4 Mult'),'Green Joker reads hand_add/discard_sub')
+check(effectOf('j_idol','Joker',{name='The Idol',set='Joker',extra=2}):find('Queen of Hearts',1,true),'The Idol reads the round card')
+check(effectOf('j_faceless','Joker',{name='Faceless Joker',set='Joker',extra={dollars=5,faces=3}}):find('$5 if 3 or more',1,true),'Faceless Joker reads dollars and faces')
+check(effectOf('j_juggler','Joker',{name='Juggler',set='Joker',h_size=1}):find('+1 hand size',1,true),'Juggler reads h_size')
+check(effectOf('j_misprint','Joker',{name='Misprint',set='Joker',extra={min=0,max=23}}):find('+0-23 Mult',1,true),'Misprint shows its range, not the deck')
+check(effectOf('j_seance','Joker',{name='Seance',set='Joker',extra={poker_hand='Straight Flush'}}):find('Straight Flush',1,true),'Seance reads its poker hand')
+check(effectOf('j_mail','Joker',{name='Mail-In Rebate',set='Joker',extra=5}):find('discarded 7',1,true),'Mail-In Rebate reads the round rank')
+check(effectOf('c_temperance','Tarot',{name='Temperance',set='Tarot'},{extra=50}):find('$50.*$2'),'Temperance sums Joker sell values')
+check(effectOf('c_moon','Tarot',{name='The Moon',set='Tarot'},{suit_conv='Clubs',max_highlighted=3}):find('3 selected cards to Clubs',1,true),'suit Tarots name the suit')
 local _,_,unknown=decision.card(card('j_popcorn','Joker',{name='Popcorn',set='Joker',extra=4}))
 check(not unknown,'missing dynamic values are explicit, not fabricated')
 local _,_,modded=decision.card(card('j_unknown','Joker',{name='Unknown',set='Joker',extra=5}))

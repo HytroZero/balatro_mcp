@@ -41,84 +41,155 @@ return function(json, english)
     for _, line in ipairs(value) do if type(line) == 'string' then lines[#lines+1] = line end end
     return lines, true
   end
-  local function pokerName(hand)
-    if type(hand) ~= 'string' then return '?' end
-    if english then return hand end
+  -- English text for misc tables (poker_hands, ranks, suits_plural, suits_singular, v_dictionary).
+  local singular = {Clubs='Club',Diamonds='Diamond',Hearts='Heart',Spades='Spade'}
+  local function misc(group, key)
+    if type(key) ~= 'string' then return '?' end
+    local entries = english and english.misc and english.misc[group]
+    if entries and type(entries[key]) == 'string' then return entries[key] end
+    if english then return group == 'suits_singular' and singular[key] or key end
     if type(localize) == 'function' then
-      local ok, value = pcall(localize, hand, 'poker_hands')
+      local ok, value = pcall(localize, key, group)
       if ok and type(value) == 'string' then return value end
     end
-    return hand
+    return key
   end
-  -- Display bindings read visible ability values. Unknown bindings remain '?';
+  local function pokerName(hand) return misc('poker_hands', hand) end
+  local function dictionary(key, fallback)
+    local entries = english and english.misc and english.misc.v_dictionary
+    return entries and type(entries[key]) == 'string' and entries[key] or fallback
+  end
+  local function probability() return G.GAME and G.GAME.probabilities and G.GAME.probabilities.normal or 1 end
+  local function product(a, b) return type(a) == 'number' and type(b) == 'number' and a * b or nil end
+  local function plus(a, b) return type(a) == 'number' and a + b or nil end
+  local function current(key) local round = G.GAME and G.GAME.current_round; return round and round[key] or {} end
+  -- Display values follow Card:generate_UIBox_ability_table in card.lua. Read-only:
   -- never run tooltip constructors (Misprint's UI can inspect hidden deck cards).
-  local bindings = {}
-  local function bind(names, fields)
-    for value in names:gmatch('[^|]+') do bindings[value] = fields end
-  end
-  bind('Joker|Swashbuckler', {'mult'})
-  bind('Popcorn', {'mult','extra'})
-  bind('Green Joker|Red Card|Ride the Bus|Flash Card', {'extra','mult'})
-  bind('Hologram|Vampire|Madness|Obelisk|Lucky Cat|Campfire|Throwback', {'extra','x_mult'})
-  bind('Ramen', {'x_mult','extra'})
-  bind('Jolly Joker|Zany Joker|Mad Joker|Crazy Joker|Droll Joker', {'t_mult','type'})
-  bind('Sly Joker|Wily Joker|Clever Joker|Devious Joker|Crafty Joker', {'t_chips','type'})
-  bind('Greedy Joker|Lusty Joker|Wrathful Joker|Gluttonous Joker', {'extra.s_mult','extra.suit'})
-  bind('Mystic Summit', {'extra.mult','extra.d_remaining'})
-  bind('Scholar', {'extra.mult','extra.chips'})
-  bind('Walkie Talkie', {'extra.chips','extra.mult'})
-  bind('Square Joker|Wee Joker', {'extra.chips','extra.chip_mod'})
-  bind('Ice Cream', {'extra.chips','extra.chip_mod'})
-  bind('Rocket', {'extra.dollars','extra.increase'})
-  bind('Turtle Bean', {'extra.h_size','extra.h_mod'})
-  bind('Stuntman', {'extra.chip_mod','extra.h_size'})
-  bind('Gros Michel', {'extra.mult','@probability','extra.odds'})
-  bind('Cavendish', {'extra.Xmult','@probability','extra.odds'})
-  bind('Bloodstone', {'@probability','extra.odds','extra.Xmult'})
-  bind('Reserved Parking', {'extra.dollars','@probability','extra.odds'})
-  bind('Space Joker|Business Card|8 Ball|Hallucination', {'@probability','extra'})
-  bind('Invisible Joker', {'extra','invis_rounds'})
-  bind("Driver's License", {'extra','driver_tally'})
-  bind('Caino', {'extra','caino_xmult'})
-  bind('Yorick', {'extra.xmult','extra.discards','yorick_discards','x_mult'})
-  bind('Card Sharp', {'extra.Xmult'})
-  bind('Glass Joker', {'extra','x_mult'})
-  bind('The Duo|The Trio|The Family|The Order|The Tribe', {'x_mult','type'})
-  bind('Misprint', {'extra.min','extra.max'})
-  local function field(raw, path)
-    if path == '@probability' then return G.GAME and G.GAME.probabilities and G.GAME.probabilities.normal end
-    for key in path:gmatch('[^.]+') do raw = type(raw) == 'table' and raw[key] or nil end
-    return raw
+  local jokers = {}
+  local function joker(names, vars) for value in names:gmatch('[^|]+') do jokers[value] = vars end end
+  local function extra(a) return {a.extra} end
+  local function chips(a) local e = a.extra or {}; return {e.chips, e.chip_mod} end
+  joker('Joker|Ceremonial Dagger|Swashbuckler', function(a) return {a.mult} end)
+  joker('Jolly Joker|Zany Joker|Mad Joker|Crazy Joker|Droll Joker', function(a) return {a.t_mult, pokerName(a.type)} end)
+  joker('Sly Joker|Wily Joker|Clever Joker|Devious Joker|Crafty Joker', function(a) return {a.t_chips, pokerName(a.type)} end)
+  joker('The Duo|The Trio|The Family|The Order|The Tribe', function(a) return {a.x_mult, pokerName(a.type)} end)
+  joker('Greedy Joker|Lusty Joker|Wrathful Joker|Gluttonous Joker', function(a) local e = a.extra or {}; return {e.s_mult, misc('suits_singular', e.suit)} end)
+  joker('Chaos the Clown|Credit Card|Golden Joker|Banner|Fibonacci|Scary Face|Delayed Gratification|Even Steven|Odd Todd|Superposition|Egg|Burglar|DNA|Hiker|Astronomer|Golden Ticket|Acrobat|Certificate|Hanging Chad|Rough Gem|Arrowhead|Onyx Agate|Flower Pot|Seeing Double|Matador|Riff-raff|Vagabond|Baron|Photograph|Gift Card|To the Moon|Baseball Card|Trading Card|Seltzer|Smiley Face|Shoot the Moon|Triboulet|Perkeo', extra)
+  joker('Hack|Dusk|Sock and Buskin', function(a) return {plus(a.extra, 1)} end)
+  joker('Ride the Bus|Red Card|Flash Card', function(a) return {a.extra, a.mult} end)
+  joker('Constellation|Throwback|Glass Joker|Hit the Road|Madness|Vampire|Hologram|Obelisk|Lucky Cat|Campfire', function(a) return {a.extra, a.x_mult} end)
+  joker('Runner|Ice Cream|Wee Joker|Square Joker', chips)
+  joker('Half Joker', function(a) local e = a.extra or {}; return {e.mult, e.size} end)
+  joker('Fortune Teller', function(a) local total = G.GAME and G.GAME.consumeable_usage_total; return {a.extra, total and total.tarot or 0} end)
+  joker('Steel Joker', function(a) return {a.extra, plus(product(a.extra, a.steel_tally or 0), 1)} end)
+  joker('Stone Joker', function(a) return {a.extra, product(a.extra, a.stone_tally or 0)} end)
+  joker('Cloud 9', function(a) return {a.extra, product(a.extra, a.nine_tally or 0)} end)
+  joker('Space Joker|8 Ball|Business Card|Hallucination', function(a) return {probability(), a.extra} end)
+  joker('Drunkard', function(a) return {a.d_size} end)
+  joker('Juggler', function(a) return {a.h_size} end)
+  joker('Merry Andy', function(a) return {a.d_size, a.h_size} end)
+  joker('Troubadour', function(a) local e = a.extra or {}; return {e.h_size, type(e.h_plays) == 'number' and -e.h_plays or nil} end)
+  joker('Green Joker', function(a) local e = a.extra or {}; return {e.hand_add, e.discard_sub, a.mult} end)
+  joker('Blue Joker', function(a) return {a.extra, product(a.extra, G.deck and G.deck.cards and #G.deck.cards or 52)} end)
+  joker('Faceless Joker', function(a) local e = a.extra or {}; return {e.dollars, e.faces} end)
+  joker('Joker Stencil', function(a) return {a.x_mult} end)
+  joker('Mystic Summit', function(a) local e = a.extra or {}; return {e.mult, e.d_remaining} end)
+  joker('Loyalty Card', function(a)
+    local e, remaining = a.extra or {}, a.loyalty_remaining
+    local status = '?'
+    if remaining == 0 then status = dictionary('loyalty_active', 'Active!')
+    elseif type(remaining) == 'number' then status = dictionary('loyalty_inactive', '#1# remaining'):gsub('#1#', tostring(remaining)) end
+    return {e.Xmult, plus(e.every, 1), status}
+  end)
+  joker('Abstract Joker', function(a) return {a.extra, product(G.jokers and G.jokers.cards and #G.jokers.cards or 0, a.extra)} end)
+  joker('Gros Michel', function(a) local e = a.extra or {}; return {e.mult, probability(), e.odds} end)
+  joker('Cavendish', function(a) local e = a.extra or {}; return {e.Xmult, probability(), e.odds} end)
+  joker('Bloodstone', function(a) local e = a.extra or {}; return {probability(), e.odds, e.Xmult} end)
+  joker('Reserved Parking', function(a) local e = a.extra or {}; return {e.dollars, probability(), e.odds} end)
+  joker('Scholar', function(a) local e = a.extra or {}; return {e.mult, e.chips} end)
+  joker('Walkie Talkie', function(a) local e = a.extra or {}; return {e.chips, e.mult} end)
+  joker('Spare Trousers', function(a) return {a.extra, pokerName('Two Pair'), a.mult} end)
+  joker('Blackboard', function(a) return {a.extra, misc('suits_plural', 'Spades'), misc('suits_plural', 'Clubs')} end)
+  joker('To Do List', function(a) return {(a.extra or {}).dollars, pokerName(a.to_do_poker_hand)} end)
+  joker('Card Sharp', function(a) return {(a.extra or {}).Xmult} end)
+  joker('Seance', function(a) return {pokerName((a.extra or {}).poker_hand)} end)
+  joker('Rocket', function(a) local e = a.extra or {}; return {e.dollars, e.increase} end)
+  joker('Turtle Bean', function(a) local e = a.extra or {}; return {e.h_size, e.h_mod} end)
+  joker('Stuntman', function(a) local e = a.extra or {}; return {e.chip_mod, e.h_size} end)
+  joker('Popcorn', function(a) return {a.mult, a.extra} end)
+  joker('Ramen', function(a) return {a.x_mult, a.extra} end)
+  joker('Invisible Joker', function(a) return {a.extra, a.invis_rounds} end)
+  joker("Driver's License", function(a) return {a.extra, a.driver_tally or 0} end)
+  joker('Caino', function(a) return {a.extra, a.caino_xmult} end)
+  joker('Yorick', function(a) local e = a.extra or {}; return {e.xmult, e.discards, a.yorick_discards, a.x_mult} end)
+  joker('The Idol', function(a) local card = current('idol_card'); return {a.extra, misc('ranks', card.rank), misc('suits_plural', card.suit)} end)
+  joker('Mail-In Rebate', function(a) return {a.extra, misc('ranks', current('mail_card').rank)} end)
+  joker('Ancient Joker', function(a) return {a.extra, misc('suits_singular', current('ancient_card').suit)} end)
+  joker('Castle', function(a) local e = a.extra or {}; return {e.chip_mod, misc('suits_singular', current('castle_card').suit), e.chips} end)
+  joker('Erosion', function(a)
+    local start = G.GAME and G.GAME.starting_deck_size
+    local missing = type(start) == 'number' and G.playing_cards and start - #G.playing_cards or 0
+    return {a.extra, type(a.extra) == 'number' and math.max(0, a.extra * missing) or nil, start}
+  end)
+  joker('Bull', function(a) local money = G.GAME and G.GAME.dollars; return {a.extra, type(money) == 'number' and product(a.extra, math.max(0, money)) or nil} end)
+  joker('Bootstraps', function(a)
+    local e, money = a.extra or {}, G.GAME and G.GAME.dollars
+    local total = type(money) == 'number' and type(e.dollars) == 'number' and type(e.mult) == 'number' and e.mult * math.floor((money + (G.GAME.dollar_buffer or 0)) / e.dollars) or nil
+    return {e.mult, e.dollars, total}
+  end)
+  joker('Diet Cola', function() return {name('tag_double', 'Tag', 'Double Tag')} end)
+  joker('Satellite', function(a)
+    local usage = G.GAME and G.GAME.consumeable_usage
+    if type(usage) ~= 'table' then return {a.extra} end
+    local planets = 0
+    for _, used in pairs(usage) do if type(used) == 'table' and used.set == 'Planet' then planets = planets + 1 end end
+    return {a.extra, product(planets, a.extra)}
+  end)
+  -- Consumables and vouchers read the center config, as generate_card_ui does.
+  local function config(a, center, key)
+    local c = center.config
+    if type(c) == 'table' and c[key] ~= nil then return c[key] end
+    if type(a.consumeable) == 'table' and a.consumeable[key] ~= nil then return a.consumeable[key] end
+    return a[key]
   end
   function decision.card(card)
     local a, center = card.ability or {}, card.config and card.config.center or {}
     local key, set, vars = center.key, center.set or a.set, {}
+    local function c(path) return config(a, center, path) end
     if set == 'Joker' then
-      if bindings[a.name] then for i, path in ipairs(bindings[a.name]) do vars[i] = field(a,path) end
-      elseif type(a.extra) == 'number' then vars[1] = a.extra end
-      if a.name == 'Abstract Joker' then vars = {a.extra, G.jokers and G.jokers.cards and type(a.extra) == 'number' and #G.jokers.cards * a.extra or nil} end
-      if a.name == 'Spare Trousers' then vars = {a.extra,'Two Pair',a.mult} end
-      if a.name == 'To Do List' then vars = {field(a,'extra.dollars'), pokerName(a.to_do_poker_hand)} end
-      if a.name == 'Bull' then vars = {a.extra, type(a.extra) == 'number' and G.GAME and type(G.GAME.dollars) == 'number' and a.extra * math.max(0,G.GAME.dollars) or nil} end
-      if a.name == 'Satellite' and type(a.extra) == 'number' and G.GAME and type(G.GAME.consumeable_usage) == 'table' then
-        local planets = 0
-        for _, usage in pairs(G.GAME.consumeable_usage) do if type(usage) == 'table' and usage.set == 'Planet' then planets = planets + 1 end end
-        vars = {a.extra, planets * a.extra}
+      if a.name == 'Misprint' then
+        -- The game shows a cycling random number; the range is the visible information.
+        local e = a.extra or {}
+        local known = type(e.min) == 'number' and type(e.max) == 'number'
+        return name(key,set,a.name), ('+%s-%s Mult (random each hand)'):format(known and e.min or '?', known and e.max or '?'), known
       end
+      if jokers[a.name] then vars = jokers[a.name](a) end
     elseif set == 'Planet' then
-      local h = G.GAME and G.GAME.hands and G.GAME.hands[a.hand_type or center.config and center.config.hand_type] or {}
-      vars = {h.level,a.hand_type or center.config and center.config.hand_type,h.l_mult,h.l_chips}
+      local hand = c('hand_type')
+      local h = G.GAME and G.GAME.hands and G.GAME.hands[hand] or {}
+      vars = {h.level,pokerName(hand),h.l_mult,h.l_chips}
     elseif set == 'Tarot' then
-      vars = {a.consumeable and a.consumeable.max_highlighted or a.max_highlighted or a.planets or a.tarots or a.extra}
-      local enhancement = a.mod_conv or center.config and center.config.mod_conv
+      local enhancement, suit = c('mod_conv'), c('suit_conv')
+      vars = {c('max_highlighted') or c('planets') or c('tarots') or c('extra')}
       if enhancement then vars[2] = name(enhancement,'Enhanced',enhancement) end
-      if key == 'c_wheel_of_fortune' then vars = {field(a,'@probability'),a.extra} end
-      if key == 'c_fool' then local last = G.GAME.last_tarot_planet; local c = last and G.P_CENTERS[last]; vars = {c and name(last,c.set,c.name) or 'None'} end
+      if suit then vars[2] = misc('suits_plural', suit) end
+      if key == 'c_wheel_of_fortune' then vars = {probability(),c('extra')} end
+      if key == 'c_temperance' then
+        local money, cap = 0, c('extra')
+        for _, owned in ipairs(G.jokers and G.jokers.cards or {}) do
+          if owned.ability and owned.ability.set == 'Joker' and type(owned.sell_cost) == 'number' then money = money + owned.sell_cost end
+        end
+        vars = {cap, type(cap) == 'number' and math.min(cap, money) or nil}
+      end
+      if key == 'c_fool' then local last = G.GAME.last_tarot_planet; local p = last and G.P_CENTERS[last]; vars = {p and name(last,p.set,p.name) or 'None'} end
     elseif set == 'Spectral' then
-      vars = {type(a.extra) == 'number' and a.extra or nil}
-      if key == 'c_immolate' and type(a.extra) == 'table' then vars = {a.extra.destroy,a.extra.dollars} end
+      vars = {type(c('extra')) == 'number' and c('extra') or nil}
+      if key == 'c_immolate' and type(c('extra')) == 'table' then vars = {c('extra').destroy,c('extra').dollars} end
       if key == 'c_ectoplasm' then vars = {G.GAME.ecto_minus or 1} end
-    elseif set == 'Voucher' then vars = {a.extra}
+    elseif set == 'Voucher' then
+      vars = {c('extra')}
+      if key == 'v_tarot_merchant' or key == 'v_tarot_tycoon' or key == 'v_planet_merchant' or key == 'v_planet_tycoon' then vars = {c('extra_disp')} end
+      if (key == 'v_seed_money' or key == 'v_money_tree') and type(c('extra')) == 'number' then vars = {c('extra') / 5} end
     elseif set == 'Booster' then
       key, set = (key or ''):gsub('_%d+$',''), 'Other'
       vars = {center.config and center.config.choose,a.extra}
