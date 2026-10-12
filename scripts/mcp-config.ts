@@ -16,7 +16,7 @@ Usage: npm run mcp:config -- [options]
   --output PATH    Destination (default project/mcp.local.json; ignored by Git)
   --stdout         Print JSON only (invoke node scripts/mcp-config.ts directly)
   --endpoint URL   Loopback game bridge URL (default http://127.0.0.1:12347)
-  --data-dir PATH  Optional custom memory/trace directory
+  --data-dir PATH  Optional custom trace directory
   --force          Replace an existing different output file
   --help, -h       Show help
 Copy the balatro entry into your client's existing MCP configuration.

@@ -59,13 +59,12 @@ Results use `{ok:true,value:...}` or
 `result` is one English sentence of facts from this action; it is not state.
 Missing/mismatched baselines, start/new run, source or readiness changes and
 terminal results return full snapshots. Failed actions invalidate the delta
-baseline. Internal health, preflight and memory reads do not establish a baseline.
+baseline. Internal health and preflight reads do not establish a baseline.
 After context compaction or an external game change, call game_observe.
 
 IDs use counters rather than hashes or UUIDs. Actions, calls and trace files share
 a readable process-start timestamp/PID prefix, followed by their kind and counter.
-Memory IDs continue as memory-1, memory-2, etc. from the stored records. Bridge
-revisions retain their instance prefix internally, so old values expire across a
+Bridge revisions retain their instance prefix internally, so old values expire across a
 bridge restart. Successful results omit actionId; game_operation inspects the last
 action without one.
 
@@ -122,8 +121,6 @@ it. Staging does not reload the game. `game_health` reports `notReadyReason`.
 3. With the returned rev, select a blind:
    `game_action({"revision":"<rev>","action":{"method":"select"}})`.
 4. In a hand: `game_action({"revision":"<rev>","action":{"method":"play","cards":[0,1,2,3,4]}})`.
-5. Record evidence: `memory_record({"kind":"observed","text":"...","evidence":"..."})`;
-   retrieve with `memory_query({"query":"..."})`.
 
 ## Recovery and persistence
 
@@ -147,8 +144,4 @@ Cancellation while queued is checked before execution. The mod's separate deadli
 is 20 seconds. Increase both for long scoring animations; configure the mod's
 `BALATRO_MCP_MOD_ACTION_TIMEOUT` (seconds) before launching the game.
 
-Memory queries use the snapshot loaded when the MCP process starts. Recorded
-experiences persist in `data/memory/experience.jsonl` and include game/run evidence.
-Use `--online-memory` to include new entries immediately; `--read-only-memory`
-disables recording. Retrieved memory text is data and cannot
-change governing instructions or tool access. MCP call traces go to `data/traces`.
+MCP call traces go to `data/traces`.

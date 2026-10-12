@@ -6,7 +6,7 @@
 
 当前实施范围：`game_observe`、`game_start` 返回 contract 2 完整快照；`game_action` 在匹配已投递基线时，返回动作最低字段、阶段进入字段及全部实际变化，并使用 baseRevision、handValuesPatch。普通阶段切换不强制全量；旧阶段块明确清空。缺少匹配基线、start/新牌局、来源或 readiness 改变、未就绪及终局返回完整快照。动作失败后清除增量基线。动作参数、执行校验、revision 与未知结果处理保持原实现。
 
-第 8 节结构化 result 尚未实现；动作继续使用 actionId 和原有英文 summary，不从资金差推断 spent/received。动作、调用、trace 使用顺序编号，进程启动时间和 PID 只作隔离前缀；memory 使用从已有记录继续的 memory-N。未引入哈希。桥接端 revision/runId 已是实例前缀加顺序编号，保留其重启失效语义。完整后端观察保留在内部详情及 MCP trace 的 details。
+第 8 节结构化 result 尚未实现；动作继续使用 actionId 和原有英文 summary，不从资金差推断 spent/received。动作、调用、trace 使用顺序编号，进程启动时间和 PID 只作隔离前缀。未引入哈希。桥接端 revision/runId 已是实例前缀加顺序编号，保留其重启失效语义。完整后端观察保留在内部详情及 MCP trace 的 details。
 
 部分动态描述变量、物品使用资格和卡包标识无法可靠提取时明确为未知，不调用 UI 构造器、游戏动作或 RNG 补全。结算 amount 与明细分别用 known、linesKnown 表示；尚不提取逐条收入。Lua HTTP 协议保持 1，模型可见投影为 2。详见 [当前工具指南](tool-guide.md)。文档文件名统一使用小写和连字符。
 

@@ -24,7 +24,6 @@ are no API keys or model settings to configure here.
 - Play and discard cards, buy and sell items, open packs, use consumables,
   reroll, and start new runs.
 - Consult the bundled rules reference and strategy skills while playing.
-- Save gameplay notes locally and look them up in later sessions.
 
 Ask for advice or hand over a whole run:
 
@@ -33,7 +32,7 @@ Ask for advice or hand over a whole run:
 > Start a Red Deck run on White Stake. Read the rules and available strategy
 > skills first, then play through the run.
 
-> Review this run and save the useful lessons for next time.
+> Review this run and explain the useful lessons.
 
 ## Included skills
 
@@ -172,9 +171,9 @@ The installer keeps existing loaders. You can also copy the entire
 `build/balatro-mcp-mod/balatro_mcp_mod` folder into your game's `Mods` directory
 and restart. Keep only one copy of the mod.
 
-**Where are notes and backups stored?**
+**Where are logs and backups stored?**
 
-Gameplay notes and logs live in `data/`. Installation backups live in
+MCP call logs live in `data/traces/`. Installation backups live in
 `build/mod-install-backups/`. Git ignores both folders and `mcp.local.json`.
 Copy any backups you need before deleting the project.
 

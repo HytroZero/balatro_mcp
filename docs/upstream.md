@@ -15,14 +15,14 @@ machine paths are omitted from the public record.
 - `play/client.ts`, `env/`: bridge client, action schemas, observation filtering,
   compact state, and uncertain-action handling. JSON-RPC method names remain
   `sf.*` for compatibility.
-- `memory/store.ts`, `model/trace.ts`: memory snapshots, evidence attribution,
-  persistence, and trace sanitization. No model provider integration is enabled.
+- `model/trace.ts`: MCP call persistence and trace sanitization. No model provider
+  integration is enabled.
 - `model/prompt.ts`, `model/context/`, `skills/`: gameplay context, decision
   protocol, coaching skill, and attributed Wiki-derived reference material. The
   decision protocol and the coaching skill's execution sections are rewritten for
   this server's tools and observation v3.
-- `tools/index.ts`: game and memory tools. The upstream arbitrary file tools are
-  excluded; eight game/memory/diagnostic tools are registered in this server.
+- `tools/index.ts`: game tools. The upstream arbitrary file and memory tools are
+  excluded; six game/diagnostic tools are registered in this server.
 
 The `src/` MCP layer, macOS installation and launch support, client configuration
 generator, and distribution audit adapt these components for standalone use.
@@ -52,7 +52,7 @@ Lovely and Steamodded are downloaded separately by installers when needed.
 
 Automated tests cover real stdio MCP handshakes from a different working directory,
 HTTP mock bridge behavior, strict schemas, revision safety, no automatic action
-replay, memory policy, resource boundaries, macOS installation plans and rollback,
+replay, resource boundaries, macOS installation plans and rollback,
 local configuration generation, and source distribution boundaries.
 
 Historical read-only Apple Silicon validation on 2026-10-10 used Balatro
@@ -60,8 +60,8 @@ Historical read-only Apple Silicon validation on 2026-10-10 used Balatro
 `game_health`, `game_observe`, and `deck_observe` succeeded at the main menu;
 no new run or gameplay mutation was performed. The
 [sanitized capture](MACOS-LIVE-VALIDATION.json) predates mod renaming and removal
-of two file tools: its `strategy-forge` bridge identity and ten-tool count are
-historical, while the current mod is `balatro_mcp_mod` with eight MCP tools.
+of file and memory tools: its `strategy-forge` bridge identity and ten-tool count are
+historical, while the current mod is `balatro_mcp_mod` with six MCP tools.
 Instance IDs, revisions, and run IDs in that capture are placeholders.
 
 Intel has installation-plan tests; Windows installation and live gameplay actions
@@ -84,7 +84,7 @@ source/readiness changes and terminal outcomes use full snapshots.
 Action arguments, the Lua protocol 1 transport, revision checks, original game
 handlers and uncertain-operation gates remain unchanged. Structured action facts
 from the design document remain deferred. Operation/call/trace identifiers use
-process-scoped counters; persistent memory uses sequential record IDs. Full raw
+process-scoped counters. Full raw
 observations are retained in MCP trace details alongside the model projection.
 
 The Lua observer reads the game's English localization data without changing the

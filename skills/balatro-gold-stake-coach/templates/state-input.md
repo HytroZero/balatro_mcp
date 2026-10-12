@@ -16,7 +16,7 @@ Result: the result sentence, new rev, changed resources
 Next check: condition that would change the plan
 ```
 
-There is no file-writing tool; keep notes in your response. Use `memory_record` for persistent lessons only when recording is enabled and the evidence warrants it.
+There is no file-writing tool; keep notes in your response.
 
 ## Exact tool-call shapes
 

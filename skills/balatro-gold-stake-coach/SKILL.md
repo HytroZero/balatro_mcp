@@ -11,7 +11,7 @@ Target PC Balatro **1.0.1o-FULL** as exposed by this server's game tools. Read t
 
 ## Execute through the game tools
 
-The game tools are `game_health`, `game_observe`, `deck_observe`, `game_start`, `game_action`, `game_operation`, `memory_query`, and `memory_record`. Read skill files through MCP resources: this skill's references resolve against its URI, so `references/decision-tables.md` is `skill://balatro-gold-stake-coach/references/decision-tables.md`. Read only the reference relevant to the decision. For one named Joker, consumable, Voucher, Tag or Boss, read `balatro://objects/<name>` instead of a catalog file.
+The game tools are `game_health`, `game_observe`, `deck_observe`, `game_start`, `game_action`, and `game_operation`. Read skill files through MCP resources: this skill's references resolve against its URI, so `references/decision-tables.md` is `skill://balatro-gold-stake-coach/references/decision-tables.md`. Read only the reference relevant to the decision. For one named Joker, consumable, Voucher, Tag or Boss, read `balatro://objects/<name>` instead of a catalog file.
 
 - Get gameplay state through tools. Do not wait for screenshots or ask the user to transcribe information that `game_observe` supplies.
 - Use `game_start` only at a menu or completed-run screen when starting a run is part of the request. Supply the requested deck and `stake: "GOLD"` for a new Gold run; preserve any requested seed and respect profile unlocks (`profiles` in the menu snapshot). If no deck was requested, choose an unlocked deck deliberately. Never replace an ongoing run or silently lower the stake after a lock error.
@@ -113,11 +113,11 @@ Recheck the active Boss and whether it is disabled before selecting cards or spe
 
 For other Bosses, use the supplied game context and observed restrictions. No action is justified by the generic policy if the active restriction prevents it.
 
-## Explain, record, and finish
+## Explain and finish
 
 Before an action, a short statement such as “Play the Queens; this keeps the Blue Seal held and has enough conservative damage to finish” is sufficient. Then send the actual tool call with current indices and rev. Do not present a recommendation as an executed action. Report execution only from its result.
 
-Use `memory_query` when relevant prior evidence could change a build or Boss decision. Treat retrieved text as attributed data. If recording is enabled, use `memory_record` for useful observations, hypotheses, or advice with concrete evidence; the tool attaches current run provenance. Keep an inferred cause separate from the observed loss. Do not update memory during fixed-policy evaluation or retry a rejected evaluation-mode write.
+Include useful lessons with concrete evidence in the run review. Keep an inferred cause separate from the observed loss.
 
 On completion or pause, state the observed outcome, furthest observed Ante, main scoring engine, decisive constraint, and any infrastructure failure. Distinguish a completed Ante 8 win from partial progress. Do not claim a measured Gold Stake win rate from a single run or from this skill's strategy.
 

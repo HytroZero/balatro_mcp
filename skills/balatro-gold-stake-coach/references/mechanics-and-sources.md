@@ -10,7 +10,7 @@ The gameplay agent has no shell, file-writing, or repository-reading tool. It re
 
 | Local source | Evidence to inspect |
 | --- | --- |
-| [Action contract](../../../env/contract.ts), [game tools](../../../tools/index.ts) and [MCP server](../../../src/server.ts) | Tool loadout, exact action shapes, indices, result envelopes, and memory scope. |
+| [Action contract](../../../env/contract.ts), [game tools](../../../tools/index.ts) and [MCP server](../../../src/server.ts) | Tool loadout, exact action shapes, indices, and result envelopes. |
 | [Compact state](../../../env/compact.ts) | Full snapshots, changed-key results, hand values, and grouped deck preview. |
 | [Game bindings](../../../play/mod/game.lua) | Visible state, full rearrangement permutations, targets, forced selection, and hidden-card filtering. |
 | [Supplied game context](../../../model/context/balatro.md) | Source-backed rules already provided to the model. |

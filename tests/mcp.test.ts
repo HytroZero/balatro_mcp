@@ -89,9 +89,9 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.match(instructions, /balatro:\/\/skills/);
     assert.match(instructions, /balatro:\/\/rules/);
     assert.doesNotMatch(instructions, /## Phase policy/);
-    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'memory_query', 'memory_record', 'game_health', 'game_operation'].sort());
+    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'game_health', 'game_operation'].sort());
     for (const tool of tools) { assert.ok(tool.outputSchema); assert.ok(tool.annotations); assert.equal(tool.inputSchema.type, 'object'); }
-    for (const name of ['file_read', 'file_write']) {
+    for (const name of ['file_read', 'file_write', 'memory_query', 'memory_record']) {
       await assert.rejects(h.call(name, { path: 'notes.txt', content: 'removed' }), /not found/);
     }
     const action = tools.find(tool => tool.name === 'game_action')!;
@@ -102,6 +102,8 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     const guide = await h.client.readResource({ uri: 'balatro://guide' }); assert.match(String(record(guide.contents[0]).text), /uncertain_outcome/);
     const fullContext = await h.client.readResource({ uri:'balatro://context' });
     assert.ok(String(record(fullContext.contents[0]).text).includes((await readFile(resolve('model/context/balatro.md'),'utf8')).trim()));
+    assert.doesNotMatch(instructions + String(record(fullContext.contents[0]).text) + String(record(guide.contents[0]).text), /memory_query|memory_record/);
+    assert.deepEqual(await readdir(h.root), ['traces']);
     assert.equal(record((await h.call('game_health')).structuredContent).ok, true);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);
     assert.equal(observed.rev, '1');
@@ -160,7 +162,7 @@ test('internal reads never establish a delivered baseline; stale failures and de
   const h = await harness();
   try {
     h.externalChange();
-    await h.call('memory_query',{query:''}); // Internally observes revision 77.
+    await h.call('game_health'); // Diagnostics never establish an observation baseline.
     const first = await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}});
     const full = record(record(first.structuredContent).value);
     assert.equal(full.full,true);
@@ -184,22 +186,6 @@ test('internal reads never establish a delivered baseline; stale failures and de
     assert.equal(record(observed.state).setup,'RED deck, WHITE stake, seed TEST');
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
   } finally { await h.close(); }
-});
-
-test('stdio memory tools retain provenance and obey online and read-only policies', async () => {
-  for (const extra of [[], ['--online-memory'], ['--read-only-memory']]) {
-    const h = await harness(extra);
-    try {
-      await h.call('game_observe');
-      const recorded = await h.call('memory_record', { kind: 'observed', text: 'A pair scored 40', evidence: 'test run visible score' });
-      if (extra.includes('--read-only-memory')) { assert.equal(recorded.isError, true); continue; }
-      assert.equal(record(record(recorded.structuredContent).value).runId, 'test-run');
-      const stored = JSON.parse((await readFile(resolve(h.root, 'memory/experience.jsonl'), 'utf8')).trim());
-      assert.equal(stored.gameVersion, '1.0.1o'); assert.equal(stored.revision, 'mcp-test:1');
-      const queried = record((await h.call('memory_query', { query: 'pair' })).structuredContent).value;
-      assert.ok(Array.isArray(queried)); assert.equal(queried.length, extra.includes('--online-memory') ? 1 : 0);
-    } finally { await h.close(); }
-  }
 });
 
 test('lost action reply remains uncertain and operation inspection never replays the mutation', async () => {
@@ -249,7 +235,7 @@ test('MCP startup and guide access work with the game offline; game errors retai
     args: [resolve('dist/src/index.js'), '--data-dir', root, '--endpoint', 'http://127.0.0.1:1', '--timeout-ms', '50'], stderr: 'pipe' });
   try {
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 8);
+    assert.equal((await client.listTools()).tools.length, 6);
     const result = await client.callTool({ name: 'game_observe', arguments: {} });
     assert.equal(result.isError, true); assert.equal(record(result.structuredContent).code, 'backend_failure');
     assert.equal(record(result.structuredContent).applied, false);

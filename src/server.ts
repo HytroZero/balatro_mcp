@@ -4,7 +4,6 @@ import { McpServer, fromJsonSchema, type CallToolResult } from '@modelcontextpro
 import { z } from 'zod';
 import { BackendError, record, type Backend } from '../env/contract.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
-import { MemoryStore } from '../memory/store.ts';
 import { Trace } from '../model/trace.ts';
 import { createTools } from '../tools/index.ts';
 import { projectRoot, type Options } from './config.ts';
@@ -25,9 +24,8 @@ function failure(error: unknown): CallToolResult {
 /** A process owns one tool context; serialize calls and game mutations. */
 export async function createBalatroServer(options: Options, backend: Backend = new ForgeBridgeBackend(options.endpoint, options.timeoutMs)) {
   const context = await loadGameplayContext();
-  const memory = new MemoryStore(resolve(options.dataDir, 'memory'), options.readOnlyMemory, options.onlineMemory);
   const trace = new Trace(resolve(options.dataDir, 'traces', nextId('trace') + '.jsonl'));
-  await Promise.all([memory.init(), trace.init()]);
+  await trace.init();
   const server = new McpServer({ name: 'balatro-mcp-server', version: '0.1.0' }, {
     instructions: context.instructions,
   });
@@ -41,9 +39,9 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     try { await trace.write('mcp_tool', data); }
     catch { console.error('Balatro MCP: trace append failed; the tool result is still authoritative.'); }
   }
-  const tools = createTools(backend, memory, trace, () => {}, options.timeoutMs);
+  const tools = createTools(backend, trace, () => {}, options.timeoutMs);
   for (const tool of tools) {
-    const readOnly = ['game_observe', 'deck_observe', 'memory_query'].includes(tool.name);
+    const readOnly = ['game_observe', 'deck_observe'].includes(tool.name);
     server.registerTool(tool.name, {
       title: tool.name.replaceAll('_', ' '), description: tool.description,
       // SDK v2 accepts Standard Schema: preserve TypeBox's exact JSON Schema,
