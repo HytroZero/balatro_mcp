@@ -10,7 +10,7 @@ const exec = promisify(execFile);
 export type MacArch = 'arm64' | 'x86_64';
 export const lovelyVersion = 'v0.10.0';
 export const steamoddedVersion = '26.1002.0';
-const modFiles = ['balatro_mcp_mod.json', 'balatro_mcp_mod.lua', 'bridge.lua', 'decision.lua', 'game.lua', 'json.lua', 'transport.lua'];
+const modFiles = ['balatro_mcp_mod.json', 'balatro_mcp_mod.lua', 'bridge.lua', 'decision.lua', 'game.lua', 'json.lua', 'scoring.lua', 'transport.lua'];
 
 export interface MacOptions {
   gameDirectory?: string;

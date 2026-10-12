@@ -129,6 +129,17 @@ test('consumables and hand still patch elements while membership and order are u
     assert.deepEqual(delta.state?.hand, { 0: '0: AH [selected]' });
 });
 
+test('plays are a SELECTING_HAND view that replaces whole and is dropped with the phase', () => {
+    const lines = ['0 1: Pair 120', '0: High Card 16 random'];
+    const playing = observation({ plays: lines });
+    const full = compactObservation(playing);
+    assert.ok(Check(FullObservationSchema, full));
+    assert.deepEqual(full.state.plays, lines);
+    const discarded = at(playing, 'i:8', { round: { chips: 0, hands_left: 4, discards_left: 2, handHistoryKnown: true, handTypeCounts: {} }, plays: ['0: High Card 16'] });
+    assert.deepEqual(checkDelta(playing, discarded, { method: 'discard', cards: [0] }).state?.plays, ['0: High Card 16']);
+    const shop = at(playing, 'i:9', { state: 'SHOP' }, { availableMethods: ['next_round'] });
+    assert.equal('plays' in compactObservation(shop).state, false);
+});
 test('seeds are hidden in every ongoing phase and revealed only in terminal snapshots', () => {
     const secret = 'SEED_ONLY_AFTER_RUN';
     for (const state of ['MENU', 'BLIND_SELECT', 'SELECTING_HAND', 'ROUND_EVAL', 'SHOP', 'PACK', 'ANIMATING']) {

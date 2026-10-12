@@ -106,7 +106,7 @@ try {
     if ((Split-Path -Leaf $ModsDirectory) -ne 'Mods') { throw 'ModsDirectory must end with a Mods folder.' }
     $profileDirectory = Split-Path -Parent $ModsDirectory
     $source = Join-Path $projectRoot 'play\mod'
-    foreach ($file in @('balatro_mcp_mod.json', 'balatro_mcp_mod.lua', 'bridge.lua', 'decision.lua', 'game.lua', 'json.lua', 'transport.lua')) {
+    foreach ($file in @('balatro_mcp_mod.json', 'balatro_mcp_mod.lua', 'bridge.lua', 'decision.lua', 'game.lua', 'json.lua', 'scoring.lua', 'transport.lua')) {
         if (-not (Test-Path -LiteralPath (Join-Path $source $file) -PathType Leaf)) { throw "Missing mod source: $file" }
     }
     $existingSteamodded = @()

@@ -10,7 +10,9 @@ local port = tonumber(os.getenv('BALATRO_MCP_MOD_PORT') or '12347')
 assert(port and port % 1 == 0 and port >= 1024 and port <= 65535, 'Invalid BALATRO_MCP_MOD_PORT')
 local action_timeout = tonumber(os.getenv('BALATRO_MCP_MOD_ACTION_TIMEOUT') or '20')
 assert(action_timeout and action_timeout >= 1 and action_timeout <= 600, 'Invalid BALATRO_MCP_MOD_ACTION_TIMEOUT')
-local bridge = load('bridge.lua')(json, game, clock, instance, action_timeout)
+-- Shadow scoring of the current hand runs inside one frame; bound its time.
+local scoring = load('scoring.lua')(json, clock, 0.1)
+local bridge = load('bridge.lua')(json, game, clock, instance, action_timeout, scoring)
 local transport = load('transport.lua')(socket, json, bridge.dispatch, clock, port)
 BALATRO_MCP_MOD_BRIDGE = {bridge=bridge,transport=transport}
 local original_update, original_quit = love.update, love.quit

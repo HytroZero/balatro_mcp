@@ -200,3 +200,61 @@ Executed checks:
 All checks were offline. The server is rebuilt and the mod staged, but the mod
 was not installed and the running game was not restarted or controlled. Install
 the updated staged mod, restart Balatro and reconnect MCP to load this change.
+
+## Experimental shadow scoring of hand selections (`plays`) — 2026-10-13
+
+New `play/mod/scoring.lua` runs the game's own `G.FUNCS.evaluate_play` on every
+1–5 card selection of the visible hand (forced cards included), with presentation,
+profile, money and RNG functions stubbed, and restores every touched value after
+each selection: `G.GAME` data, the Blind and Back objects, hand/Joker/consumable
+cards (top-level fields plus `ability`, `base`, `edition`), scoring globals and
+Steamodded scoring state. `hands_left` is spent first and `SMODS.last_hand` is
+cleared so the last real hand is untouched. Random checks all fail and the line
+is marked `random`; Boss-rejected hands show `0 not allowed`; any face-down hand
+card or Joker gives `unavailable: face-down cards`; a 100 ms budget marks
+`truncated`. The bridge attaches `plays` after the fingerprint (no revision
+change), caches it per fingerprint, and poisons itself if the fingerprint changes
+across scoring. `plays` is a SELECTING_HAND phase view (best line per poker hand,
+at most 5). Installers copy `scoring.lua`; guide and `skills/core.md` describe it.
+
+Executed checks:
+
+- `luajit tests/scoring.test.lua` — 21 checks passed (mock evaluate_play with
+  scaling Joker, final-hand Joker, held-card Mult, random card, Boss rejection,
+  forced card, face-down guards, failure containment, budget truncation, bridge
+  caching and leak poisoning).
+- `luajit tests/observation.test.lua` (88) and `tests/decision.test.lua` (38) — passed.
+- `npm run check` and `npm test` — 74 passed, 2 skipped (platform), zero failures;
+  includes the new `plays` projection/delta test.
+- One-off script (not committed) in the `strategy_forge` headless original
+  1.0.1o Lua (vanilla, no Steamodded): RED/WHITE seed SCORE1 with Joker, Green
+  Joker, Acrobat, Baron, Lusty Joker and Scary Face added; target raised so four
+  hands were played. Each time the top `plays` line was played: predicted score
+  equalled the actual chip gain 4 of 4 (including Green Joker growth and Acrobat
+  on the final hand); the state, deck and `G.GAME.pseudorandom` fingerprint was
+  identical before and after scoring; about 26 ms per 8-card hand.
+- `npm run stage-mod`, `npm run release:check` and
+  `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+The live Steamodded game was not exercised: the mod was staged but not
+installed, and Balatro was not restarted. Steamodded's rewritten evaluate_play
+path, its timing and the fingerprint check remain to be verified in the live game.
+
+## game_analyze design proposal — 2026-10-13
+
+Added `docs/game-analyze-design.md` as an independent proposal for an on-demand,
+read-only analysis tool. It specifies the MCP contract, revision and observation
+baseline boundaries, public snapshots, score quality, staged play/draw/build
+analysis, budgets, cancellation, integration points and implementation acceptance
+criteria. No gameplay implementation was changed for this proposal.
+
+Executed documentation checks:
+
+- Reviewed the proposal against the current tool, backend and Lua bridge source.
+- A standalone Node documentation check passed: section numbering, balanced code
+  fences, the JSON example and absence of trailing whitespace.
+- Manually checked the synthetic Pair example: `(10 + 2 + 2) * 2 = 28`.
+
+No implementation tests, game actions, mod staging, installation or restarts were
+performed for this documentation-only change. Proposed performance budgets and
+scoring capabilities have not been validated by this work.

@@ -80,7 +80,7 @@ export interface DeckObservation {
 export function playerState(raw: Data): Data {
   const state: Data = {};
   for (const key of ['state','round_num','ante_num','money','won','deck','stake','seed','used_vouchers','hands','round','blinds','blind','currentBlind','creditLimit','remainingCards','packChoices','tags','profileOptions',
-    'totalCards','routeAnte','completedRound','cashOut','controls','redeemedVouchers','packKey','packName','packReturnPhase']) {
+    'totalCards','routeAnte','completedRound','cashOut','controls','redeemedVouchers','packKey','packName','packReturnPhase','plays']) {
     if (raw[key] !== undefined) state[key] = structuredClone(raw[key]);
   }
   for (const name of ['hand','jokers','consumables','shop','vouchers','packs','pack']) {

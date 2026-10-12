@@ -4,6 +4,7 @@ import { phaseViews } from '../env/compact.ts';
 export const phaseViewRows: readonly { keys: readonly string[]; content: string }[] = [
   { keys: ['hand', 'deck'], content: 'card lines; `"44/52"` = draw pile / deck size' },
   { keys: ['round'], content: '`{score,target,hands,discards}`, plus `played` (this round\'s hand counts, or `"?"`)' },
+  { keys: ['plays'], content: 'experimental; up to 5 lines `"0 2 3 5 6: Flush 1240"`: hand indices to play, poker hand and the score of that selection, best per poker hand (see below)' },
   { keys: ['cashOut'], content: '`{blind,score,target,payout}`, `lines` when known' },
   { keys: ['shop'], content: '`{cards,vouchers,packs}`, each with its own indices; PACK only when opened from the shop' },
   { keys: ['pack'], content: '`{name,picks,items}`; picks are remaining choices' },
@@ -129,6 +130,15 @@ Run keys (present while a run exists):
 Phase views (dropped when the phase no longer uses them):
 
 ${phaseViewTable()}
+
+\`plays\` is experimental and not yet verified against the live Steamodded game.
+It comes from running the game's own hand evaluation on each selection and then
+restoring every touched value; it advances no RNG and reads no face-down card.
+\`random\` marks a score that involved a chance effect; the shown score assumes every
+chance fails (lowest outcome). \`not allowed\` means the Boss rejects that hand (score 0).
+The Hook's random discard before scoring is not simulated. A face-down card in hand or
+Jokers gives \`unavailable: face-down cards\`; \`truncated\` means the time budget ended
+before every selection was scored. Plays are advice; any legal selection may be played.
 
 Line tags, in order: \`Tarot\`/\`Planet\`/\`Spectral\`, \`$N\` (buy price), \`sell $N\` or
 \`eternal\`, \`rental\`, \`perishable N\`, edition, \`debuffed\`, target count such as

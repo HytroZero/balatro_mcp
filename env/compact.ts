@@ -7,7 +7,7 @@ const phases = ['MENU', 'BLIND_SELECT', 'SELECTING_HAND', 'ROUND_EVAL', 'SHOP', 
 export type Phase = typeof phases[number];
 /** Phase views exist only in these phases; clients drop them when the phase no longer uses them. */
 export const phaseViews: Readonly<Record<string, readonly Phase[]>> = {
-    hand: ['SELECTING_HAND', 'PACK'], deck: ['SELECTING_HAND', 'PACK'], round: ['SELECTING_HAND'], cashOut: ['ROUND_EVAL'],
+    hand: ['SELECTING_HAND', 'PACK'], deck: ['SELECTING_HAND', 'PACK'], round: ['SELECTING_HAND'], plays: ['SELECTING_HAND'], cashOut: ['ROUND_EVAL'],
     shop: ['SHOP', 'PACK'], pack: ['PACK'], profiles: ['MENU', 'GAME_OVER'], runResult: ['GAME_OVER'],
 };
 const validIn = (key: string, phase: Phase | null): boolean => !(key in phaseViews) || phase !== null && phaseViews[key]!.includes(phase);
@@ -23,7 +23,7 @@ const StateSchema = Type.Object({
     handSize: Type.Optional(known), jokerSlots: Type.Optional(known), consumableSlots: Type.Optional(known),
     hands: Type.Optional(members(Type.String())), jokers: Type.Optional(lines), consumables: Type.Optional(area), vouchers: Type.Optional(lines), tags: Type.Optional(lines),
     blind: Type.Optional(Type.String()), blinds: Type.Optional(members(Type.String())),
-    round: Type.Optional(members(Type.Unknown())), deck: Type.Optional(Type.String()), hand: Type.Optional(area), cashOut: Type.Optional(members(Type.Unknown())),
+    round: Type.Optional(members(Type.Unknown())), deck: Type.Optional(Type.String()), hand: Type.Optional(area), plays: Type.Optional(lines), cashOut: Type.Optional(members(Type.Unknown())),
     shop: Type.Optional(Type.Object({ cards: Type.Optional(lines), vouchers: Type.Optional(lines), packs: Type.Optional(lines) }, { additionalProperties: false })),
     pack: Type.Optional(members(Type.Unknown())), profiles: Type.Optional(members(Type.String())), runResult: Type.Optional(Type.String()),
 }, { additionalProperties: false });
@@ -184,7 +184,10 @@ export function compactState(raw: Data, phase: Phase | null, ready = true, termi
     if (!ready) return state;
     const deck = () => `${num(raw.remainingCards) ?? '?'}${num(raw.totalCards) !== null ? '/' + raw.totalCards : ''}`;
     if (phase === 'MENU' && raw.profileOptions) state.profiles = profiles(raw.profileOptions);
-    else if (phase === 'SELECTING_HAND') Object.assign(state, { round: round(raw), deck: deck(), hand: cards(raw.hand).map(playingCard) });
+    else if (phase === 'SELECTING_HAND') {
+        Object.assign(state, { round: round(raw), deck: deck(), hand: cards(raw.hand).map(playingCard) });
+        if (Array.isArray(raw.plays)) state.plays = raw.plays.filter(p => typeof p === 'string');
+    }
     else if (phase === 'ROUND_EVAL') {
         const done = record(raw.completedRound), pay = record(raw.cashOut);
         state.cashOut = { blind: text(done.blindName) ?? '?', score: num(record(raw.round).chips) ?? '?', target: num(done.target) ?? '?',
