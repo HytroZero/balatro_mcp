@@ -1,7 +1,7 @@
 import { resolve } from 'node:path';
 import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { errorEnvelope, type Backend } from '../env/contract.ts';
+import { errorEnvelope, record, type Backend } from '../env/contract.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { Trace } from '../model/trace.ts';
 import { registerGameTools } from '../tools/index.ts';
@@ -53,6 +53,13 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     }, async ({ actionId },context) => sequential(async () => {
       try {
         const value = await backend.inspectOperation(actionId,{signal:context.mcpReq.signal,deadline:performance.now() + options.timeoutMs});
+        // Completed operations carry a raw snapshot, including seeds from older mods.
+        const observation = record(value.observation);
+        if (observation.terminal !== true && observation.outcome !== 'won' && observation.outcome !== 'lost' && observation.state) {
+          const state = { ...record(observation.state) };
+          delete state.seed;
+          value.observation = { ...observation, state };
+        }
         return { content: [{ type: 'text', text: JSON.stringify({ ok: true, value }) }], structuredContent: { ok: true, value } };
       } catch (error) { return failure(error); }
     }));

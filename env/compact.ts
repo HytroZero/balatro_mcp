@@ -21,7 +21,7 @@ const members = <T extends TSchema>(value: T) => Type.Record(Type.String(), Type
 const StateSchema = Type.Object({
     setup: Type.Optional(Type.String()), ante: Type.Optional(known), roundNo: Type.Optional(known), money: Type.Optional(known), credit: Type.Optional(Type.Number()),
     handSize: Type.Optional(known), jokerSlots: Type.Optional(known), consumableSlots: Type.Optional(known),
-    hands: Type.Optional(members(Type.String())), jokers: Type.Optional(area), consumables: Type.Optional(area), vouchers: Type.Optional(lines), tags: Type.Optional(lines),
+    hands: Type.Optional(members(Type.String())), jokers: Type.Optional(lines), consumables: Type.Optional(area), vouchers: Type.Optional(lines), tags: Type.Optional(lines),
     blind: Type.Optional(Type.String()), blinds: Type.Optional(members(Type.String())),
     round: Type.Optional(members(Type.Unknown())), deck: Type.Optional(Type.String()), hand: Type.Optional(area), cashOut: Type.Optional(members(Type.Unknown())),
     shop: Type.Optional(Type.Object({ cards: Type.Optional(lines), vouchers: Type.Optional(lines), packs: Type.Optional(lines) }, { additionalProperties: false })),
@@ -162,7 +162,7 @@ export function compactState(raw: Data, phase: Phase | null, ready = true, termi
     const hasRun = phase !== 'MENU' && (raw.deck !== undefined || raw.ante_num !== undefined || raw.round_num !== undefined), state: State = {};
     if (hasRun) {
         Object.assign(state, {
-            setup: `${raw.deck ?? '?'} deck, ${raw.stake ?? '?'} stake, seed ${raw.seed ?? '?'}`,
+            setup: `${raw.deck ?? '?'} deck, ${raw.stake ?? '?'} stake${terminal ? `, seed ${raw.seed ?? '?'}` : ''}`,
             // The ante that owns blinds: it lags the engine pointer until the next Ante's blinds exist.
             ante: num(raw.routeAnte) ?? (phase === 'ROUND_EVAL' ? '?' : num(raw.ante_num) ?? '?'), roundNo: num(raw.round_num) ?? '?', money: num(raw.money) ?? '?',
         });
@@ -207,7 +207,7 @@ function actions(o: Observation, ready: boolean): string[] {
     if (!ready) return [];
     const c = record(o.state.controls), open = (key: string) => record(c[key]).available !== false;
     const max = Math.min(5, num(record(c.play).maxCards) ?? num(record(o.state.hand).highlighted_limit) ?? 5), out: string[] = [];
-    const gates: Record<string, string> = { discard: 'discard', select: 'select', skip: 'skip', reroll_boss: 'rerollBoss', reroll: 'reroll', cash_out: 'cashOut', next_round: 'nextRound' };
+    const gates: Record<string, string> = { discard: 'discard', select: 'select', skip: phaseOf(o) === 'PACK' ? 'packSkip' : 'skip', reroll_boss: 'rerollBoss', reroll: 'reroll', cash_out: 'cashOut', next_round: 'nextRound' };
     for (const method of o.availableMethods) {
         if (['use', 'sell', 'rearrange'].includes(method) || gates[method] && !open(gates[method])) continue;
         if (method === 'play' || method === 'discard') out.push(`${method} 1-${max}`);
@@ -238,6 +238,7 @@ function describe(action: Action, after: Observation, before?: Observation): str
         case 'start': out = `Started a ${action.deck} deck run on ${action.stake} stake.`; break;
         case 'select': out = `Selected ${text(record(a.blind).name) ?? 'the blind'}.`; break;
         case 'skip': {
+            if (b.state === 'PACK') { out = 'Skipped the pack.'; break; }
             // Tags that fire on pickup (Orbital, Economy, ...) never reach the held list; name the offered reward instead.
             const reward = record(record(record(b.blinds)[String(b.currentBlind)]).skipReward);
             const held = before ? list(a.tags).slice(list(b.tags).length).map(t => tagName(record(t))) : [];
@@ -268,7 +269,6 @@ function describe(action: Action, after: Observation, before?: Observation): str
         case 'use': out = `Used ${nameAt(before, 'consumables', action.consumable)}.`; break;
         case 'sell': out = 'joker' in action ? `Sold ${nameAt(before, 'jokers', action.joker)}.` : `Sold ${nameAt(before, 'consumables', action.consumable)}.`; break;
         case 'pack': {
-            if ('skip' in action) { out = 'Skipped the pack.'; break; }
             const left = num(a.packChoices);
             out = `Picked ${nameAt(before, 'pack', action.card)}.` + (phase === 'PACK' && left !== null ? ` ${left} pick${left === 1 ? '' : 's'} left.` : '');
             break;
@@ -279,7 +279,7 @@ function describe(action: Action, after: Observation, before?: Observation): str
     return out;
 }
 // Ordered areas whose raw cards carry bridge IDs: an element patch is valid only when membership and order are unchanged.
-const ordered = ['jokers', 'consumables', 'hand'];
+const ordered = ['consumables', 'hand'];
 const ids = (o: Observation, name: string): unknown[] | null => {
     const values = cards(o.state[name]).map(c => record(c).id);
     return values.every(id => id !== undefined) ? values : null;

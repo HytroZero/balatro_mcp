@@ -87,7 +87,7 @@
 
 | 键 | 类型 | 例子 | 说明 |
 | --- | --- | --- | --- |
-| `setup` | string | `"BLUE deck, BLUE stake, seed EI6GVY7S"` | 只在完整快照中出现 |
+| `setup` | string | `"BLUE deck, BLUE stake"` | 只在完整快照中出现；对局胜利或失败后才追加 `, seed EI6GVY7S`，`game_operation` 也不会返回进行中对局的种子 |
 | `ante` | number | `2` | **当前 `blinds` 所属的底注**，见 4.3 |
 | `roundNo` | number | `4` | |
 | `money` | number | `2` | |
@@ -132,13 +132,13 @@
 
 1. `state` 中出现的键会更新；未出现的键保持原值，前提是该键仍属于当前阶段。
 2. **值为数组时整体替换。** 值为对象时**逐成员替换**：成员为 null 表示删除该成员；对象只合并一层。
-3. 有序区域（`jokers`、`consumables`、`hand`）在完整快照中是数组。如果增量中是 `{"2":"…"}` 形式的对象，就只替换对应下标的元素。服务端只在区域成员和顺序都没变时使用这种形式；有增删或重排时，一律发送完整数组。
+3. `jokers` 只要出现，就始终是完整有序数组，包括未变化的小丑；未变化时可省略该字段，空数组表示清空。`consumables`、`hand` 在完整快照中是数组。如果增量中是 `{"2":"…"}` 形式的对象，就只替换对应下标的元素。服务端只在区域成员和顺序都没变时使用这种形式；有增删或重排时，一律发送完整数组。
 4. 阶段改变时，按 4.2 丢弃失效的视图键。
 
 这四条覆盖了原设计中的 handValuesPatch、区域整体替换、null 清空和阶段清空规则。具体效果：
 
 - 出牌：`hands:{"Straight":"30x4 played 1"}`，只合并这一个牌型。
-- Popcorn 衰减：`jokers:{"2":"2: Popcorn [sell $2]: +12 Mult, -4 Mult per round played"}`。
+- Popcorn 衰减：`jokers` 返回全部小丑的数组，其中 Popcorn 的效果更新为 `+12 Mult`。
 - 弃牌：`round:{"discards":1}`。
 - 购买补充包：`shop:{"packs":[…]}`，`cards` 和 `vouchers` 保持不变。
 - 击败小盲注：`blinds:{"Small":"900 [defeated]"}`。
@@ -238,7 +238,7 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
 | BLIND_SELECT | `["select", "skip", "reroll_boss $10"]`；Boss 不能跳过，所以只有 `["select"]` |
 | ROUND_EVAL | `["cash_out"]` |
 | SHOP | `["buy", "buy_and_use", "reroll $5", "next_round"]`；重掷免费时写 `reroll $0` |
-| PACK | `["pack"]`，即选择或跳过 |
+| PACK | `["pack", "skip"]`，分别选择与跳过；跳过按钮不可用时不列出 `skip` |
 | MENU / GAME_OVER | `["start"]` |
 
 - 已知不可用的动作不列出，这样避免了当前 `availableMethods` 和 `controls` 互相矛盾。
@@ -296,7 +296,7 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
   "v":3,"full":true,"rev":"1","phase":"SELECTING_HAND",
   "actions":["play 1-5","discard 1-5"],
   "state":{
-    "setup":"BLUE deck, BLUE stake, seed EI6GVY7S",
+    "setup":"BLUE deck, BLUE stake",
     "ante":2,"roundNo":4,"money":2,
     "handSize":8,"jokerSlots":5,"consumableSlots":2,
     "hands":{"High Card":"5x1","Pair":"10x2","Two Pair":"20x2 played 2","Three of a Kind":"30x3","Straight":"30x4","Flush":"35x4","Full House":"40x4 played 1","Four of a Kind":"60x7","Straight Flush":"100x8"},
@@ -329,7 +329,13 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
   "result":"Played Three of a Kind (+2440). Blind defeated.",
   "state":{
     "hands":{"Three of a Kind":"30x3 played 1"},
-    "jokers":{"2":"2: Popcorn [sell $2]: +12 Mult, -4 Mult per round played"},
+    "jokers":[
+      "0: Smiley Face [eternal]: Played face cards give +5 Mult when scored",
+      "1: Raised Fist [eternal]: Adds double the rank of lowest ranked card held in hand to Mult",
+      "2: Popcorn [sell $2]: +12 Mult, -4 Mult per round played",
+      "3: Bull [eternal]: +2 Chips for each $1 you have (currently +? Chips)",
+      "4: Shoot the Moon [sell $2]: Each Queen held in hand gives +13 Mult"
+    ],
     "blinds":{"Small":"900 [defeated]"},
     "cashOut":{"blind":"Small Blind","score":2440,"target":900,"payout":4}
   }}}
@@ -397,7 +403,7 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
 以下是示意数据。
 
 ```json
-{"rev":"41","phase":"PACK","actions":["pack"],"result":"Opened Arcana Pack.",
+{"rev":"41","phase":"PACK","actions":["pack","skip"],"result":"Opened Arcana Pack.",
  "state":{"money":4,
   "shop":{"packs":["0: Celestial Pack [$4]: pick 1 of 3 Planet"]},
   "pack":{"name":"Arcana Pack","picks":1,"items":[
@@ -448,8 +454,9 @@ effect 只描述效果，不写名称、价格、贴纸或 UI 提示（例如 "(
 
 ```text
 Results: full:true replaces everything. Otherwise state holds only changed keys:
-arrays replace; objects merge per member (null deletes); {"2":"…"} on jokers/
-consumables/hand replaces that element only. Phase views (hand, deck, round,
+arrays replace; jokers always sends the complete ordered array when present.
+Objects merge per member (null deletes); {"2":"…"} on consumables/hand replaces
+that element only. Seeds appear only after the run ends. Phase views (hand, deck, round,
 cashOut, shop, pack) are dropped when the phase no longer uses them. Lines read
 "<i>: <Name> [tags]: <effect>"; "?" means unknown. Check price vs money and slots
 yourself; the game validates. use/sell/rearrange are available whenever the area

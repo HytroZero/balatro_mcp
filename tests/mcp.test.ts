@@ -72,6 +72,10 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
     },
     loseResponse() { loseResponse = true; },
     externalChange() { current = snapshot(77, 'BLIND_SELECT'); },
+    finishRun(outcome: 'won' | 'lost') {
+      current = { ...current, terminal: true, outcome, state: { ...current.state, state: outcome === 'won' ? 'ROUND_EVAL' : 'GAME_OVER' } };
+      for (const operation of operations.values()) operation.observation = current;
+    },
     async close() {
       await client.close(); rpc.closeAllConnections();
       await new Promise<void>(resolve => rpc.close(() => resolve()));
@@ -146,6 +150,7 @@ test('stdio game tools start once, return a next revision, reject stale/invalid 
       { revision, action: { method: 'play', cards: [0, 0] } },
       { revision, action: { method: 'play', cards: [-1] } },
       { revision, action: { method: 'select', bogus: true } },
+      { revision, action: { method: 'pack', skip: true } },
       { revision, action: { method: 'erase' } },
     ]) {
       // SDK versions may represent argument validation as a protocol error or tool error.
@@ -196,7 +201,7 @@ test('only issued short revisions allow actions; failures clear deltas and diagn
     assert.equal(h.mutations, 2);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);
     assert.equal(observed.full,true);
-    assert.equal(record(observed.state).setup,'RED deck, WHITE stake, seed TEST');
+    assert.equal(record(observed.state).setup,'RED deck, WHITE stake');
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
     const recovered = await h.call('game_action', { revision: observed.rev, action: { method: 'select' } });
     assert.equal(recovered.isError, false); assert.equal(h.mutations, 3);
@@ -212,8 +217,27 @@ test('lost action reply remains uncertain and operation inspection never replays
     assert.equal(record(action.structuredContent).applied, 'unknown'); assert.equal(h.mutations, 1);
     const operation = await h.call('game_operation');
     assert.equal(record(record(operation.structuredContent).value).status, 'completed'); assert.equal(h.mutations, 1);
+    assert.equal('seed' in record(record(record(record(operation.structuredContent).value).observation).state), false);
+    assert.doesNotMatch(String(record(operation.content[0]).text), /"seed"/);
     const observed = await h.call('game_observe');
     assert.equal(record(record(observed.structuredContent).value).rev, '2'); assert.equal(h.mutations, 1);
+  } finally { await h.close(); }
+});
+
+test('terminal seeds are visible through observe and operation inspection after either outcome', async () => {
+  const h = await harness();
+  try {
+    const started = await h.call('game_start', { deck: 'RED', stake: 'WHITE', seed: 'TEST' });
+    assert.doesNotMatch(JSON.stringify(started.structuredContent), /seed TEST|"seed"/);
+    for (const outcome of ['won', 'lost'] as const) {
+      h.finishRun(outcome);
+      const observed = record(record((await h.call('game_observe')).structuredContent).value);
+      assert.equal(observed.outcome, outcome);
+      assert.equal(record(observed.state).setup, 'RED deck, WHITE stake, seed TEST');
+      const operation = record(record((await h.call('game_operation')).structuredContent).value);
+      assert.equal(record(record(operation.observation).state).seed, 'TEST');
+      assert.equal(h.mutations, 1);
+    }
   } finally { await h.close(); }
 });
 

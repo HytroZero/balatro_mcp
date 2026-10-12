@@ -344,7 +344,7 @@ phase 的规范值是 MENU、BLIND_SELECT、SELECTING_HAND、ROUND_EVAL、SHOP�
 | sell.consumable | 任意受支持持有物阶段 | 以实际阶段为准 | E、C | 容量与相关小丑动态变化 |
 | pack.card，小丑/游戏牌 | PACK | PACK/返回阶段 | P（未结束时）；J 或 D，H 若变化 | 选择次数、库存容量、包内其他候选资格 |
 | pack.card，塔罗/星球/幻灵 | PACK | PACK/返回阶段 | P（未结束时）+ 对应效果块 | V/H/D/J/C/E/B 等实际变化 |
-| pack.skip | PACK | 返回阶段或下一个 PACK | 新阶段完整块 | 包内临时手牌清理、P:null 或下一包完整 P |
+| skip | PACK | 返回阶段或下一个 PACK | 新阶段完整块 | 包内临时手牌清理、P:null 或下一包完整 P |
 | rearrange.hand | SELECTING_HAND/PACK 等合法阶段 | 通常不变 | H | 强制索引与目标索引更新、牌序相关状态 |
 | rearrange.jokers | 任意受支持持有物阶段 | 通常不变 | J | Blueprint/Brainstorm 可观察的复制目标/效果更新 |
 | rearrange.consumables | 任意受支持持有物阶段 | 通常不变 | C | 新索引与可用目标条件 |
@@ -687,9 +687,9 @@ Death 的左右由 hand 区域的实际排列决定，不是 targets 数组的�
 
 四个候选中选走一张，剩余三项被重新编号为 0、1、2，不能复用旧包中的位置。
 
-### 9.8 pack.skip：返回商店
+### 9.8 skip：返回商店
 
-请求：`game_action({revision:"m11",action:{method:"pack",skip:true}})`。示意返回一个已无剩余商品的商店。
+请求：`game_action({revision:"m11",action:{method:"skip"}})`。示意返回一个已无剩余商品的商店。
 
 ```json
 {
@@ -698,7 +698,7 @@ Death 的左右由 hand 区域的实际排列决定，不是 targets 数组的�
     "contract": 2, "revision": "m12", "baseRevision": "m11", "runId": "multi-pack-run", "partial": true,
     "phase": "SHOP", "ready": true, "notReadyReason": null, "terminal": false, "outcome": "ongoing",
     "availableMethods": ["buy", "buy_and_use", "reroll", "next_round", "use", "sell", "rearrange"], "actionId": "a-skip-pack-1",
-    "result": {"method": "pack", "fromPhase": "PACK", "toPhase": "SHOP", "skipped": true, "packFinished": true},
+    "result": {"method": "skip", "fromPhase": "PACK", "toPhase": "SHOP", "skipped": true, "packFinished": true},
     "summary": "Skipped remaining pack choice. Returned to shop.",
     "state": {
       "pack": null,

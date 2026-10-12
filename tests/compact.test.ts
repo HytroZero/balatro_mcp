@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { Check } from 'typebox/value';
 import { applyDelta, compactActionObservation, compactDeckObservation, compactObservation, FullObservationSchema, PartialObservationSchema, type ActionObservation } from '../env/compact.ts';
-import { playerState, record, type Action, type Data, type Observation } from '../env/contract.ts';
+import { ActionSchema, playerState, record, type Action, type Data, type Observation } from '../env/contract.ts';
 const card = (over: Data = {}): Data => ({ index: 0, id: 'private-card-id', key: 'c_base', label: 'Default Base', set: 'Default',
     value: { rank: 'Ace', suit: 'Hearts', effect: 'not needed for a playing card' }, modifier: { enhancement: 'c_base' },
     state: { hidden: false }, cost: { buy: 1, sell: 1 }, canSell: false, ...over });
@@ -30,7 +30,7 @@ test('full v3 snapshot is flat, typed, uses short revisions and does not mutate 
     assert.equal(full.phase, 'SELECTING_HAND');
     assert.deepEqual(full.actions, ['play 1-5', 'discard 1-5']);
     assert.deepEqual(Object.keys(full.state).sort(), [...runKeys, 'round', 'deck', 'hand'].sort());
-    assert.equal(full.state.setup, 'RED deck, WHITE stake, seed TEST');
+    assert.equal(full.state.setup, 'RED deck, WHITE stake');
     assert.equal(full.state.deck, '44/52');
     assert.deepEqual(full.state.hand, ['0: AH']);
     assert.deepEqual(full.state.round, { score: 0, target: 300, hands: 4, discards: 3 });
@@ -59,7 +59,7 @@ test('each phase carries only its views, including over engine leftovers', () =>
 const actions: Action[] = [{ method: 'start', deck: 'RED', stake: 'WHITE' }, { method: 'select' }, { method: 'skip' }, { method: 'play', cards: [0] },
     { method: 'discard', cards: [0] }, { method: 'cash_out' }, { method: 'next_round' }, { method: 'reroll' }, { method: 'reroll_boss' },
     { method: 'buy', card: 0 }, { method: 'buy', voucher: 0 }, { method: 'buy', pack: 0 }, { method: 'buy_and_use', card: 0 },
-    { method: 'use', consumable: 0 }, { method: 'sell', joker: 0 }, { method: 'sell', consumable: 0 }, { method: 'pack', card: 0 }, { method: 'pack', skip: true },
+    { method: 'use', consumable: 0 }, { method: 'sell', joker: 0 }, { method: 'sell', consumable: 0 }, { method: 'pack', card: 0 },
     { method: 'rearrange', hand: [0] }, { method: 'rearrange', jokers: [0] }, { method: 'rearrange', consumables: [0] }];
 function checkDelta(before: Observation, after: Observation, action: Action): ActionObservation {
     const delta = compactActionObservation(after, action, before), full = compactObservation(after);
@@ -103,17 +103,50 @@ test('discard sends round members, deck and hand; triggered side effects are inc
     assert.deepEqual(side.state?.blinds, { Small: '300 [disabled]' });
     assert.deepEqual(side.state?.consumables, ['0: The Sun [Tarot, sell $1]: Converts cards']);
 });
-test('ordered areas patch single elements only while membership and order are unchanged', () => {
+test('jokers always replace the whole ordered list when any Joker changes', () => {
     const jokers = (popcorn: string, order = ['smiley', 'popcorn']) => ({ limit: 5, cards: order.map(id => id === 'smiley'
         ? joker('smiley', 'Smiley Face', 'Played face cards give +5 Mult', { modifier: { eternal: true } }) : joker('popcorn', 'Popcorn', popcorn)) });
     const before = observation({ jokers: jokers('+16 Mult') });
     const decayed = checkDelta(before, at(before, 'i:8', { jokers: jokers('+12 Mult') }), { method: 'play', cards: [0] });
-    assert.deepEqual(decayed.state?.jokers, { 1: '1: Popcorn [sell $2]: +12 Mult' });
+    assert.deepEqual(decayed.state?.jokers, ['0: Smiley Face [eternal]: Played face cards give +5 Mult', '1: Popcorn [sell $2]: +12 Mult']);
+    assert.equal(Check(PartialObservationSchema, { ...decayed, state: { jokers: { 1: 'partial Joker' } } }), false);
+    assert.equal(checkDelta(before, at(before, 'i:8', { money: 9 }), { method: 'play', cards: [0] }).state?.jokers, undefined);
     const swapped = checkDelta(before, at(before, 'i:8', { jokers: jokers('+16 Mult', ['popcorn', 'smiley']) }), { method: 'rearrange', jokers: [1, 0] });
     assert.deepEqual(swapped.state?.jokers, ['0: Popcorn [sell $2]: +16 Mult', '1: Smiley Face [eternal]: Played face cards give +5 Mult']);
     const sold = checkDelta(before, at(before, 'i:8', { jokers: jokers('+16 Mult', ['smiley']), money: 6 }), { method: 'sell', joker: 1 });
     assert.deepEqual(sold.state?.jokers, ['0: Smiley Face [eternal]: Played face cards give +5 Mult']);
     assert.equal(sold.result, 'Sold Popcorn.');
+    const emptied = checkDelta(before, at(before, 'i:8', { jokers: { limit: 5, cards: [] } }), { method: 'sell', joker: 0 });
+    assert.deepEqual(emptied.state?.jokers, []);
+});
+
+test('consumables and hand still patch elements while membership and order are unchanged', () => {
+    const sun = card({ id: 'sun', set: 'Tarot', label: 'The Sun', value: { effect: 'Converts cards' } });
+    const before = observation({ consumables: { cards: [sun] } });
+    const after = at(before, 'i:8', { consumables: { cards: [{ ...sun, cost: { sell: 2 } }] }, hand: { cards: [card({ state: { highlight: true } })] } });
+    const delta = checkDelta(before, after, { method: 'rearrange', hand: [0] });
+    assert.deepEqual(delta.state?.consumables, { 0: '0: The Sun [Tarot, sell $2]: Converts cards' });
+    assert.deepEqual(delta.state?.hand, { 0: '0: AH [selected]' });
+});
+
+test('seeds are hidden in every ongoing phase and revealed only in terminal snapshots', () => {
+    const secret = 'SEED_ONLY_AFTER_RUN';
+    for (const state of ['MENU', 'BLIND_SELECT', 'SELECTING_HAND', 'ROUND_EVAL', 'SHOP', 'PACK', 'ANIMATING']) {
+        const input = observation({ state, seed: secret });
+        for (const ready of [true, false]) {
+            assert.doesNotMatch(JSON.stringify(compactObservation({ ...input, ready })), /SEED_ONLY_AFTER_RUN|seed/);
+            assert.doesNotMatch(JSON.stringify(compactActionObservation(at(input, 'i:8', { money: 8 }, { ready }), { method: 'play', cards: [0] }, input)), /SEED_ONLY_AFTER_RUN|seed/);
+        }
+        assert.doesNotMatch(JSON.stringify(compactActionObservation(input, { method: 'start', deck: 'RED', stake: 'WHITE', seed: secret })), /SEED_ONLY_AFTER_RUN|seed/);
+    }
+    for (const outcome of ['won', 'lost'] as const) {
+        const before = observation({ seed: secret });
+        const after = at(before, 'i:8', { state: outcome === 'won' ? 'ROUND_EVAL' : 'GAME_OVER' }, { terminal: true, outcome });
+        for (const result of [compactObservation(after), compactActionObservation(after, { method: 'play', cards: [0] }, before)]) {
+            assert.ok(Check(FullObservationSchema, result));
+            assert.equal(result.state?.setup, `RED deck, WHITE stake, seed ${secret}`);
+        }
+    }
 });
 test('round end, cash-out, next blind and selection drop and add phase views', () => {
     const playing = observation({ hands: { Pair: { level: 1, chips: 10, mult: 2, played: 0 } } });
@@ -176,10 +209,26 @@ test('a pack opened from the shop keeps the shop; closing it drops pack, hand an
     assert.deepEqual(pick.state, { pack: { picks: 1, items: ['0: Death [Tarot, 2 targets]: Convert'] } });
     assert.equal(pick.result, 'Picked The Sun. 1 pick left.');
     const back = at(picked, 'i:10', { state: 'SHOP', hand: { limit: 8, cards: [] } }, { availableMethods: ['buy', 'next_round'] });
-    assert.deepEqual(checkDelta(picked, back, { method: 'pack', skip: true }).state, undefined);
+    const skipped = checkDelta(picked, back, { method: 'skip' });
+    assert.deepEqual(skipped.state, undefined);
+    assert.equal(skipped.result, 'Skipped the pack.');
     const tagPack = at(opened, 'i:11', { state: 'PACK' });
     delete tagPack.state.shop; delete tagPack.state.vouchers; delete tagPack.state.packs;
     assert.equal('shop' in compactObservation(tagPack).state, false);
+});
+
+test('every booster type advertises skip separately and respects its own control', () => {
+    assert.equal(Check(ActionSchema, { method: 'skip' }), true);
+    assert.equal(Check(ActionSchema, { method: 'pack', skip: true }), false);
+    for (const family of ['Arcana', 'Celestial', 'Spectral', 'Standard', 'Buffoon']) {
+        for (const size of ['', 'Jumbo ', 'Mega ']) {
+            const input = { ...observation({ state: 'PACK', packName: `${size}${family} Pack`, packChoices: size === 'Mega ' ? 2 : 1,
+                currentBlind: 'Boss', controls: { packSkip: { available: true }, skip: { available: false } } }), availableMethods: ['pack', 'skip', 'use', 'sell', 'rearrange'] };
+            assert.deepEqual(compactObservation(input).actions, ['pack', 'skip']);
+            assert.deepEqual(compactObservation(at(input, 'i:8', { controls: { packSkip: { available: false }, skip: { available: true } } })).actions, ['pack']);
+            assert.deepEqual(compactObservation({ ...input, ready: false }).actions, []);
+        }
+    }
 });
 test('missing baseline, source/run/readiness changes, start, terminal and vanished keys return full state', () => {
     const before = observation(), after = at(before, 'i:8');

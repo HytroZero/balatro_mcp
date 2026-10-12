@@ -118,4 +118,32 @@ G.shop={}; G.shop_jokers={cards={popcorn},config={card_limit=2}}
 check(game.state().shop.cards[1].key=='j_popcorn','a pack opened from the shop keeps its stock visible')
 G.STATE=G.STATES.SHOP
 check(game.state().packChoices==nil,'choices removed on return to shop')
+-- All native pack phases and Steamodded boosters share the explicit skip action.
+local skipped=0
+G.STATE_COMPLETE=true
+G.FUNCS={can_skip_booster=function(e)e.config.button='skip_booster'end,
+  skip_booster=function()skipped=skipped+1 end}
+G.I={UIBOX={{UIRoot={config={button='skip_booster'}}}}}
+local packStates={'TAROT_PACK','SPECTRAL_PACK','PLANET_PACK','STANDARD_PACK','BUFFOON_PACK','SMODS_BOOSTER_OPENED'}
+for index,name in ipairs(packStates) do
+  G.STATES[name]=100+index; G.STATE=100+index
+  local methods=game.methods()
+  check(methods[1]=='pack' and methods[2]=='skip',name..' offers separate pack and skip even on a Boss')
+  check(game.state().controls.packSkip.available,name..' reports the skip button')
+  local apply=game.prepare({method='skip'})
+  check(skipped==index-1,'preparing skip must not invoke the game handler')
+  apply()
+  check(skipped==index,name..' uses the original skip_booster handler exactly once')
+  check(not pcall(game.prepare,{method='pack',skip=true}),'legacy pack skip is rejected')
+  check(not pcall(game.prepare,{method='skip',card=0}),'skip rejects card targets')
+end
+G.FUNCS.can_skip_booster=function(e)e.config.button=nil end
+check(not pcall(game.prepare,{method='skip'}),'unavailable booster skip is rejected')
+G.STATE=G.STATES.BLIND_SELECT
+check(not pcall(game.prepare,{method='skip'}),'Boss Blind remains unskippable')
+G.GAME.blind_on_deck='Small'
+G.I.UIBOX[1].UIRoot.config.button='skip_blind'
+G.FUNCS.skip_blind=function()skipped=skipped+1 end
+game.prepare({method='skip'})()
+check(skipped==#packStates+1,'Small Blind still uses skip_blind')
 print('Full observation Lua checks passed: '..checks)

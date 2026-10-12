@@ -194,6 +194,10 @@ return function(json, decision)
       local check = method == 'play' and 'can_play' or 'can_discard'
       withSelection(cards, function() local e = element(nil); G.FUNCS[check](e); need(e.config.button == handler) end, false)
       return function() withSelection(cards, function() G.FUNCS[handler](element(nil)) end, true) end
+    elseif method == 'skip' and phase == 'PACK' then
+      params(action, {})
+      local e = element(nil); G.FUNCS.can_skip_booster(e); need(e.config.button == 'skip_booster')
+      return function() G.FUNCS.skip_booster(e) end
     elseif method == 'select' or method == 'skip' or method == 'cash_out' then
       params(action, {}); need(method == 'cash_out' and phase == 'ROUND_EVAL' or method ~= 'cash_out' and phase == 'BLIND_SELECT')
       if method == 'skip' then need(G.GAME.blind_on_deck ~= 'Boss') end
@@ -239,13 +243,7 @@ return function(json, decision)
       withSelection(cards, function() need(card:can_use_consumeable()); need(not card:check_use()) end, false)
       return function() withSelection(cards, function() G.FUNCS.use_card(element(card)) end, true) end
     elseif method == 'pack' then
-      params(action, {card=true,targets=true,skip=true}); need(phase == 'PACK')
-      if action.skip == true then
-        if action.card ~= nil or action.targets ~= nil then fail('invalid_arguments', 'Skip cannot include targets') end
-        local e = element(nil); G.FUNCS.can_skip_booster(e); need(e.config.button == 'skip_booster')
-        return function() G.FUNCS.skip_booster(e) end
-      end
-      if action.skip ~= nil then fail('invalid_arguments', 'Invalid skip flag') end
+      params(action, {card=true,targets=true}); need(phase == 'PACK')
       local card = cardAt(G.pack_cards, action.card)
       local cards = card.ability.consumeable and targetCards(card, action.targets) or selection(action.targets or json.array(), 5, false)
       if card.ability.consumeable then
@@ -411,9 +409,9 @@ return function(json, decision)
     local result = json.array(); local phase = game.phase()
     if not game.ready() then return result end
     if G.GAME and G.GAME.won or phase == 'GAME_OVER' then result[1]='start'; return result end
-    local phaseMethods = {MENU={'start'},BLIND_SELECT={'select','skip','reroll_boss','use','sell','rearrange'},SELECTING_HAND={'play','discard','use','sell','rearrange'},ROUND_EVAL={'cash_out','use','sell','rearrange'},SHOP={'buy','buy_and_use','reroll','next_round','use','sell','rearrange'},PACK={'pack','use','sell','rearrange'}}
+    local phaseMethods = {MENU={'start'},BLIND_SELECT={'select','skip','reroll_boss','use','sell','rearrange'},SELECTING_HAND={'play','discard','use','sell','rearrange'},ROUND_EVAL={'cash_out','use','sell','rearrange'},SHOP={'buy','buy_and_use','reroll','next_round','use','sell','rearrange'},PACK={'pack','skip','use','sell','rearrange'}}
     for _, method in ipairs(phaseMethods[phase] or {}) do
-      if method ~= 'skip' or G.GAME.blind_on_deck ~= 'Boss' then
+      if method ~= 'skip' or phase ~= 'BLIND_SELECT' or G.GAME.blind_on_deck ~= 'Boss' then
         if method ~= 'discard' or G.GAME.current_round.discards_left > 0 then result[#result + 1]=method end
       end
     end

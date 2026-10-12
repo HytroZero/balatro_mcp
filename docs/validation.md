@@ -143,3 +143,60 @@ are in ignored `data/observation-delta-smoke-results.json`.
 These are focused checks, not a full release suite or live executable validation.
 This update changes the external projection and IDs; restart the MCP process to
 load the rebuilt server. No mod installation or game restart was performed.
+
+## Terminal-only seeds and complete Joker arrays — 2026-10-12
+
+Ongoing snapshots now show only deck and stake in `setup`; terminal snapshots
+append the seed. `game_operation` also removes `state.seed` from ongoing raw
+snapshots, including responses from already installed mods. Whenever `jokers`
+appears, it is the complete ordered array; unchanged Jokers remain in that array,
+and an empty array clears the area. Unchanged lists may still be omitted.
+Consumable and hand element patches keep their existing behavior. Schemas,
+bootstrap instructions, tool descriptions, guide and examples were updated.
+
+Executed checks:
+
+- `npm run check` and `npm run build` — passed.
+- `node --test tests/compact.test.ts tests/mcp.test.ts tests/context.test.ts tests/bridge.test.ts`
+  — 53 passed, zero failures. Covers ongoing seeds in every phase and blocked
+  states, full/start/action results, terminal wins/losses, complete Joker lists,
+  omission/clearing, schema rejection of partial Jokers, and retained hand and
+  consumable element patches.
+- After adding stdio coverage for terminal seeds through observe and operation
+  inspection, `npm run check` and `node --test tests/mcp.test.ts` passed again
+  (8 tests, zero failures). Ongoing operation inspection omits the seed in both
+  structured and text results; terminal inspection preserves it for both outcomes.
+- `node --test tests/guide.test.ts` — 3 passed, zero failures.
+- `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+All checks were offline. No live game actions or mod installation were performed.
+Restart the MCP process to load the rebuilt server; no Lua mod update is required.
+
+## Explicit skip action for every booster pack — 2026-10-12
+
+PACK now advertises `pack` and `skip` as separate actions. `{"method":"skip"}`
+invokes the original `can_skip_booster` / `skip_booster` handlers in all native
+pack phases and Steamodded boosters. The former `{"method":"pack","skip":true}`
+interface has been removed from both the schema and Lua handler. `pack` only
+chooses cards. Pack skip availability uses `controls.packSkip`, independently
+of blind skip availability; Boss Blinds remain unskippable while packs opened
+at a Boss can still be skipped. Tool descriptions, guide and examples were updated.
+
+Executed checks:
+
+- `npm run check` and `npm run build` — passed.
+- `node --test tests/compact.test.ts tests/guide.test.ts` — 24 passed, zero
+  failures. Covers all five pack families in ordinary/Jumbo/Mega sizes, skip
+  availability, non-ready states, pack closing and removal of the old schema.
+- `node --test tests/mcp.test.ts` — 8 passed, zero failures, including rejection
+  of the removed interface without dispatching a mutation.
+- `luajit tests/observation.test.lua` — 88 checks passed. Includes all six pack
+  phases, one original skip handler invocation per action, validation without
+  mutation, rejection of the legacy interface and targets, unavailable skip,
+  Boss Blind rejection and preserved Small Blind skipping.
+- `luajit tests/decision.test.lua` — 38 checks passed.
+- `npm run stage-mod` and `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+All checks were offline. The server is rebuilt and the mod staged, but the mod
+was not installed and the running game was not restarted or controlled. Install
+the updated staged mod, restart Balatro and reconnect MCP to load this change.

@@ -19,7 +19,6 @@ export const ActionSchema = Type.Union([
   object({ method: Type.Literal('buy'),pack: index }),
   object({ method: Type.Literal('buy_and_use'),card:index,cards:Type.Optional(indices) }),
   object({ method: Type.Literal('pack'), card: index, targets: Type.Optional(indices) }),
-  object({ method: Type.Literal('pack'), skip: Type.Literal(true) }),
   object({ method: Type.Literal('sell'),joker: index }),
   object({ method: Type.Literal('sell'),consumable: index }),
   object({ method: Type.Literal('use'), consumable: index, cards: Type.Optional(indices) }),

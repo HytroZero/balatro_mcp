@@ -58,6 +58,12 @@ with only the state keys that changed; it falls back to a full snapshot when no
 matching baseline exists. \`deck_observe\` returns grouped remaining-deck composition
 without draw order or action indices. If its rev differs, observe again before acting.
 \`game_start\` starts only from the menu or a finished run; deck/stake names are uppercase.
+In every booster pack, \`actions\` lists \`pack\` for choosing a card and \`skip\`
+for leaving the pack when available. Use \`{"method":"skip"}\` to skip any
+Arcana, Celestial, Spectral, Standard or Buffoon pack, including Jumbo and Mega
+sizes and packs opened by Tags. \`{"method":"pack","card":0}\` chooses a card;
+the former \`pack\` action with a \`skip\` flag is no longer accepted. Outside
+packs, \`skip\` still skips a Small or Big Blind.
 
 Pass the latest \`rev\` as \`revision\`. It is the bridge counter; the server restores
 the full bridge revision it issued to this connection, and an unissued counter fails
@@ -78,9 +84,10 @@ Results use \`{ok:true,value:...}\` or
 1. \`full:true\` replaces everything.
 2. Otherwise keys present in \`state\` update and absent keys keep their value.
 3. An array replaces the whole value. An object merges one level per member; a
-   null member is deleted. An object such as \`{"2":"…"}\` on \`jokers\`,
-   \`consumables\` or \`hand\` replaces only those elements; it is sent only while
-   membership and order are unchanged.
+   null member is deleted. An object such as \`{"2":"…"}\` on \`consumables\` or
+   \`hand\` replaces only those elements; it is sent only while membership and
+   order are unchanged. When \`jokers\` is present, it is always the complete
+   ordered array, including unchanged Jokers; an empty array clears the area.
 4. When the phase changes, drop views the new phase does not use (below).
 5. Entering \`BLIND_SELECT\` from another phase resends \`blind\` and \`blinds\` whole
    (members that disappeared are null), even when they did not change, so the
@@ -104,7 +111,9 @@ action without one.
 
 Run keys (present while a run exists):
 
-- \`setup\`: \`"RED deck, WHITE stake, seed X"\`. \`ante\` is the Ante that owns
+- \`setup\`: \`"RED deck, WHITE stake"\`; \`, seed X\` is appended only after
+  the run ends (won or lost). Operation inspection also hides ongoing seeds.
+  \`ante\` is the Ante that owns
   \`blinds\`; after a Boss it changes when cash-out creates the next blinds.
   \`roundNo\`, \`money\`, \`credit\` (only when non-zero), \`handSize\`, \`jokerSlots\`,
   \`consumableSlots\`.
