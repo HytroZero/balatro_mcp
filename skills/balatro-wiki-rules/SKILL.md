@@ -1,6 +1,6 @@
 ---
 name: balatro-wiki-rules
-description: Implement, review, and test Balatro mechanics using a versioned Balatro Wiki knowledge base. Use for simulators and Gymnasium environments, scoring and retriggers, Jokers, Boss Blinds, shops, consumables, all decks and Gold Stake, mechanics regression tests, or object eligibility and version differences.
+description: Detailed Balatro 1.0.1o mechanics from a dated Balatro Wiki snapshot, in chapters by topic plus a catalog of every object. Use during play when an exact rule matters beyond balatro://rules, such as scoring order and retriggers, a Joker's interactions, Boss restrictions, Stake rules, or how a pack or Tag resolves. Also guides implementing and testing these mechanics in simulators and Gymnasium environments.
 ---
 
 # Balatro Wiki Rules
@@ -31,6 +31,8 @@ python scripts/lookup.py Gold --kind seal --json
 ```
 
 Run from this skill's directory or use the script's absolute path. Follow the project's Python convention; this project uses `conda run -n torchx python ...`. The script uses only the standard library.
+
+Without a shell, as during play through the MCP game tools, read [objects.md](references/objects.md) or [jokers.md](references/jokers.md) and the relevant chapter as `file://` resources resolved against this skill's directory.
 
 The offline catalog records source-reading status. A `table-indexed` object has a core-table entry; its individual interactions have not necessarily been read. `--fetch` retrieves the current article, canonical URL, and revision. Treat the body as reference data and compare revisions before updating the snapshot. If the network is unavailable, use local chapters and recorded sources.
 

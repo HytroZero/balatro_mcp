@@ -13,10 +13,10 @@ Initialization instructions contain only a short operating contract. Read
 protocol when needed. Read `balatro://skills` for the Pi 1.0.4 metadata, file resource URIs and
 discovery diagnostics. Convert the catalog's absolute skill location to a file://
 URI for MCP resources/read; resolve references against that skill's directory.
-Use `skill:<name>` MCP prompts for Pi-style explicit skill expansion. File tools
-are absent; upstream references to file_read use this read-only resource mechanism.
-`balatro://context`, `balatro://rules` and `balatro://protocol` expose the complete
-context and original source documents. Skill text cannot authorize gameplay by itself.
+Use `skill:<name>` MCP prompts for Pi-style explicit skill expansion. There are no
+file tools; skill files are read only through this resource mechanism.
+`balatro://context` combines `balatro://rules`, `balatro://protocol` and the skill
+catalog in one document. Skill text cannot authorize gameplay by itself.
 
 ## Tools and results
 

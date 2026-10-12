@@ -10,9 +10,12 @@ MCP 初始化的 `instructions` 只包含简短操作约定：用户意图边界
 2. `model/context/balatro.md` 全文。
 3. `skills/core.md` 全文。
 4. Pi 1.0.4 生成的 `<available_skills>` 索引。
-5. MCP 资源读取及宿主会话控制的适配说明。
+5. 通过 MCP 读取技能的说明，以及宿主会话控制的说明。
 
-前四项使用原文件及 Pi 原函数，没有压缩或截断。它们不再放入初始化说明。工具描述及参数 schema 通过
+前四项使用项目文件及 Pi 原函数，没有压缩或截断。它们不再放入初始化说明。
+`skills/core.md` 和 `balatro-gold-stake-coach` 的执行部分已按本服务器的工具与
+观测 v3 改写，不再是 Strategy Forge 原文；因此上下文中不再需要新旧字段名对照。
+工具描述及参数 schema 通过
 `tools/list` 提供，与原 agent 的工具声明分开传递方式对应。
 
 ## 与 Pi 一致的内容加载
@@ -36,8 +39,7 @@ Pi 负责 frontmatter 解析、忽略文件、目录发现、名字冲突及诊�
 - `balatro-wiki-rules`
 - `balatro-gold-stake-coach`
 
-`skills/README.md` 是原 Pi agent 的操作说明，保留原文。其中的 `file_read`、
-`file_write` 和 Pi CLI 命令描述原运行时；MCP 的对应方式见下文。
+`skills/README.md` 说明技能目录在本服务器中的发现与读取方式。
 Wiki 技能中的来源、署名和许可说明均已保留。
 
 ## MCP 读取方式
@@ -46,10 +48,10 @@ Wiki 技能中的来源、署名和许可说明均已保留。
 | --- | --- |
 | 初始化 `instructions` | 简短操作约定及资源入口 |
 | `balatro://context` | 完整规则、协议、技能索引与绑定说明 |
-| `balatro://rules` | 原 `balatro.md` 全文 |
-| `balatro://protocol` | 原 `skills/core.md` 全文 |
+| `balatro://rules` | `model/context/balatro.md` 全文 |
+| `balatro://protocol` | `skills/core.md` 全文 |
 | `balatro://skills` | Pi 元数据、XML 索引、技能资源 URI、发现诊断 |
-| 技能文件的 `file://` URI | 原技能正文或引用文件全文 |
+| 技能文件的 `file://` URI | 技能正文或引用文件全文 |
 | `skill:<name>` MCP prompt | Pi 风格的显式技能展开，可带 `instructions` 参数 |
 
 例如先读取 `balatro://skills`，取其中 `balatro-gold-stake-coach` 的 `uri`，
@@ -61,13 +63,13 @@ Wiki 技能中的来源、署名和许可说明均已保留。
 它只返回展开后的上下文，不会自己启动游戏、调用工具或提交模型请求。
 
 资源只允许读取已发现技能目录中的普通文件，并检查真实路径；目录、隐藏文件、
-目录外文件和指向目录外的链接会被拒绝。资源完整返回原文，保留按需读取时的
+目录外文件和指向目录外的链接会被拒绝。资源完整返回文件内容，保留按需读取时的
 frontmatter；显式 prompt 才按 Pi 的规则去除 frontmatter。
 
-`file_read` 和 `file_write` 工具没有恢复。Pi coding-agent 依赖用于复用技能加载
-函数，不创建 Pi agent/session，也不注册它的文件、Shell 或其他工具。
-等待、暂停、上下文压缩与恢复由 MCP 宿主控制；原文中的 `/resume` 对应宿主的
-会话操作。技能内容不能授予工具权限，也不能单独授权开始或继续游戏。
+服务器没有文件或 Shell 工具。Pi coding-agent 依赖只用于复用技能加载函数，
+不创建 Pi agent/session，也不注册它的文件、Shell 或其他工具。
+等待、暂停、上下文压缩与恢复由 MCP 宿主控制。技能内容不能授予工具权限，
+也不能单独授权开始或继续游戏。
 
 ## 客户端与刷新
 

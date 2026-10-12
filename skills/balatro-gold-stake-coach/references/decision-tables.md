@@ -31,7 +31,7 @@ Before using Pair as the current play:
 4. Check what keeping a Blue Seal, Gold card, or Steel card contributes. A Blue Seal requires remaining held through round-end and consumable capacity for its Planet.
 5. If seeking Mercury, make the final played hand Pair. A previous Pair does not determine the seal reward when the final hand is different.
 6. Check growth conditions: Green Joker loses Mult on discards; Ride the Bus resets on scoring a face card; Square Joker needs exactly four played cards; Supernova depends on that hand's play count.
-7. Resolve relevant card order, independent Joker order, and copier targets. Issue a full `rearrange` permutation when order must change, then use its returned indices and revision.
+7. Resolve relevant card order, independent Joker order, and copier targets. Issue a full `rearrange` permutation when order must change, then use its returned indices and rev.
 8. If held-value preservation threatens survival, use the necessary card or finish with another hand type.
 
 A high-level Pair engine can be strong without a Chips Joker. Conversely, Blue Seals alone do not supply enough damage for every Boss. Recompute after upgrades, debuffs, replacements, and new targets.

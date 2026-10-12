@@ -87,7 +87,8 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     }));
   }
   server.registerResource('gameplay-guide', 'balatro://guide', {
-    title: 'Balatro tool workflow', mimeType: 'text/markdown', description: 'Setup, compact result semantics and safe action/recovery workflow.',
+    title: 'Tool and state guide', mimeType: 'text/markdown',
+    description: 'The field contract of this server: every state key, how to merge game_action results, worked examples, and recovery after timeouts and uncertain outcomes. Starts with installation notes for people.',
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: await readFile(resolve(projectRoot, 'docs/tool-guide.md'), 'utf8') }] }));
   registerGameplayResources(server, context);
   return { server, async close() { await pending; await server.close(); await backend.close(); await trace.flush().catch(() => {}); } };

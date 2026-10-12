@@ -39,8 +39,9 @@ Ask for advice or hand over a whole run:
 
 The server publishes its gameplay skills as MCP resources (`balatro://skills`)
 and as `skill:<name>` prompts, so any MCP client can load them on demand.
-`skills/core.md` is the always-on decision protocol. The two skills below are
-additional contributions that agents load when a decision calls for them.
+`skills/core.md` is the decision protocol, published as `balatro://protocol` and
+as part of `balatro://context`. The two skills below are additional
+contributions that agents load when a decision calls for them.
 
 ### `balatro-gold-stake-coach`
 

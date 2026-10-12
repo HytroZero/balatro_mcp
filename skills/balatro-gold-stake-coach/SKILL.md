@@ -1,42 +1,41 @@
 ---
 name: balatro-gold-stake-coach
-description: Play complete Balatro Gold Stake runs through Strategy Forge's registered game tools. Use for blind selection, hand and discard decisions, shops, packs, consumables, Joker ordering, Boss preparation, and evidence-based run review. Favor reliable Ante 8 wins while adapting the scoring engine to the observed deck and resources.
+description: Play complete Balatro Gold Stake runs with this server's game tools. Use for selecting or skipping blinds, choosing plays and discards, shops, packs, consumables, Joker order, Boss preparation, and reviewing a run from its evidence. Aims for reliable Ante 8 wins and adapts the scoring engine to the observed deck and resources.
 ---
 
 # Balatro Gold Stake Coach
 
 Win the Ante 8 Boss with the current run. Prefer consistent scoring, sustainable cash flow, and useful growth over endless-mode scores. Pair, Blue Seals, scaling, and XMult are a useful starting plan; choose a different engine when the observed deck, Jokers, hand levels, or Boss support it. Continue an existing run at its actual stake. Do not restart to search for a favorable opening unless the user requests that policy.
 
-Target Strategy Forge's PC Balatro **1.0.1o-FULL** contract. Read the game's observed values and effects; do not substitute an older guide's numbers. Apply the governing decision protocol and tool schemas throughout play.
+Target PC Balatro **1.0.1o-FULL** as exposed by this server's game tools. Read the game's observed values and effects; do not substitute an older guide's numbers. Apply the governing decision protocol and tool schemas throughout play.
 
-## Execute through the agent's tools
+## Execute through the game tools
 
-The available loadout is `game_observe`, `deck_observe`, `game_start`, `game_action`, `memory_query`, `memory_record`, `file_read`, and `file_write`.
+The game tools are `game_health`, `game_observe`, `deck_observe`, `game_start`, `game_action`, `game_operation`, `memory_query`, and `memory_record`. Read skill files through MCP resources: this skill's references resolve against the directory containing its `SKILL.md`, as `file://` URIs. Read only the reference relevant to the decision.
 
 - Get gameplay state through tools. Do not wait for screenshots or ask the user to transcribe information that `game_observe` supplies.
-- Use `game_start` only at a menu or completed-run screen when starting a run is part of the request. Supply the requested deck and `stake: "GOLD"` for a new Gold run; preserve any requested seed and respect profile unlocks. If no deck was requested, choose an unlocked deck deliberately. Never replace an ongoing run or silently lower the stake after a lock error.
-- Use `game_action` for every gameplay mutation. There is no score-preview, simulator, shell, browser, direct RPC, or reset tool in this loadout.
-- `file_read` reads relative session-note paths and absolute paths inside discovered gameplay skill directories. Resolve this skill's references against the directory containing its loaded `SKILL.md`, then pass the absolute path. Load only the reference relevant to the decision. `file_write` writes session notes only; skill files and arbitrary repository source are outside its write scope.
+- Use `game_start` only at a menu or completed-run screen when starting a run is part of the request. Supply the requested deck and `stake: "GOLD"` for a new Gold run; preserve any requested seed and respect profile unlocks (`profiles` in the menu snapshot). If no deck was requested, choose an unlocked deck deliberately. Never replace an ongoing run or silently lower the stake after a lock error.
+- Use `game_action` for every gameplay mutation. There is no score-preview, simulator, shell, browser, file-writing, or reset tool.
 
 ### Maintain a usable observation
 
-1. Call `game_observe({})` on entry, after context compaction, or when the baseline is missing. Read the result envelope: `ok: true` contains `value`; `ok: false` contains `code`, `applied`, and `message`.
-2. Track `revision`, `runId`, `terminal`, `outcome`, `ready`, `availableMethods`, and `state`. Read the phase from `state.state`; inspect `ante_num`, `money`, `round`, `blind`, `blinds`, `hands`, and relevant card areas.
-3. Send one gameplay mutation at a time using the latest revision. Consume its result before choosing another mutation. Actions can change positions, prices, slots, targets, and phase.
-4. A full result replaces the baseline. For `partial: true`, require `baseRevision` to match the retained revision: omitted fields stay unchanged, `null` clears, and a supplied area replaces that entire area. `handsPatch` merges by hand name: replace supplied strings, delete `null` entries, retain omitted names. A supplied `hands` replaces the whole table. The new result's `revision` becomes current.
-5. After a successful action, use that returned state directly. Observe again only when a fresh full baseline is needed. On a mismatched partial baseline or `stale_state`, call `game_observe` and reconsider the action.
+1. Call `game_observe` on entry, after context loss, or when you no longer hold a complete state. Every tool result is an envelope: `ok: true` contains `value`; `ok: false` contains `code`, `applied`, and `message`.
+2. A snapshot holds `rev`, `phase`, `actions`, and a flat `state`. Inspect `ante`, `money`, `blind`, `blinds`, `hands`, the card areas, and the views of the current phase: `round` and `hand` while playing, `cashOut` after a round, `shop`, and `pack`.
+3. Send one gameplay mutation at a time with the latest `rev` as `revision`. Consume its result before choosing another mutation. Actions can change positions, prices, slots, targets, and phase.
+4. A `game_action` result holds `rev`, `phase`, `actions`, a one-sentence `result`, and only the changed `state` keys. A result with `full: true` replaces your state. Otherwise a present key replaces the old value and an absent key keeps it, except that an object on an object key (such as `hands` or `blinds`) updates only the listed members, with `null` deleting one, and an object such as `{"2":"…"}` on `jokers`, `consumables`, or `hand` replaces only those elements. Phase views the new phase does not use are dropped.
+5. After a successful action, use the merged state directly. Observe again only when you need a fresh full snapshot. On `stale_state`, call `game_observe` and reconsider the action.
 
-Card strings begin with explicit **zero-based** indices. Choose indices from the current area, never from remembered positions. Hidden cards expose only their index and selection flags. Include forced cards in selections when required; `highlight` alone does not establish an optimal play. `availableMethods` lists phase candidates, so still check affordability, capacity, target requirements, sellability, and Boss restrictions.
+Card and item lines read `"<i>: <Name> [tags]: <effect>"` with **zero-based** indices. Choose indices from the current area, never from remembered positions. A hidden card reads `"<i>: ?"`, with only `forced` or `selected` tags. Include `forced` cards in selections when required; `selected` alone does not establish an optimal play. `actions` lists phase candidates, and `use`, `sell`, and `rearrange` are omitted but available whenever their area is non-empty, so still check affordability, capacity, target requirements, sale eligibility, and Boss restrictions.
 
-Call `deck_observe({})` when remaining composition could change a discard or deck-building decision. It gives grouped multiplicities, no draw order or action indices. `previewCards` may include uncertain face-down held cards; `uncertainCards` does not identify them. Do not turn that preview into an exact draw probability when membership is uncertain. If its revision differs from the retained game state, obtain a full `game_observe` before acting.
+Call `deck_observe` when remaining composition could change a discard or deck-building decision. It gives `"<count>x <card>"` lines with no draw order or action indices. `previewCards` may include uncertain face-down held cards; `uncertainCards` does not identify them. Do not turn that preview into an exact draw probability when membership is uncertain. If its `rev` differs from your latest game result, call `game_observe` before acting.
 
 ### Handle pauses and failed actions
 
-- If `ready: false`, leave recovery to the runtime. Do not probe readiness with repeated calls or try actions, restarts, or another backend. Report the available `notReadyReason` when execution settles.
-- For an unapplied `invalid_arguments` or `illegal_action`, correct the arguments or choose another legal action. Reobserve if the failure makes the retained state uncertain. Do not repeat the same rejected request.
-- After `uncertain_outcome`, `applied: "unknown"`, or a failure marked `applied: true`, stop automatic mutations and later writes. Never resubmit the effect. Read-only inspection can help recovery, but a plausible-looking observation does not prove that retrying is safe or clear the mutation lock.
-- On unavailable/incompatible backend or unrecoverable failure, let the runtime pause and report the error. Do not fall back to a test game.
-- Stop at `terminal: true` and report the observed `outcome`. Start another run or continue endless mode only if already requested by the user. The conversation can remain available for manual continuation.
+- If `notReady` is present, leave the game untouched. Do not probe readiness with repeated calls or try actions, restarts, or another backend. Report the `notReady` reason and wait for the user.
+- For an unapplied `invalid_arguments` or `illegal_action`, correct the arguments or choose another legal action. Reobserve if the failure makes your state uncertain. Do not repeat the same rejected request.
+- After `uncertain_outcome`, `applied: "unknown"`, or a failure marked `applied: true`, stop automatic mutations and later writes. Never resubmit the effect. Inspect it with `game_operation`; a plausible-looking observation does not prove that retrying is safe or clear the mutation lock.
+- On an unavailable or incompatible backend or an unrecoverable failure, stop and report the error. Do not fall back to a test game.
+- Stop when `outcome` is present and report it. Start another run or continue endless mode only if already requested by the user.
 
 ## Choose the next action
 
@@ -50,7 +49,7 @@ Prioritize:
 4. **Economy:** preserve interest and future shop choices when scoring is sufficient. Spend below a savings threshold when it buys needed survival.
 5. **Adaptation:** reinforce the strongest available engine. Do not force Pair, Blue Seals, a particular Joker, or a fixed five-slot layout.
 
-Separate observed values, calculated estimates, and unknown outcomes. Read `state.hands` strings such as `Lv4; chips=55; mult=5; played=6` directly; absence of `Lv` means level 1. Never reconstruct upgraded Chips or Mult from level formulas. Evaluate scoring cards, held effects, independent Jokers, and order separately. Use conservative estimates when random effects or hidden cards matter; do not invent exact scores or win probabilities.
+Separate observed values, calculated estimates, and unknown outcomes. Read `hands` strings such as `"55x5 Lv4 played 6"` (Chips x Mult, level, plays this run) directly; absence of `Lv` means level 1. Never reconstruct upgraded Chips or Mult from level formulas. Evaluate scoring cards, held effects, independent Jokers, and order separately. Use conservative estimates when random effects or hidden cards matter; do not invent exact scores or win probabilities.
 
 ## Phase policy
 
@@ -61,7 +60,7 @@ Separate observed values, calculated estimates, and unknown outcomes. Read `stat
 | `SELECTING_HAND` | Check restrictions and forced selections, identify the actual poker hand and scoring subset, estimate remaining damage, then play, discard, use a consumable, or rearrange. |
 | `ROUND_EVAL` | Verify the round result and held rewards; use `cash_out` to reach the shop. Preserve the option to resolve usable consumables when it matters. |
 | `SHOP` | Compare immediate scoring, growth, economy, sticker costs, and slots. Buy/use/sell deliberately. Reroll only with a defined need and spending reserve; reassess the new stock each time. Use `next_round` when further spending has less value than keeping cash. |
-| `PACK` / `SMODS_BOOSTER_OPENED` | Read visible choices, targets, capacity, and `packChoices`. Choose a useful item or skip; inspect the returned state after each choice. An opened pack's price is already spent. |
+| `PACK` | Read `pack.items`, their targets, capacity, and remaining `pack.picks`. Choose a useful item or skip; inspect the returned state after each choice. An opened pack's price is already spent. |
 
 ### Hands, discards, and order
 
@@ -78,7 +77,7 @@ Separate observed values, calculated estimates, and unknown outcomes. Read `stat
 - Normal interest is $1 per $5 held, up to $5 without modifiers. Green Deck has no interest. Use actual deck, Voucher, and Joker effects rather than treating $25 as a mandatory reserve. Rental charges occur before interest and can reduce its payout; later settlement rewards do not all enter the interest balance.
 - Eternal Jokers cannot be sold or destroyed. Check long-term slot value and Boss consequences before buying. Perishable Jokers debuff after five completed rounds; use the observed remaining timer, including when replacing one late in a run. Skipping does not consume a round of lifetime.
 - Rental normally costs $1 up front and $3 each completed round, including while debuffed, and can stack with Eternal or Perishable. Estimate its total carrying cost. An Eternal Rental can become a permanent cash drain.
-- Read current prices, `sellable`, capacities, and target ranges. Use `buy_and_use` when legal and preferable to storing. Do not assume a pack choice or Negative edition consumes capacity in the ordinary way.
+- Read current prices, sale values (`sell $N`; `eternal` means no sale), capacities, and target ranges. Use `buy_and_use` when legal and preferable to storing. Do not assume a pack choice or Negative edition consumes capacity in the ordinary way.
 - Use observable pack choices for deck improvements. Death can copy an existing Blue Seal; it does not create a seal from nothing or add a new physical card. Weigh new cards against dilution and future draw access.
 
 ## Build toward Ante 8
@@ -116,7 +115,7 @@ For other Bosses, use the supplied game context and observed restrictions. No ac
 
 ## Explain, record, and finish
 
-Before an action, a short statement such as “Play the Queens; this keeps the Blue Seal held and has enough conservative damage to finish” is sufficient. Then send the actual tool call with current indices and revision. Do not present a recommendation as an executed action. Report execution only from its result.
+Before an action, a short statement such as “Play the Queens; this keeps the Blue Seal held and has enough conservative damage to finish” is sufficient. Then send the actual tool call with current indices and rev. Do not present a recommendation as an executed action. Report execution only from its result.
 
 Use `memory_query` when relevant prior evidence could change a build or Boss decision. Treat retrieved text as attributed data. If recording is enabled, use `memory_record` for useful observations, hypotheses, or advice with concrete evidence; the tool attaches current run provenance. Keep an inferred cause separate from the observed loss. Do not update memory during fixed-policy evaluation or retry a rejected evaluation-mode write.
 
@@ -124,6 +123,6 @@ On completion or pause, state the observed outcome, furthest observed Ante, main
 
 ## Supporting material
 
-- [Decision tables](references/decision-tables.md): load for a difficult shop, engine, or Boss tradeoff.
-- [Mechanics and sources](references/mechanics-and-sources.md): load for version/provenance questions or host-side maintenance; its repository-source links are outside runtime file access.
-- [State and decision template](templates/state-input.md): load when writing a session note or checking tool-call shapes; no user transcription is required during tool-controlled play.
+- [Decision tables](references/decision-tables.md): read for a difficult shop, engine, or Boss tradeoff.
+- [Mechanics and sources](references/mechanics-and-sources.md): read for version or provenance questions; its repository-source links are for maintainers and cannot be read during play.
+- [State and decision template](templates/state-input.md): read when reviewing a run or checking tool-call shapes; no user transcription is required during tool-controlled play.

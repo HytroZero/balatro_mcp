@@ -18,7 +18,9 @@ machine paths are omitted from the public record.
 - `memory/store.ts`, `model/trace.ts`: memory snapshots, evidence attribution,
   persistence, and trace sanitization. No model provider integration is enabled.
 - `model/prompt.ts`, `model/context/`, `skills/`: gameplay context, decision
-  protocol, coaching skill, and attributed Wiki-derived reference material.
+  protocol, coaching skill, and attributed Wiki-derived reference material. The
+  decision protocol and the coaching skill's execution sections are rewritten for
+  this server's tools and observation v3.
 - `tools/index.ts`: game and memory tools. The upstream arbitrary file tools are
   excluded; eight game/memory/diagnostic tools are registered in this server.
 
