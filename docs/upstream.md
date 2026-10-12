@@ -33,10 +33,9 @@ Use the root README for setup.
 ## Licenses
 
 Project code is distributed under the root [MIT license](../LICENSE).
-Pi packages are pinned to 1.0.4; their MIT notice is included in the installed
-packages. Pi's skill discovery and formatting
-functions are reused without enabling an agent session, coding tools, or ambient
-skill discovery. Other installed dependencies retain their own licenses.
+Skill discovery is implemented in `src/skills.ts` using the `yaml` and `ignore`
+packages. The server no longer depends on Pi packages. Installed dependencies
+retain their own licenses.
 
 Wiki-derived material under `skills/balatro-wiki-rules/` retains **CC BY-NC-SA 3.0**,
 attributed to Balatro Wiki contributors. Its sources, revision records, license,

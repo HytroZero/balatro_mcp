@@ -1,11 +1,11 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
-import { McpServer, fromJsonSchema, type CallToolResult } from '@modelcontextprotocol/server';
+import { McpServer, type CallToolResult } from '@modelcontextprotocol/server';
 import { z } from 'zod';
-import { BackendError, record, type Backend } from '../env/contract.ts';
+import { errorEnvelope, type Backend } from '../env/contract.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { Trace } from '../model/trace.ts';
-import { createTools } from '../tools/index.ts';
+import { registerGameTools } from '../tools/index.ts';
 import { projectRoot, type Options } from './config.ts';
 import { loadGameplayContext, registerGameplayResources } from './context.ts';
 import { nextId } from './ids.ts';
@@ -16,8 +16,7 @@ const envelopeSchema = z.object({
 }).strict();
 
 function failure(error: unknown): CallToolResult {
-  const problem = error instanceof BackendError ? error : new BackendError('backend_failure', error instanceof Error ? error.message : 'Operation failed.');
-  const structuredContent = { ok: false, code: problem.code, applied: problem.applied, message: problem.message };
+  const structuredContent = errorEnvelope(error);
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };
 }
 
@@ -35,33 +34,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     pending = next.catch(() => {});
     return next;
   }
-  async function log(data: unknown): Promise<void> {
-    try { await trace.write('mcp_tool', data); }
-    catch { console.error('Balatro MCP: trace append failed; the tool result is still authoritative.'); }
-  }
-  const tools = createTools(backend, trace, () => {}, options.timeoutMs);
-  for (const tool of tools) {
-    const readOnly = ['game_observe', 'deck_observe'].includes(tool.name);
-    server.registerTool(tool.name, {
-      title: tool.name.replaceAll('_', ' '), description: tool.description,
-      // SDK v2 accepts Standard Schema: preserve TypeBox's exact JSON Schema,
-      // including uniqueItems and strict action unions, without a lossy Zod conversion.
-      inputSchema: fromJsonSchema<Record<string, unknown>>({ ...tool.parameters, additionalProperties: false }),
-      outputSchema: ['game_observe','game_start','game_action'].includes(tool.name) ? fromJsonSchema<Record<string, unknown>>(JSON.parse(JSON.stringify(tool.outputSchema))) : envelopeSchema,
-      annotations: { readOnlyHint: readOnly, destructiveHint: !readOnly, idempotentHint: readOnly, openWorldHint: false },
-    }, async (params, context) => sequential(async () => {
-      if (context.mcpReq.signal.aborted) return failure(new BackendError('cancelled', 'Call cancelled before execution; no action dispatched.'));
-      let result: CallToolResult;
-      let details: unknown;
-      try {
-        const native = await tool.execute(nextId('call'), params, context.mcpReq.signal);
-        details = native.details;
-        result = { content: native.content, structuredContent: record(native.structuredContent), isError: native.isError ?? false };
-      } catch (error) { result = failure(error); }
-      await log({ name: tool.name, arguments: params, result, details });
-      return result;
-    }));
-  }
+  registerGameTools(server, backend, trace, sequential, options.timeoutMs);
   if (backend instanceof ForgeBridgeBackend) {
     server.registerTool('game_health', {
       title: 'Game bridge health', description: 'Read mod identity, game version, Lua runtime, capabilities and readiness/notReadyReason. decision_state capability indicates extended decision fields. Does not start a run. Returns {ok,value} or {ok:false,code,applied,message}.',

@@ -1,6 +1,6 @@
 # 游戏观察字段设计 v3（精简版）
 
-状态：已实施（`env/compact.ts`、`tools/index.ts`、Lua 观察修正）。日期：2026-10-11。实现与最初提案的差异已在正文中更新：`ante` 直接取 `blinds` 所属底注，不再冻结 ROUND_EVAL；盲注状态写成 `[defeated]`；未知值统一写 `?`；完整桥接 revision 仍被接受。
+状态：已实施（`env/compact.ts`、`tools/index.ts`、Lua 观察修正）。更新日期：2026-10-12。实现与最初提案的差异已在正文中更新：`ante` 直接取 `blinds` 所属底注，不再冻结 ROUND_EVAL；盲注状态写成 `[defeated]`；未知值统一写 `?`；动作只接受本连接发出的最新短 revision。
 
 适用范围：`game_observe`、`game_start`、`game_action` 成功时返回的模型可见投影（`env/compact.ts`）。Lua HTTP 协议 1、动作参数、零基索引、revision 校验、错误 envelope 和 `uncertain_outcome` 恢复流程都不变。
 
@@ -77,7 +77,7 @@
 | `actionId` | 成功时不返回，trace 中保留。`game_operation` 可省略 actionId 查看最后一次动作；`uncertain_outcome` 失败 envelope 可携带它 |
 | `summary` | 由有事实内容的 `result` 替代 |
 
-**短 revision 的安全性。** 工具层记住最后一次交给调用方的完整桥接 revision，把与之计数器相同的短 rev 还原成完整值，由桥接按原规则校验；桥接实例改变后，旧值同样过期。本连接没有发出过的短 rev（包括 MCP 进程重启后、尚未投递观察时）直接返回 `stale_state`，不会派发动作。完整的 `<instance>:<counter>` revision 原样交给桥接校验，用于兼容和内部测试。
+**短 revision 的安全性。** 工具层记住最后一次交给调用方的完整桥接 revision，把与之计数器相同的短 rev 还原成完整值，由桥接按原规则校验；桥接实例改变后，旧值同样过期。本连接没有发出过的短 rev（包括 MCP 进程重启后、尚未投递观察时），以及完整的 `<instance>:<counter>` revision，均直接返回 `stale_state`，不会派发动作。health 和 deck 读取不建立动作 revision；状态改变后必须重新 `game_observe`。
 
 ## 4. state 键
 

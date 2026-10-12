@@ -1,7 +1,6 @@
-import { realpathSync } from 'node:fs';
 import { readdir, readFile, realpath, stat } from 'node:fs/promises';
 import { isAbsolute, relative, resolve, sep, extname } from 'node:path';
-import { loadSkills, stripFrontmatter, type Skill } from '@earendil-works/pi-coding-agent';
+import { discoverSkills, stripFrontmatter, type Skill } from './skills.ts';
 import { McpServer, ResourceTemplate } from '@modelcontextprotocol/server';
 import { z } from 'zod';
 import { loadSystemPrompt } from '../model/prompt.ts';
@@ -56,7 +55,7 @@ function mimeType(path: string): string {
   return ({ '.md': 'text/markdown', '.json': 'application/json', '.py': 'text/x-python' } as Record<string, string>)[extname(path).toLowerCase()] ?? 'text/plain';
 }
 
-/** Pi's catalog layout, with skill:// locations for a reader that has only MCP resources. */
+/** Publish skill metadata with skill:// locations for MCP resource readers. */
 function formatCatalog(skills: Skill[]): string {
   const visible = skills.filter(skill => !skill.disableModelInvocation);
   if (!visible.length) return '';
@@ -96,16 +95,11 @@ function parseSkillUri(uri: string): { name: string; segments: string[] } {
   return { name: decodeURIComponent(rest.slice(0, slash)), segments };
 }
 
-/** Reuse Pi's discovery policy from Strategy Forge's session loader; publish files under skill:// URIs. */
+/** Discover project gameplay skills and publish their files under skill:// URIs. */
 export async function loadGameplayContext(root = projectRoot) {
   const skillDirectory = resolve(root, 'skills');
-  const skillRoot = realpathSync(skillDirectory);
-  const discovered = loadSkills({ cwd: root, agentDir: resolve(root, '.pi'), skillPaths: [skillDirectory], includeDefaults: false });
-  discovered.skills = discovered.skills.filter(skill => {
-    if (contained(skillRoot, realpathSync(skill.filePath))) return true;
-    discovered.diagnostics.push({ type: 'warning', path: skill.filePath, message: 'Skill resolves outside the gameplay skill directory.' });
-    return false;
-  });
+  const skillRoot = await realpath(skillDirectory);
+  const discovered = await discoverSkills(skillDirectory);
   const basePrompt = await loadSystemPrompt(root);
   const catalog = formatCatalog(discovered.skills);
   const fullContext = [basePrompt, catalog, bindings].filter(Boolean).join('\n\n');
@@ -138,7 +132,7 @@ export async function loadGameplayContext(root = projectRoot) {
   async function skillFiles(skill: Skill) {
     const base = await realpath(skill.baseDir), files: { uri: string; path: string; title?: string; bytes: number }[] = [];
     async function walk(directory: string, prefix: string[]): Promise<void> {
-      const entries = (await readdir(directory, { withFileTypes: true })).filter(entry => !entry.name.startsWith('.')).sort((a, b) => a.name.localeCompare(b.name));
+      const entries = (await readdir(directory, { withFileTypes: true })).filter(entry => !entry.name.startsWith('.')).sort((a, b) => a.name < b.name ? -1 : a.name > b.name ? 1 : 0);
       for (const entry of entries) {
         let target: string;
         try { target = await realpath(resolve(directory, entry.name)); } catch { continue; }
@@ -160,19 +154,14 @@ export async function loadGameplayContext(root = projectRoot) {
       skills: await Promise.all(discovered.skills.map(async skill => ({
         name: skill.name, description: skill.description, uri: skillUri(skill.name), invocable: !skill.disableModelInvocation, files: await skillFiles(skill),
       }))),
-      diagnostics: discovered.diagnostics.map(item => ({
-        ...item,
-        ...(item.path ? { path: display(item.path) } : {}),
-        ...(item.collision ? { collision: { ...item.collision, winnerPath: display(item.collision.winnerPath), loserPath: display(item.collision.loserPath) } } : {}),
-      })),
+      diagnostics: discovered.diagnostics.map(item => ({ ...item, path: display(item.path) })),
     };
   }
 
   async function expandSkill(name: string, instructions = ''): Promise<string> {
     const skill = findSkill(name);
     const body = stripFrontmatter(await readSkillResource(skillUri(skill.name))).trim();
-    // Follow Pi AgentSession._expandSkillCommand (frontmatter removal, reference
-    // base, whitespace, appended instructions) with skill:// locations.
+    // Give the skill body its resource base and append explicit user instructions.
     const block = `<skill name="${skill.name}" location="${skillUri(skill.name)}">\nReferences are relative to ${skillUri(skill.name, '')}.\n\n${body}\n</skill>`;
     return instructions.trim() ? `${block}\n\n${instructions.trim()}` : block;
   }
@@ -195,7 +184,7 @@ export function registerGameplayResources(server: McpServer, context: Awaited<Re
     server.registerResource(name, uri, { title, description, mimeType: 'text/markdown' }, async url => ({ contents: [{ uri: url.href, mimeType: 'text/markdown', text: await readFile(resolve(context.root, path), 'utf8') }] }));
   }
   // List only automatically invocable skill bodies. Explicit-only skills remain
-  // readable and available via their named prompts, matching Pi's catalog visibility policy.
+  // readable and available via their named prompts.
   server.registerResource('skill-files', new ResourceTemplate('skill://{skill}/{+path}', {
     list: async () => ({ resources: context.skills.filter(skill => !skill.disableModelInvocation).map(skill => ({ name: skill.name, description: skill.description, uri: skillUri(skill.name), mimeType: 'text/markdown' })) }),
     complete: {
@@ -218,7 +207,7 @@ export function registerGameplayResources(server: McpServer, context: Awaited<Re
   for (const skill of context.skills) {
     server.registerPrompt('skill:' + skill.name, {
       title: skill.name, description: skill.description,
-      argsSchema: z.object({ instructions: z.string().optional().describe('Optional user instructions appended after the skill body, as in Pi /skill:name.') }).strict(),
+      argsSchema: z.object({ instructions: z.string().optional().describe('Optional user instructions appended after the skill body.') }).strict(),
     }, async ({ instructions }) => ({ messages: [{ role: 'user', content: { type: 'text', text: await context.expandSkill(skill.name, instructions) } }] }));
   }
 }

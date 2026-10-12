@@ -4,7 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadSkills, stripFrontmatter } from '@earendil-works/pi-coding-agent';
+import { stripFrontmatter } from '../src/skills.ts';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
 import { loadGameplayContext, registerGameplayResources, skillUri } from '../src/context.ts';
@@ -24,13 +24,11 @@ async function fixture() {
   for (const [name, frontmatter] of [
     ['manual', 'name: manual\ndescription: Explicit invocation only.\ndisable-model-invocation: true'],
     ['invalid', 'name: invalid'],
-    ['ignored', 'name: ignored\ndescription: Ignored entry.'],
     ['duplicate', 'name: coach\ndescription: Duplicate entry.'],
   ]) {
     await mkdir(resolve(root, 'skills', name));
     await writeFile(resolve(root, 'skills', name, 'SKILL.md'), `---\n${frontmatter}\n---\n${name.toUpperCase()}_BODY_SENTINEL`);
   }
-  await writeFile(resolve(root, 'skills/.gitignore'), 'ignored/\n');
   await mkdir(resolve(root, '.pi/skills/ambient'), { recursive: true });
   await writeFile(resolve(root, '.pi/skills/ambient/SKILL.md'), '---\nname: ambient\ndescription: Ambient coding skill.\n---\nAMBIENT_SENTINEL');
   return { root, close: () => rm(root, { recursive: true, force: true }) };
@@ -48,10 +46,9 @@ async function connect(root: string) {
 
 test('bootstrap stays small while full reference context preserves rules and an install-independent skill catalog', async () => {
   const context = await loadGameplayContext();
-  const expected = loadSkills({ cwd: projectRoot, agentDir: resolve(projectRoot, '.pi'), skillPaths: [resolve(projectRoot, 'skills')], includeDefaults: false });
   assert.equal(context.basePrompt, await loadSystemPrompt(projectRoot));
-  assert.deepEqual(context.skills, expected.skills);
-  for (const skill of expected.skills) assert.ok(context.catalog.includes(`<location>${skillUri(skill.name)}</location>`));
+  assert.deepEqual(context.diagnostics, []);
+  for (const skill of context.skills) assert.ok(context.catalog.includes(`<location>${skillUri(skill.name)}</location>`));
   assert.equal(context.fullContext.includes(projectRoot), false);
   assert.deepEqual(context.skills.map(skill => skill.name).sort(), ['balatro-gold-stake-coach', 'balatro-wiki-rules']);
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'model/context/balatro.md'), 'utf8')).trim()));
@@ -67,23 +64,45 @@ test('bootstrap stays small while full reference context preserves rules and an 
   }
 });
 
-test('Pi discovery preserves ignore files, collisions, diagnostics and explicit-only skills while excluding ambient coding context', async () => {
+test('gameplay discovery reports invalid skills and keeps explicit-only skills within its own tree', async () => {
   const f = await fixture();
   try {
     const context = await loadGameplayContext(f.root);
-    const expected = loadSkills({ cwd: f.root, agentDir: resolve(f.root, '.pi'), skillPaths: [resolve(f.root, 'skills')], includeDefaults: false });
-    assert.deepEqual(context.skills, expected.skills); assert.deepEqual(context.diagnostics, expected.diagnostics);
+    assert.deepEqual(context.skills.map(skill => skill.name), ['coach', 'manual']);
+    assert.equal(context.skills[0].description, 'Decide when chips < target & survive.');
+    assert.equal(context.skills[0].filePath, resolve(f.root, 'skills/coach/SKILL.md'));
+    assert.equal(context.skills[1].disableModelInvocation, true);
+    assert.ok(context.diagnostics.some(item => item.path === resolve(f.root, 'skills/duplicate/SKILL.md') && /match its directory/.test(item.message)));
     assert.match(context.catalog, /<location>skill:\/\/coach\/SKILL\.md<\/location>/);
     assert.match(context.catalog, /chips &lt; target &amp; survive/);
     assert.equal(context.catalog.includes(f.root), false);
-    assert.doesNotMatch(context.catalog, /manual|ambient|ignored|BODY_SENTINEL/);
+    assert.doesNotMatch(context.catalog, /manual|ambient|duplicate|BODY_SENTINEL/);
     assert.ok(context.diagnostics.some(item => item.message === 'description is required'));
-    assert.ok(context.diagnostics.some(item => item.type === 'collision'));
     assert.ok(Buffer.byteLength(context.fullContext) > 50000);
     assert.ok(Buffer.byteLength(context.instructions) < 2000);
     assert.match(context.fullContext, /CORE_PROTOCOL_SENTINEL/);
     assert.doesNotMatch(context.instructions, /GAME_RULES_SENTINEL|CORE_PROTOCOL_SENTINEL/);
     assert.doesNotMatch(context.instructions, /COACH_BODY_SENTINEL|MANUAL_BODY_SENTINEL|AMBIENT_SENTINEL/);
+  } finally { await f.close(); }
+});
+
+test('skill discovery supports YAML blocks and skips malformed, nested and looping entries', async () => {
+  const f = await fixture();
+  try {
+    for (const name of ['kept', 'broken', 'group/nested']) await mkdir(resolve(f.root, 'skills', name), { recursive: true });
+    await writeFile(resolve(f.root, 'skills/group/nested/SKILL.md'), '---\nname: nested\ndescription: Must not be discovered.\n---\nBody');
+    await writeFile(resolve(f.root, 'skills/kept/SKILL.md'), '\uFEFF---\r\nname: kept\r\ndescription: >-\r\n  First line with a colon:\r\n  second line & more.\r\ndisable-model-invocation: "true"\r\n---\r\n\r\n# Kept body\r\n');
+    await writeFile(resolve(f.root, 'skills/broken/SKILL.md'), '---\ndescription: [unterminated\n---\nBody');
+    await writeFile(resolve(f.root, 'skills/loose.md'), '---\nname: loose\ndescription: Not in a skill directory.\n---\nBody');
+    await symlink(resolve(f.root, 'skills'), resolve(f.root, 'skills/loop'));
+    const context = await loadGameplayContext(f.root);
+    assert.deepEqual(context.skills.map(skill => skill.name), ['coach', 'kept', 'manual']);
+    const kept = context.skills.find(skill => skill.name === 'kept')!;
+    assert.equal(kept.description, 'First line with a colon: second line & more.');
+    assert.equal(kept.disableModelInvocation, false);
+    assert.equal(await context.expandSkill('kept'), '<skill name="kept" location="skill://kept/SKILL.md">\nReferences are relative to skill://kept/.\n\n# Kept body\n</skill>');
+    assert.ok(context.diagnostics.some(item => item.path === resolve(f.root, 'skills/broken/SKILL.md')));
+    assert.equal(stripFrontmatter('Plain text\r\nwith no header.'), 'Plain text\nwith no header.');
   } finally { await f.close(); }
 });
 
@@ -97,8 +116,8 @@ test('MCP initializes with short instructions and serves complete context and re
     assert.equal(indexText.includes(JSON.stringify(f.root).slice(1, -1)), false);
     const coach = index.skills.find((skill: { name: string }) => skill.name === 'coach');
     assert.equal(index.skills.length, 2); assert.equal(coach.uri, 'skill://coach/SKILL.md'); assert.equal(coach.invocable, true);
-    assert.deepEqual(coach.files.map((file: { path: string }) => file.path), ['references/plan.md', 'SKILL.md']);
-    assert.deepEqual(coach.files[0], { uri: 'skill://coach/references/plan.md', path: 'references/plan.md', bytes: Buffer.byteLength(await readFile(resolve(f.root, 'skills/coach/references/plan.md'))) });
+    assert.deepEqual(coach.files.map((file: { path: string }) => file.path), ['SKILL.md', 'references/plan.md']);
+    assert.deepEqual(coach.files[1], { uri: 'skill://coach/references/plan.md', path: 'references/plan.md', bytes: Buffer.byteLength(await readFile(resolve(f.root, 'skills/coach/references/plan.md'))) });
     assert.equal(index.skills.find((skill: { name: string }) => skill.name === 'manual').invocable, false);
     assert.ok(index.diagnostics.some((item: { path?: string }) => item.path === 'skills/invalid/SKILL.md'));
     const { resources } = await client.listResources();
@@ -120,7 +139,7 @@ test('MCP initializes with short instructions and serves complete context and re
   } finally { await connection.close(); await f.close(); }
 });
 
-test('explicit MCP skill prompts match Pi expansion, remove frontmatter and allow manual-only invocation', async () => {
+test('explicit MCP skill prompts remove frontmatter and allow manual-only invocation', async () => {
   const f = await fixture(), connection = await connect(f.root);
   try {
     const { client, context } = connection;

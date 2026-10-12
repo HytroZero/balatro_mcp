@@ -1,6 +1,6 @@
 # Gameplay skills
 
-The MCP server uses Pi 1.0.4's `loadSkills` to discover gameplay skills in this directory when it starts. `skills/core.md` is the decision protocol, published as `balatro://protocol` and as part of `balatro://context`; it is not a skill. Discovery follows Pi's frontmatter, ignore-file, naming, duplicate and diagnostic rules. A Markdown file without a description is not a discoverable skill.
+At startup `src/skills.ts` treats each direct subdirectory `skills/<name>/` that contains a `SKILL.md` as one skill. Frontmatter is YAML; `description` is required, and `name`, if given, must equal the directory name (lowercase letters, digits and single hyphens, at most 64 characters). An invalid skill, or one whose real path leaves this directory, is skipped and reported in the diagnostics instead of stopping the server. Other files here, such as `skills/core.md` (the decision protocol, published as `balatro://protocol` and as part of `balatro://context`), are not skills.
 
 Put a skill in `skills/<name>/SKILL.md`:
 
@@ -22,8 +22,8 @@ The skill catalog in `balatro://context` lists each skill's name, description an
 
 `balatro://objects/<name>` (optionally `?kind=joker`) searches the object catalog of `balatro-wiki-rules` by exact name, then by substring, and returns each match's `balatro://rules` row, catalog metadata, chapter URI and Wiki link. Prefer it to reading a whole catalog file during play.
 
-Each skill is also an MCP prompt named `skill:<name>`. It applies Pi's explicit expansion: it removes frontmatter, includes the skill body and its `skill://<name>/` reference base, and appends the optional `instructions` argument. Set `disable-model-invocation: true` in frontmatter to keep a skill out of the catalog and resource list while leaving its prompt and files available.
+Each skill is also an MCP prompt named `skill:<name>`. It removes frontmatter, includes the skill body and its `skill://<name>/` reference base, and appends the optional `instructions` argument. Set `disable-model-invocation: true` in frontmatter to keep a skill out of the catalog and resource list while leaving its prompt and files available.
 
 Restart the MCP server to discover added, renamed or removed skills; skill bodies, file lists and references are read on each request.
 
-Discovery is limited to this gameplay tree. Development skills in `.agents/skills/`, ambient Pi coding skills, extensions and coding tools are outside this server. Skill guidance cannot override governing instructions or grant tools or file access.
+Discovery is limited to this gameplay tree. Development skills in `.agents/skills/`, user skill directories, extensions and coding tools are outside this server. Skill guidance cannot override governing instructions or grant tools or file access.

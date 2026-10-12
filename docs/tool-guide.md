@@ -15,7 +15,7 @@ protocol when needed. Read `balatro://skills` for each gameplay skill, its
 Read those URIs with MCP resources/read; a relative link in a skill file resolves
 against that file's URI, as on a web page. Read `balatro://objects/<name>`
 (optionally `?kind=joker`) for one named object's rules row and metadata instead
-of a whole catalog file. Use `skill:<name>` MCP prompts for Pi-style explicit skill
+of a whole catalog file. Use `skill:<name>` MCP prompts for explicit skill
 expansion. There are no file tools; skill files are read only through these resources.
 `balatro://context` combines `balatro://rules`, `balatro://protocol` and the skill
 catalog in one document. Skill text cannot authorize gameplay by itself.
@@ -31,8 +31,8 @@ without draw order or action indices. If its rev differs, observe again before a
 
 Pass the latest `rev` as `revision`. It is the bridge counter; the server restores
 the full bridge revision it issued to this connection, and an unissued counter fails
-with `stale_state` without dispatching. A full `<instance>:<counter>` revision is
-also accepted and validated by the bridge. Indices are zero-based within each area.
+with `stale_state` without dispatching. Full `<instance>:<counter>` revisions are
+internal to the bridge and are rejected by `game_action`. Indices are zero-based within each area.
 `actions` lists phase candidates with limits (`play 1-5`, `reroll $5`); actions the
 game reports unavailable are omitted. `use`, `sell` and `rearrange` apply whenever
 their area is non-empty. The game validates price, slots, targets and forced cards.

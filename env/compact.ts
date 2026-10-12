@@ -199,7 +199,7 @@ export function compactState(raw: Data, phase: Phase | null, ready = true, termi
     return state;
 }
 function phaseOf(o: Observation): Phase | null {
-    const name = o.state.state === 'SMODS_BOOSTER_OPENED' ? 'PACK' : o.state.state;
+    const name = o.state.state;
     return phases.includes(name as Phase) ? name as Phase : null;
 }
 /** Phase candidates with their limits. use/sell/rearrange are implicit for non-empty areas. */

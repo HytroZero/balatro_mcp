@@ -1,4 +1,4 @@
-# 游戏规则与 Pi 技能上下文
+# 游戏规则与技能上下文
 
 MCP 初始化的 `instructions` 只包含简短操作约定：用户意图边界、先观察、revision、
 增量状态、隐藏信息边界、取消与未知结果恢复、终局停止，以及按需资源入口。
@@ -9,7 +9,7 @@ MCP 初始化的 `instructions` 只包含简短操作约定：用户意图边界
 1. `model/prompt.ts` 中的角色与用户意图边界。
 2. `model/context/balatro.md` 全文。
 3. `skills/core.md` 全文。
-4. 沿用 Pi 格式的 `<available_skills>` 索引，位置为 `skill://` URI。
+4. `<available_skills>` 索引，位置为 `skill://` URI。
 5. 通过 MCP 读取技能的说明，以及宿主会话控制的说明。
 
 前三项使用项目文件全文，没有压缩或截断。它们不再放入初始化说明。
@@ -20,20 +20,14 @@ MCP 初始化的 `instructions` 只包含简短操作约定：用户意图边界
 
 ## 技能发现与索引
 
-`src/context.ts` 调用固定版本 `@earendil-works/pi-coding-agent@1.0.4` 的：
+`src/context.ts` 使用项目内的 `src/skills.ts`，只扫描本项目 `skills/` 的直接子目录：
+`skills/<name>/SKILL.md` 即一个技能。frontmatter 由 `yaml` 解析，`description` 必填，
+`name` 可省略，填写时必须与目录名相同，因此不会重名。名称不合法、缺描述、YAML 损坏或
+真实路径离开 `skills/` 的条目被跳过并记入诊断，不会阻止服务启动。不递归、不读忽略文件；
+`skills/core.md` 等其他文件不是技能。
 
-- `loadSkills`：只扫描本项目 `skills/`，`includeDefaults:false`，使用与
-  Strategy Forge 相同的技能路径和真实路径过滤。不发现用户目录或工作区中的
-  ambient Pi 编码技能、扩展或上下文文件。
-- `stripFrontmatter`：显式调用时去除 frontmatter，正文、引用基准标记、空白及附加
-  指令格式沿用 Pi `AgentSession._expandSkillCommand`，位置换成 `skill://` URI。
-
-Pi 负责 frontmatter 解析、忽略文件、目录发现、名字冲突及诊断。
-
-技能索引不再使用 Pi 的 `formatSkillsForPrompt`。它给出本机绝对路径，并要求模型
-“在工具命令中使用绝对路径”，而本服务器没有文件或 Shell 工具。索引保留 Pi 的 XML
-结构和转义，`<location>` 改为 `skill://<name>/SKILL.md`，说明改为用 MCP
-`resources/read` 读取。正文不提前塞入常驻上下文。
+服务端生成 XML 技能索引，`<location>` 为 `skill://<name>/SKILL.md`，
+说明使用 MCP `resources/read` 读取。正文不提前塞入常驻上下文。
 `disable-model-invocation:true` 的技能保留在发现结果中，但不进入自动技能索引；
 可由用户显式调用。资源列表也遵循这一自动可见性规则。
 
@@ -56,7 +50,7 @@ Wiki 技能中的来源、署名和许可说明均已保留。
 | `balatro://skills` | 每个技能的 URI、可否由模型调用、全部文件（标题与字节数）、发现诊断 |
 | `skill://<name>/<path>` | 技能正文或引用文件全文 |
 | `balatro://objects/<name>` | 单个对象的规则表行、目录元数据、章节 URI 与 Wiki 链接 |
-| `skill:<name>` MCP prompt | Pi 风格的显式技能展开，可带 `instructions` 参数 |
+| `skill:<name>` MCP prompt | 显式技能展开，可带 `instructions` 参数 |
 
 技能文件 URI 与安装位置无关，不暴露本机路径。例如
 `skill://balatro-gold-stake-coach/SKILL.md` 中的 `references/decision-tables.md`
@@ -78,10 +72,9 @@ Small Blind、Big Blind 和三种贴纸在规则表中没有独立行，`rules` 
 资源只允许读取已发现技能目录中的普通文件，并检查真实路径；目录、隐藏文件、
 目录外文件和指向目录外的链接会被拒绝，也不会出现在文件清单中。旧的 `file://`
 URI 不再提供。资源完整返回文件内容，保留按需读取时的
-frontmatter；显式 prompt 才按 Pi 的规则去除 frontmatter。
+frontmatter；显式 prompt 去除 frontmatter，附上引用基准和可选用户指令。
 
-服务器没有文件或 Shell 工具。Pi coding-agent 依赖只用于复用技能加载函数，
-不创建 Pi agent/session，也不注册它的文件、Shell 或其他工具。
+服务器没有文件或 Shell 工具，也不依赖 Pi agent/session。
 等待、暂停、上下文压缩与恢复由 MCP 宿主控制。技能内容不能授予工具权限，
 也不能单独授权开始或继续游戏。
 
@@ -91,12 +84,13 @@ frontmatter；显式 prompt 才按 Pi 的规则去除 frontmatter。
 需要客户端支持初始化说明和资源读取；不自动采用说明的客户端可以读取
 `balatro://context` 后纳入对话。
 
-发现结果与索引在服务启动时建立。修改技能后重启服务刷新，和原 Pi agent 在新建
-会话或重启终端时重新发现技能的方式一致。正文、文件清单和引用在请求时读取。
+发现结果与索引在服务启动时建立。修改技能后重启服务刷新。
+正文、文件清单和引用在请求时读取。
 
 ## 验证
 
-测试将发现结果与 Pi 原函数逐项比较，并覆盖简短初始化、完整参考资源、超过旧长度上限
+测试覆盖 YAML 多行描述和 BOM/CRLF、忽略文件作用域、链接循环、无效元数据，
+以及简短初始化、完整参考资源、超过旧长度上限
 的内容、索引不含本机路径、忽略文件、重名诊断、仅手动调用技能、环境技能隔离、文件清单、
 相对链接解析、路径补全、正文及引用按需读取、显式展开、带空格路径、资源边界及对象检索。真实 stdio 测试确认初始化不再重复完整上下文，
 工具为 6 个，文件工具和 memory 工具不可调用。

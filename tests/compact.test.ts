@@ -43,12 +43,12 @@ test('full v3 snapshot is flat, typed, uses short revisions and does not mutate 
 });
 test('each phase carries only its views, including over engine leftovers', () => {
     const views: Record<string, string[]> = { BLIND_SELECT: [], SELECTING_HAND: ['round', 'deck', 'hand'], ROUND_EVAL: ['cashOut'], SHOP: ['shop'],
-        PACK: ['shop', 'pack', 'deck', 'hand'], SMODS_BOOSTER_OPENED: ['shop', 'pack', 'deck', 'hand'], GAME_OVER: ['runResult'] };
+        PACK: ['shop', 'pack', 'deck', 'hand'], GAME_OVER: ['runResult'] };
     for (const [phase, keys] of Object.entries(views)) {
         const full = compactObservation({ ...observation({ state: phase, packChoices: 2, shop: { cards: [card()] }, pack: { cards: [card()] }, completedRound: { ante: 1, target: 300 } }),
             terminal: phase === 'GAME_OVER', outcome: phase === 'GAME_OVER' ? 'lost' : 'ongoing' });
         assert.ok(Check(FullObservationSchema, full), phase);
-        assert.equal(full.phase, phase === 'SMODS_BOOSTER_OPENED' ? 'PACK' : phase);
+        assert.equal(full.phase, phase);
         assert.deepEqual(Object.keys(full.state).sort(), [...runKeys, ...keys].sort(), phase);
     }
     const menu = compactObservation({ ...observation({ state: 'MENU', profileOptions: { decks: [{ deck: 'RED', unlocked: true, stakes: ['WHITE', 'RED'], stakesKnown: true },
@@ -193,6 +193,16 @@ test('missing baseline, source/run/readiness changes, start, terminal and vanish
     }
     assert.equal(compactObservation(at(before, 'i:7', { creditLimit: -20 })).state.credit, -20);
 });
+test('player state keeps the current deck count and ignores obsolete card data', () => {
+    const state = playerState({ remainingCards: 44, cards: { count: 52 }, hand: { cards: [card({ operations: { use: true } })] } });
+    assert.equal(state.remainingCards, 44);
+    assert.equal('cards' in state, false);
+    const hand = record(state.hand);
+    assert.ok(Array.isArray(hand.cards));
+    assert.equal('operations' in record(hand.cards[0]), false);
+    assert.deepEqual(playerState({ cards: { count: 52 } }), {});
+});
+
 test('hidden cards and items never expose identity or modifiers', () => {
     const hidden = card({ key: 'SECRET', value: { rank: 'King', suit: 'Spades', effect: 'SECRET' }, modifier: { edition: 'SECRET' }, state: { hidden: true, forced: true, highlight: true } });
     const full = compactObservation(observation({ hand: { cards: [hidden] }, jokers: { cards: [hidden] } }));
@@ -253,7 +263,11 @@ test('readiness and terminal results are explicit only when abnormal', () => {
     assert.equal(won.outcome, 'won');
     assert.equal(won.state.runResult, 'Won at Ante 1 Big Blind: 700/600');
     assert.equal('cashOut' in won.state, false);
-    const unknown = compactObservation(observation({ state: 'ANIMATING' }));
-    assert.equal(unknown.phase, null);
-    assert.ok(unknown.notReady);
+    for (const phase of ['ANIMATING', 'SMODS_BOOSTER_OPENED']) {
+        const unknown = compactObservation(observation({ state: phase }));
+        assert.equal(unknown.phase, null);
+        assert.ok(unknown.notReady);
+        assert.deepEqual(unknown.actions, []);
+        assert.equal('pack' in unknown.state, false);
+    }
 });

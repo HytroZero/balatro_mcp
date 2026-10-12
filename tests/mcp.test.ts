@@ -18,12 +18,13 @@ const snapshot = (revision = 1, state = 'MENU') => ({ contract: 1, backend: 'bal
 
 async function harness(extra: string[] = [], timeoutMs = 1000) {
   const root = await mkdtemp(resolve(tmpdir(), 'balatro-mcp-'));
-  let current = snapshot(), mutations = 0, loseResponse = false;
+  let current = snapshot(), mutations = 0, requests = 0, loseResponse = false;
   let healthGate: Promise<void> | undefined, enteredHealth: (() => void) | undefined, preflightDelay = 0;
   const operations = new Map<string, Data>();
   const rpc = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     const request = JSON.parse(body) as Data, params = record(request.params);
+    requests++;
     if (preflightDelay && ['sf.health','sf.observe'].includes(String(request.method))) await new Promise(resolve => setTimeout(resolve,preflightDelay));
     let value: unknown;
     switch (request.method) {
@@ -61,7 +62,7 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
   async function call(name: string, args: Data = {}) {
     return client.callTool({ name, arguments: args });
   }
-  return { root, client, call, get mutations() { return mutations; },
+  return { root, client, call, get mutations() { return mutations; }, get requests() { return requests; },
     delayPreflights(ms: number) { preflightDelay = ms; },
     holdNextHealth() {
       let release!: () => void;
@@ -130,6 +131,7 @@ test('stdio game tools start once, return a next revision, reject stale/invalid 
     const results = await Promise.all([h.call('game_action', { revision, action }), h.call('game_action', { revision, action })]);
     assert.equal(results.filter(result => !result.isError).length, 1);
     const success=record(record(results.find(result=>!result.isError)?.structuredContent).value);
+    assert.equal('details' in results.find(result => !result.isError)!, false);
     assert.equal('full' in success,false);assert.equal(success.rev,'3');assert.equal(success.phase,'BLIND_SELECT');
     assert.equal(typeof success.result,'string');
     for (const absent of ['actionId','baseRevision','runId','source']) assert.equal(absent in success,false,absent);
@@ -158,12 +160,25 @@ test('stdio game tools start once, return a next revision, reject stale/invalid 
   } finally { await h.close(); }
 });
 
-test('internal reads never establish a delivered baseline; stale failures and deck reads recover with full state', async () => {
+test('only issued short revisions allow actions; failures clear deltas and diagnostics never issue revisions', async () => {
   const h = await harness();
   try {
     h.externalChange();
     await h.call('game_health'); // Diagnostics never establish an observation baseline.
-    const first = await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}});
+    await h.call('deck_observe');
+    const requests = h.requests;
+    for (const revision of ['77', 'mcp-test:77']) {
+      const unissued = await h.call('game_action', { revision, action: { method: 'select' } });
+      assert.equal(record(unissued.structuredContent).code, 'stale_state');
+    }
+    assert.equal(h.requests, requests); assert.equal(h.mutations, 0);
+    const baseline = record(record((await h.call('game_observe')).structuredContent).value);
+    const afterObserve = h.requests;
+    const legacy = await h.call('game_action', { revision: 'mcp-test:77', action: { method: 'select' } });
+    assert.equal(record(legacy.structuredContent).code, 'stale_state');
+    assert.equal(h.requests, afterObserve); assert.equal(h.mutations, 0);
+    // A rejected action clears the delta baseline, but the issued short revision remains usable.
+    const first = await h.call('game_action',{revision:baseline.rev,action:{method:'select'}});
     const full = record(record(first.structuredContent).value);
     assert.equal(full.full,true);
     assert.equal(full.rev,'78');
@@ -175,16 +190,16 @@ test('internal reads never establish a delivered baseline; stale failures and de
     h.externalChange();
     const failed = await h.call('game_action',{revision:delta.rev,action:{method:'select'}});
     assert.equal(record(failed.structuredContent).code,'stale_state');
-    const recovered = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
-    assert.equal(recovered.full,true);
-    h.externalChange();
     await h.call('deck_observe'); // A different deck revision cannot move the observation baseline.
-    const afterDeck = record(record((await h.call('game_action',{revision:'mcp-test:77',action:{method:'select'}})).structuredContent).value);
-    assert.equal(afterDeck.full,true);
+    const afterDeck = await h.call('game_action', { revision: '77', action: { method: 'select' } });
+    assert.equal(record(afterDeck.structuredContent).code, 'stale_state');
+    assert.equal(h.mutations, 2);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);
     assert.equal(observed.full,true);
     assert.equal(record(observed.state).setup,'RED deck, WHITE stake, seed TEST');
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
+    const recovered = await h.call('game_action', { revision: observed.rev, action: { method: 'select' } });
+    assert.equal(recovered.isError, false); assert.equal(h.mutations, 3);
   } finally { await h.close(); }
 });
 
@@ -203,10 +218,12 @@ test('lost action reply remains uncertain and operation inspection never replays
 });
 
 test('stdio cancellation during preflight reaches the backend and prevents dispatch', async () => {
-  const h = await harness(); const gate = h.holdNextHealth();
+  const h = await harness();
+  const observed = record(record((await h.call('game_observe')).structuredContent).value);
+  const gate = h.holdNextHealth();
   try {
     const controller = new AbortController();
-    const pending = h.client.callTool({name:'game_action',arguments:{revision:'mcp-test:1',action:{method:'start',deck:'RED',stake:'WHITE'}}},{signal:controller.signal});
+    const pending = h.client.callTool({name:'game_action',arguments:{revision:observed.rev,action:{method:'start',deck:'RED',stake:'WHITE'}}},{signal:controller.signal});
     const rejected = assert.rejects(pending);
     await gate.entered; controller.abort(); await rejected;
     // The queued read waits for the cancelled action handler to finish.
