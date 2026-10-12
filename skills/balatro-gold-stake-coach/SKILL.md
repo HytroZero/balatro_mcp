@@ -11,7 +11,7 @@ Target PC Balatro **1.0.1o-FULL** as exposed by this server's game tools. Read t
 
 ## Execute through the game tools
 
-The game tools are `game_health`, `game_observe`, `deck_observe`, `game_start`, `game_action`, `game_operation`, `memory_query`, and `memory_record`. Read skill files through MCP resources: this skill's references resolve against the directory containing its `SKILL.md`, as `file://` URIs. Read only the reference relevant to the decision.
+The game tools are `game_health`, `game_observe`, `deck_observe`, `game_start`, `game_action`, `game_operation`, `memory_query`, and `memory_record`. Read skill files through MCP resources: this skill's references resolve against its URI, so `references/decision-tables.md` is `skill://balatro-gold-stake-coach/references/decision-tables.md`. Read only the reference relevant to the decision. For one named Joker, consumable, Voucher, Tag or Boss, read `balatro://objects/<name>` instead of a catalog file.
 
 - Get gameplay state through tools. Do not wait for screenshots or ask the user to transcribe information that `game_observe` supplies.
 - Use `game_start` only at a menu or completed-run screen when starting a run is part of the request. Supply the requested deck and `stake: "GOLD"` for a new Gold run; preserve any requested seed and respect profile unlocks (`profiles` in the menu snapshot). If no deck was requested, choose an unlocked deck deliberately. Never replace an ongoing run or silently lower the stake after a lock error.

@@ -16,10 +16,14 @@ Compare immediate scoring improvements against interest and the next Boss.
 Read references/shop.md when evaluating a shop.
 ```
 
-The skill catalog in `balatro://context` lists each skill's name, description and absolute location; bodies stay out of it. `balatro://skills` returns the same catalog as JSON with `file://` URIs and discovery diagnostics, and the MCP resource list shows each model-invocable skill. A model reads a skill and its references with `resources/read`, resolving relative references against the directory containing `SKILL.md`. Reads return the whole file and are limited to discovered skill directories, with real paths checked so junctions and links cannot escape them. The server has no file-writing tool; skill directories are read-only.
+Every file of a skill has the URI `skill://<name>/<path>`, for example `skill://example-coach/references/shop.md`. The URI does not depend on where the server is installed, and a relative link in a skill file resolves against the file's URI as on a web page, so write links relative to the file that contains them.
 
-Each skill is also an MCP prompt named `skill:<name>`. It applies Pi's explicit expansion: it removes frontmatter, includes the skill body and reference directory, and appends the optional `instructions` argument. Set `disable-model-invocation: true` in frontmatter to keep a skill out of the catalog and resource list while leaving its prompt available.
+The skill catalog in `balatro://context` lists each skill's name, description and `skill://<name>/SKILL.md` location; bodies stay out of it. `balatro://skills` returns JSON with each skill's URI, whether the model may invoke it, every file with its first Markdown heading and size, and discovery diagnostics with paths relative to the project. The MCP resource list shows the `SKILL.md` of each model-invocable skill, and clients that support completion can complete skill names and file paths. A model reads a skill and its files with `resources/read`. Reads return the whole file and are limited to discovered skill directories, with real paths checked so junctions and links cannot escape them; hidden files are neither listed nor readable. The server has no file-writing tool; skill directories are read-only.
 
-Restart the MCP server to discover added, renamed or removed skills; skill bodies and references are read on each request.
+`balatro://objects/<name>` (optionally `?kind=joker`) searches the object catalog of `balatro-wiki-rules` by exact name, then by substring, and returns each match's `balatro://rules` row, catalog metadata, chapter URI and Wiki link. Prefer it to reading a whole catalog file during play.
+
+Each skill is also an MCP prompt named `skill:<name>`. It applies Pi's explicit expansion: it removes frontmatter, includes the skill body and its `skill://<name>/` reference base, and appends the optional `instructions` argument. Set `disable-model-invocation: true` in frontmatter to keep a skill out of the catalog and resource list while leaving its prompt and files available.
+
+Restart the MCP server to discover added, renamed or removed skills; skill bodies, file lists and references are read on each request.
 
 Discovery is limited to this gameplay tree. Development skills in `.agents/skills/`, ambient Pi coding skills, extensions and coding tools are outside this server. Skill guidance cannot override governing instructions or grant tools or file access.

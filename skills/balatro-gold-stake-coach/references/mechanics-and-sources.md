@@ -6,7 +6,7 @@ Prepared on **2026-10-09** for **PC Balatro 1.0.1o-FULL** as exposed by the Bala
 
 During play, use current observations, the tool schemas, and the supplied game context (`balatro://rules`). They determine action indices, prices, current hand values, debuffs, and available effects. A guide cannot override backend legality or expose hidden information.
 
-The gameplay agent has no shell, file-writing, or repository-reading tool. It reads skill files, including this one, as `file://` MCP resources limited to the discovered gameplay skill directories. The source paths below are maintenance references outside those directories, not instructions to fetch them during a run.
+The gameplay agent has no shell, file-writing, or repository-reading tool. It reads skill files, including this one, as `skill://` MCP resources limited to the discovered gameplay skill directories. The source paths below are maintenance references outside those directories, not instructions to fetch them during a run.
 
 | Local source | Evidence to inspect |
 | --- | --- |

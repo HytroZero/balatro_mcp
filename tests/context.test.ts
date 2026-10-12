@@ -4,10 +4,10 @@ import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { loadSkills, formatSkillsForPrompt, stripFrontmatter } from '@earendil-works/pi-coding-agent';
+import { loadSkills, stripFrontmatter } from '@earendil-works/pi-coding-agent';
 import { Client } from '@modelcontextprotocol/client';
 import { InMemoryTransport, McpServer } from '@modelcontextprotocol/server';
-import { loadGameplayContext, registerGameplayResources } from '../src/context.ts';
+import { loadGameplayContext, registerGameplayResources, skillUri } from '../src/context.ts';
 import { loadSystemPrompt } from '../model/prompt.ts';
 import { projectRoot } from '../src/config.ts';
 import { record } from '../env/contract.ts';
@@ -46,11 +46,13 @@ async function connect(root: string) {
   return { context, client, close: async () => { await client.close(); await server.close(); } };
 }
 
-test('bootstrap stays small while full reference context preserves rules and Pi metadata', async () => {
+test('bootstrap stays small while full reference context preserves rules and an install-independent skill catalog', async () => {
   const context = await loadGameplayContext();
   const expected = loadSkills({ cwd: projectRoot, agentDir: resolve(projectRoot, '.pi'), skillPaths: [resolve(projectRoot, 'skills')], includeDefaults: false });
   assert.equal(context.basePrompt, await loadSystemPrompt(projectRoot));
-  assert.equal(context.catalog, formatSkillsForPrompt(expected.skills, 'indirect'));
+  assert.deepEqual(context.skills, expected.skills);
+  for (const skill of expected.skills) assert.ok(context.catalog.includes(`<location>${skillUri(skill.name)}</location>`));
+  assert.equal(context.fullContext.includes(projectRoot), false);
   assert.deepEqual(context.skills.map(skill => skill.name).sort(), ['balatro-gold-stake-coach', 'balatro-wiki-rules']);
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'model/context/balatro.md'), 'utf8')).trim()));
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'skills/core.md'), 'utf8')).trim()));
@@ -61,7 +63,7 @@ test('bootstrap stays small while full reference context preserves rules and Pi 
   for (const skill of context.skills) {
     const body = stripFrontmatter(await readFile(skill.filePath, 'utf8')).trim();
     assert.equal(context.instructions.includes(body), false);
-    assert.equal(await context.readSkillResource(pathToFileURL(skill.filePath)), await readFile(skill.filePath, 'utf8'));
+    assert.equal(await context.readSkillResource(skillUri(skill.name)), await readFile(skill.filePath, 'utf8'));
   }
 });
 
@@ -71,8 +73,9 @@ test('Pi discovery preserves ignore files, collisions, diagnostics and explicit-
     const context = await loadGameplayContext(f.root);
     const expected = loadSkills({ cwd: f.root, agentDir: resolve(f.root, '.pi'), skillPaths: [resolve(f.root, 'skills')], includeDefaults: false });
     assert.deepEqual(context.skills, expected.skills); assert.deepEqual(context.diagnostics, expected.diagnostics);
-    assert.equal(context.catalog, formatSkillsForPrompt(expected.skills, 'indirect'));
+    assert.match(context.catalog, /<location>skill:\/\/coach\/SKILL\.md<\/location>/);
     assert.match(context.catalog, /chips &lt; target &amp; survive/);
+    assert.equal(context.catalog.includes(f.root), false);
     assert.doesNotMatch(context.catalog, /manual|ambient|ignored|BODY_SENTINEL/);
     assert.ok(context.diagnostics.some(item => item.message === 'description is required'));
     assert.ok(context.diagnostics.some(item => item.type === 'collision'));
@@ -90,14 +93,26 @@ test('MCP initializes with short instructions and serves complete context and re
     const { client, context } = connection;
     assert.equal(client.getInstructions(), context.instructions);
     const indexResult = await client.readResource({ uri: 'balatro://skills' });
-    const index = JSON.parse(String(record(indexResult.contents[0]).text));
-    assert.equal(index.catalog, context.catalog); assert.equal(index.skills.length, 2);
+    const indexText = String(record(indexResult.contents[0]).text), index = JSON.parse(indexText);
+    assert.equal(indexText.includes(JSON.stringify(f.root).slice(1, -1)), false);
+    const coach = index.skills.find((skill: { name: string }) => skill.name === 'coach');
+    assert.equal(index.skills.length, 2); assert.equal(coach.uri, 'skill://coach/SKILL.md'); assert.equal(coach.invocable, true);
+    assert.deepEqual(coach.files.map((file: { path: string }) => file.path), ['references/plan.md', 'SKILL.md']);
+    assert.deepEqual(coach.files[0], { uri: 'skill://coach/references/plan.md', path: 'references/plan.md', bytes: Buffer.byteLength(await readFile(resolve(f.root, 'skills/coach/references/plan.md'))) });
+    assert.equal(index.skills.find((skill: { name: string }) => skill.name === 'manual').invocable, false);
+    assert.ok(index.diagnostics.some((item: { path?: string }) => item.path === 'skills/invalid/SKILL.md'));
     const { resources } = await client.listResources();
-    assert.ok(resources.some(item => item.name === 'coach')); assert.ok(!resources.some(item => item.name === 'manual'));
-    for (const path of ['skills/coach/SKILL.md', 'skills/coach/references/plan.md']) {
-      const result = await client.readResource({ uri: pathToFileURL(resolve(f.root, path)).href });
-      assert.equal(record(result.contents[0]).text, await readFile(resolve(f.root, path), 'utf8'));
+    assert.ok(resources.some(item => item.name === 'coach' && item.uri === 'skill://coach/SKILL.md')); assert.ok(!resources.some(item => item.name === 'manual'));
+    const skillFile = await client.readResource({ uri: 'skill://coach/SKILL.md' });
+    assert.equal(record(skillFile.contents[0]).mimeType, 'text/markdown');
+    assert.equal(record(skillFile.contents[0]).text, await readFile(resolve(f.root, 'skills/coach/SKILL.md'), 'utf8'));
+    // A relative link in SKILL.md resolves against its URI like a web link.
+    for (const uri of [new URL('references/plan.md', 'skill://coach/SKILL.md').href, 'skill://coach/references/../references/./plan.md', 'skill://manual/SKILL.md']) {
+      const result = await client.readResource({ uri });
+      assert.equal(record(result.contents[0]).text, await readFile(resolve(f.root, uri.startsWith('skill://manual') ? 'skills/manual/SKILL.md' : 'skills/coach/references/plan.md'), 'utf8'));
     }
+    const { completion } = await client.complete({ ref: { type: 'ref/resource', uri: 'skill://{skill}/{+path}' }, argument: { name: 'path', value: 'ref' }, context: { arguments: { skill: 'coach' } } });
+    assert.deepEqual(completion.values, ['references/plan.md']);
     const rules = await client.readResource({ uri: 'balatro://rules' });
     assert.equal(record(rules.contents[0]).text, await readFile(resolve(f.root, 'model/context/balatro.md'), 'utf8'));
     const protocol = await client.readResource({ uri: 'balatro://protocol' }); assert.equal(record(protocol.contents[0]).text, 'CORE_PROTOCOL_SENTINEL');
@@ -113,7 +128,7 @@ test('explicit MCP skill prompts match Pi expansion, remove frontmatter and allo
     for (const name of ['coach', 'manual']) {
       const skill = context.skills.find(skill => skill.name === name)!;
       const body = stripFrontmatter(await readFile(skill.filePath, 'utf8')).trim();
-      const expected = `<skill name="${skill.name}" location="${skill.filePath}">\nReferences are relative to ${skill.baseDir}.\n\n${body}\n</skill>\n\nFollow this plan.`;
+      const expected = `<skill name="${name}" location="skill://${name}/SKILL.md">\nReferences are relative to skill://${name}/.\n\n${body}\n</skill>\n\nFollow this plan.`;
       const result = await client.getPrompt({ name: 'skill:' + name, arguments: { instructions: '  Follow this plan.  ' } });
       assert.equal(record(result.messages[0].content).text, expected);
       assert.doesNotMatch(String(record(result.messages[0].content).text), /disable-model-invocation/);
@@ -134,9 +149,45 @@ test('skill resources reject outside files, symlink escapes, hidden files and di
     try {
       assert.ok(connection.context.diagnostics.some(item => item.message === 'Skill resolves outside the gameplay skill directory.'));
       assert.doesNotMatch(connection.context.catalog, /escaped/);
-      for (const path of ['outside.txt', 'skills/coach/escape.txt', 'skills/coach/.hidden', 'skills/coach', 'outside-skill/SKILL.md']) {
-        await assert.rejects(connection.client.readResource({ uri: pathToFileURL(resolve(f.root, path)).href }), /outside|Hidden|regular file/i);
+      for (const uri of ['skill://coach/escape.txt', 'skill://coach/.hidden', 'skill://coach/references', 'skill://coach/..%2F..%2Foutside.txt', 'skill://coach/%2e%2e/%2e%2e/outside.txt', 'skill://coach/C%3A%5Coutside.txt', 'skill://escaped/SKILL.md', 'skill://coach/SKILL.md?raw', 'skill://coach/missing.md']) {
+        await assert.rejects(connection.client.readResource({ uri }), /outside|Hidden|regular file|Unknown gameplay skill|not found|query/i, uri);
       }
+      // Absolute file:// URIs are no longer served.
+      for (const path of ['outside.txt', 'skills/coach/SKILL.md']) await assert.rejects(connection.client.readResource({ uri: pathToFileURL(resolve(f.root, path)).href }));
+      const index = JSON.parse(String(record((await connection.client.readResource({ uri: 'balatro://skills' })).contents[0]).text));
+      const files = index.skills.find((skill: { name: string }) => skill.name === 'coach').files.map((file: { path: string }) => file.path);
+      assert.equal(files.includes('escape.txt'), false); assert.equal(files.includes('.hidden'), false);
     } finally { await connection.close(); }
   } finally { await f.close(); }
+});
+
+test('object lookup resource returns the balatro://rules row and metadata of a named object', async () => {
+  const connection = await connect(projectRoot);
+  try {
+    const read = async (uri: string) => JSON.parse(String(record((await connection.client.readResource({ uri })).contents[0]).text));
+    const blueprint = await read('balatro://objects/Blueprint');
+    assert.equal(blueprint.total, 1);
+    assert.equal(blueprint.matches[0].kind, 'joker'); assert.equal(blueprint.matches[0].rarity, 'Rare');
+    assert.match(blueprint.matches[0].rules, /Copy supported ability/);
+    assert.equal(blueprint.matches[0].chapter, 'skill://balatro-wiki-rules/chapters/ch05-jokers.md');
+    await connection.client.readResource({ uri: blueprint.matches[0].chapter });
+    for (const [uri, name, rule] of [
+      ['balatro://objects/gold?kind=seal', 'Gold Seal', /\$3 per scoring activation/],
+      ['balatro://objects/Pluto', 'Pluto', /High Card/],
+      ['balatro://objects/Overstock%20Plus', 'Overstock Plus', /stock capacity/],
+      ['balatro://objects/8%20Ball', '8 Ball', /Tarot/],
+      ['balatro://objects/Arcana%20Mega%20Pack', 'Arcana Mega Pack', /Use Tarot immediately/],
+    ] as const) {
+      const result = await read(uri);
+      assert.equal(result.matches[0].name, name, uri); assert.match(result.matches[0].rules, rule, uri);
+    }
+    const broad = await read('balatro://objects/joker');
+    assert.equal(broad.matches[0].name, 'Joker'); assert.equal(broad.total, 1);
+    const substring = await read('balatro://objects/the?kind=blind');
+    assert.ok(substring.total > 20); assert.equal(substring.matches.length, 20); assert.match(substring.note, /Showing 20/);
+    const missing = await read('balatro://objects/zzz');
+    assert.deepEqual(missing.matches, []); assert.match(missing.note, /No catalog match/);
+    const { completion } = await connection.client.complete({ ref: { type: 'ref/resource', uri: 'balatro://objects/{query}' }, argument: { name: 'query', value: 'Bluep' } });
+    assert.deepEqual(completion.values, ['Blueprint']);
+  } finally { await connection.close(); }
 });

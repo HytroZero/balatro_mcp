@@ -37,8 +37,11 @@ Ask for advice or hand over a whole run:
 
 ## Included skills
 
-The server publishes its gameplay skills as MCP resources (`balatro://skills`)
-and as `skill:<name>` prompts, so any MCP client can load them on demand.
+The server publishes its gameplay skills as MCP resources and as `skill:<name>`
+prompts, so any MCP client can load them on demand. `balatro://skills` lists each
+skill and its files as `skill://<name>/<path>` URIs that do not depend on where
+the server is installed, and `balatro://objects/<name>` looks up one Joker,
+consumable, Voucher, Tag or Boss.
 `skills/core.md` is the decision protocol, published as `balatro://protocol` and
 as part of `balatro://context`. The two skills below are additional
 contributions that agents load when a decision calls for them.
@@ -61,7 +64,8 @@ A versioned rules knowledge base built from a [Balatro Wiki](https://balatrowiki
 snapshot (2026-10-02, game version 1.0.1o-FULL). It has 12 chapters, from the
 run lifecycle and the scoring sequence to Boss Blinds, the shop economy, RNG,
 and validation. The object catalog covers 366 objects, including all 150 Jokers,
-and a lookup script finds any of them by name:
+and any of them can be found by name, through MCP as `balatro://objects/Blueprint`
+or from a shell with the lookup script:
 
 ```sh
 python skills/balatro-wiki-rules/scripts/lookup.py Blueprint

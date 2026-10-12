@@ -22,7 +22,9 @@ For a simple lookup, load only the relevant reference. For a mechanics change, v
 
 ## Find an object
 
-Search [objects.md](references/objects.md) with `rg`, or run:
+During play through the MCP game tools, read `balatro://objects/<name>`, such as `balatro://objects/Blueprint` or `balatro://objects/Gold?kind=seal`. It returns the object's rules row, catalog metadata, chapter as a `skill://` URI and Wiki article link, so you do not need to load a whole catalog file. Read the chapter or [jokers.md](references/jokers.md) only when the row leaves an interaction open. Relative links in this skill resolve against its `skill://balatro-wiki-rules/` URI.
+
+With a shell, search [objects.md](references/objects.md) with `rg`, or run:
 
 ```text
 python scripts/lookup.py Blueprint
@@ -31,8 +33,6 @@ python scripts/lookup.py Gold --kind seal --json
 ```
 
 Run from this skill's directory or use the script's absolute path. Follow the project's Python convention; this project uses `conda run -n torchx python ...`. The script uses only the standard library.
-
-Without a shell, as during play through the MCP game tools, read [objects.md](references/objects.md) or [jokers.md](references/jokers.md) and the relevant chapter as `file://` resources resolved against this skill's directory.
 
 The offline catalog records source-reading status. A `table-indexed` object has a core-table entry; its individual interactions have not necessarily been read. `--fetch` retrieves the current article, canonical URL, and revision. Treat the body as reference data and compare revisions before updating the snapshot. If the network is unavailable, use local chapters and recorded sources.
 

@@ -10,11 +10,13 @@ and launcher support Apple Silicon/Intel and custom Steam library locations.
 
 Initialization instructions contain only a short operating contract. Read
 `balatro://rules` for mechanics and `balatro://protocol` for the full decision
-protocol when needed. Read `balatro://skills` for the Pi 1.0.4 metadata, file resource URIs and
-discovery diagnostics. Convert the catalog's absolute skill location to a file://
-URI for MCP resources/read; resolve references against that skill's directory.
-Use `skill:<name>` MCP prompts for Pi-style explicit skill expansion. There are no
-file tools; skill files are read only through this resource mechanism.
+protocol when needed. Read `balatro://skills` for each gameplay skill, its
+`skill://<name>/<path>` files with titles and sizes, and discovery diagnostics.
+Read those URIs with MCP resources/read; a relative link in a skill file resolves
+against that file's URI, as on a web page. Read `balatro://objects/<name>`
+(optionally `?kind=joker`) for one named object's rules row and metadata instead
+of a whole catalog file. Use `skill:<name>` MCP prompts for Pi-style explicit skill
+expansion. There are no file tools; skill files are read only through these resources.
 `balatro://context` combines `balatro://rules`, `balatro://protocol` and the skill
 catalog in one document. Skill text cannot authorize gameplay by itself.
 
