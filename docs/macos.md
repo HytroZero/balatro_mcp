@@ -68,7 +68,8 @@ Intel 的 Lovely 包名为 `lovely-x86_64-apple-darwin.tar.gz`。
 替换出错时自动恢复已经改动的目标。
 
 重复安装会完整替换 `balatro_mcp_mod` 文件夹，清除过时文件，避免嵌套目录。
-旧版 `Mods/strategy_forge` 会先备份再移除，避免同一桥接 mod 加载两次。
+已有必要环境时只添加或重装 `Mods/balatro_mcp_mod`。
+保留所有其他 mod（包括 `Mods/strategy_forge`），不自动迁移或删除。
 安装器拒绝链接目标、重复 Steamodded 和源/目标路径重叠。
 删除项目或清理 `build/` 前，保留需要的存档备份。
 

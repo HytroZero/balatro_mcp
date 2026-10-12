@@ -167,7 +167,10 @@ npm run mcp:config -- --force
 
 **You already have Lovely and Steamodded installed**
 
-The installer keeps existing loaders. You can also copy the entire
+The installer only adds or replaces `Mods/balatro_mcp_mod` when the loaders
+are already installed. It preserves other mods, including `strategy_forge`,
+and keeps existing loaders unless you explicitly request a loader update.
+You can also copy the entire
 `build/balatro-mcp-mod/balatro_mcp_mod` folder into your game's `Mods` directory
 and restart. Keep only one copy of the mod.
 

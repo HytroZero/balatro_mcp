@@ -112,9 +112,8 @@ try {
     $existingSteamodded = @()
     if (Test-Path -LiteralPath $ModsDirectory) {
         foreach ($directory in Get-ChildItem -LiteralPath $ModsDirectory -Directory) {
-            if (($directory.Name -ne 'balatro_mcp_mod' -and (Test-Path -LiteralPath (Join-Path $directory.FullName 'balatro_mcp_mod.json'))) -or
-                ($directory.Name -ne 'strategy_forge' -and (Test-Path -LiteralPath (Join-Path $directory.FullName 'strategy_forge.json')))) {
-                throw "Duplicate balatro_mcp_mod or legacy strategy_forge mod found: $($directory.FullName)"
+            if ($directory.Name -ne 'balatro_mcp_mod' -and (Test-Path -LiteralPath (Join-Path $directory.FullName 'balatro_mcp_mod.json'))) {
+                throw "Duplicate balatro_mcp_mod found: $($directory.FullName)"
             }
             if ((Test-Path -LiteralPath (Join-Path $directory.FullName 'src\preflight\core.lua')) -and
                 (Test-Path -LiteralPath (Join-Path $directory.FullName 'version.lua'))) { $existingSteamodded += $directory.FullName }
@@ -125,24 +124,20 @@ try {
     if ($existingSteamodded.Count -eq 1) { $steamoddedTarget = $existingSteamodded[0] }
     elseif (Test-Path -LiteralPath $steamoddedTarget) { throw 'Mods\smods exists but is not a recognized Steamodded installation.' }
     $lovelyTarget = Join-Path $GameDirectory 'winmm.dll'
+    $legacyLovely = Join-Path $GameDirectory 'version.dll'
+    if (-not (Test-Path -LiteralPath $lovelyTarget) -and (Test-Path -LiteralPath $legacyLovely)) {
+        $lovelyTarget = $legacyLovely
+    }
     $modTarget = Join-Path $ModsDirectory 'balatro_mcp_mod'
-    $legacyModTarget = Join-Path $ModsDirectory 'strategy_forge'
     $needLovely = $UpdateLoaders -or -not (Test-Path -LiteralPath $lovelyTarget)
     $needSteamodded = $UpdateLoaders -or $existingSteamodded.Count -eq 0
-    if (Test-Path -LiteralPath (Join-Path $GameDirectory 'version.dll')) {
+    if ($UpdateLoaders -and (Test-Path -LiteralPath $legacyLovely)) {
         throw 'Legacy version.dll found. Move it out of the game folder before installing Lovely winmm.dll.'
     }
-    foreach ($target in @($lovelyTarget, $modTarget, $legacyModTarget, $steamoddedTarget)) {
+    foreach ($target in @($lovelyTarget, $modTarget, $steamoddedTarget)) {
         $parent = $ModsDirectory
         if ($target -eq $lovelyTarget) { $parent = $GameDirectory }
         Assert-ChildPath $target $parent
-    }
-    if (Test-Path -LiteralPath $legacyModTarget) {
-        $legacyManifest = Join-Path $legacyModTarget 'strategy_forge.json'
-        if (-not (Test-Path -LiteralPath $legacyManifest) -or
-            (Get-Content -LiteralPath $legacyManifest -Raw | ConvertFrom-Json).id -ne 'strategy_forge') {
-            throw "Unrecognized legacy mod directory: $legacyModTarget"
-        }
     }
     Write-Host "Game: $GameDirectory"
     Write-Host "Mods: $ModsDirectory"
@@ -183,9 +178,6 @@ try {
         $replacements += @{ source = $roots[0].FullName; target = $steamoddedTarget; parent = $ModsDirectory }
     }
     $replacements += @{ source = $source; target = $modTarget; parent = $ModsDirectory }
-    if (Test-Path -LiteralPath $legacyModTarget) {
-        $replacements += @{ source = $null; target = $legacyModTarget; parent = $ModsDirectory }
-    }
     New-Item -ItemType Directory -Path $backup -Force | Out-Null
     if (Test-Path -LiteralPath $profileDirectory) {
         Write-Host 'Backing up the Balatro profile (including saves and existing mods)...'

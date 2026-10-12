@@ -119,7 +119,7 @@ test('macOS installer rejects linked destinations, ambiguous loaders and source 
   } finally { await f.close(); }
 });
 
-test('macOS upgrade backs up and removes the legacy mod so only the renamed bridge loads', async () => {
+test('macOS reinstall preserves strategy_forge and allows launching with other mods present', async () => {
   const f = await fixture();
   try {
     // Cover an upgrade even if a manual installation already left both copies.
@@ -128,9 +128,11 @@ test('macOS upgrade backs up and removes the legacy mod so only the renamed brid
     await mkdir(legacy);
     await writeFile(resolve(legacy, 'strategy_forge.json'), JSON.stringify({ id: 'strategy_forge' }));
     await writeFile(resolve(legacy, 'strategy_forge.lua'), '-- old entry');
-    await assert.rejects(macLaunchCommand({}, f.context), /Install or migrate/);
+    await macLaunchCommand({}, f.context);
     const result = await installMacMod({}, f.context); assert.ok('backup' in result);
-    await assert.rejects(lstat(legacy), /ENOENT/);
+    assert.equal(await readFile(resolve(legacy, 'strategy_forge.lua'), 'utf8'), '-- old entry');
+    const record = JSON.parse(await readFile(resolve(result.backup, 'installation.json'), 'utf8'));
+    assert.deepEqual(record.replacements.map((entry: { target: string }) => entry.target), [resolve(f.mods, 'balatro_mcp_mod')]);
     assert.equal(await readFile(resolve(result.backup, 'profile/Mods/strategy_forge/strategy_forge.lua'), 'utf8'), '-- old entry');
     const manifest = JSON.parse(await readFile(resolve(f.mods, 'balatro_mcp_mod/balatro_mcp_mod.json'), 'utf8'));
     assert.equal(manifest.id, 'balatro_mcp_mod'); assert.equal(manifest.name, 'Balatro MCP mod');
@@ -141,24 +143,24 @@ test('macOS upgrade backs up and removes the legacy mod so only the renamed brid
   } finally { await f.close(); }
 });
 
-test('macOS upgrade refuses unknown legacy directories, links and extra bridge copies', async () => {
+test('macOS installer preserves unknown strategy_forge folders and links and rejects extra MCP copies', async () => {
   const f = await fixture();
   try {
     const legacy = resolve(f.mods, 'strategy_forge');
     await mkdir(legacy); await writeFile(resolve(legacy, 'keep.txt'), 'unrelated');
-    await assert.rejects(installMacMod({}, f.context), /Unrecognized legacy/);
+    await installMacMod({}, f.context);
     assert.equal(await readFile(resolve(legacy, 'keep.txt'), 'utf8'), 'unrelated');
     await rm(legacy, { recursive: true });
     await symlink(resolve(f.mods, 'unrelated-mod'), legacy);
-    await assert.rejects(installMacMod({}, f.context), /Linked installation path/);
+    await installMacMod({}, f.context);
+    assert.ok((await lstat(legacy)).isSymbolicLink());
     await rm(legacy);
     const duplicate = resolve(f.mods, 'extra-bridge'); await mkdir(duplicate);
-    for (const filename of ['strategy_forge.json', 'balatro_mcp_mod.json']) {
-      await writeFile(resolve(duplicate, filename), '{}');
-      await assert.rejects(installMacMod({}, f.context), /Duplicate/);
-      await rm(resolve(duplicate, filename));
-    }
-    await assert.rejects(lstat(resolve(f.project, 'build')), /ENOENT/);
+    await writeFile(resolve(duplicate, 'strategy_forge.json'), '{}');
+    await installMacMod({}, f.context);
+    assert.equal(await readFile(resolve(duplicate, 'strategy_forge.json'), 'utf8'), '{}');
+    await writeFile(resolve(duplicate, 'balatro_mcp_mod.json'), '{}');
+    await assert.rejects(installMacMod({}, f.context), /Duplicate/);
   } finally { await f.close(); }
 });
 

@@ -124,7 +124,7 @@ export async function planMacInstall(options: MacOptions, suppliedContext?: MacC
     for (const entry of await readdir(modsDirectory, { withFileTypes: true })) {
       const path = resolve(modsDirectory, entry.name);
       if ((entry.isDirectory() || entry.isSymbolicLink()) && await exists(resolve(path, 'version.lua')) && await exists(resolve(path, 'src/preflight/core.lua'))) steamodded.push(path);
-      if (entry.isDirectory() && (entry.name !== 'balatro_mcp_mod' && await exists(resolve(path, 'balatro_mcp_mod.json')) || entry.name !== 'strategy_forge' && await exists(resolve(path, 'strategy_forge.json')))) throw new Error('Duplicate balatro_mcp_mod or legacy strategy_forge mod found: ' + path);
+      if (entry.isDirectory() && entry.name !== 'balatro_mcp_mod' && await exists(resolve(path, 'balatro_mcp_mod.json'))) throw new Error('Duplicate balatro_mcp_mod found: ' + path);
     }
   }
   if (steamodded.length > 1) throw new Error('Multiple Steamodded installations found; keep only one.');
@@ -134,16 +134,14 @@ export async function planMacInstall(options: MacOptions, suppliedContext?: MacC
   if (!needLovely && !(await machoArchitectures(library)).includes(arch)) throw new Error('Existing liblovely.dylib does not support ' + arch + '; use --update-loaders or select --arch x86_64 on Apple Silicon with Rosetta.');
   const source = resolve(context.project, 'play/mod');
   const modTarget = resolve(modsDirectory, 'balatro_mcp_mod');
-  const legacyModTarget = resolve(modsDirectory, 'strategy_forge');
   if (source === modTarget || inside(source, modTarget) || inside(modTarget, source)) throw new Error('Mod destination must not overlap the source directory.');
   for (const file of modFiles) if (!await exists(resolve(source, file))) throw new Error('Missing mod source: ' + file);
-  for (const target of [library, resolve(gameDirectory, 'run_lovely_macos.sh'), steamoddedTarget, modTarget, legacyModTarget]) await rejectLinks(target);
-  if (await exists(legacyModTarget) && JSON.parse(await textIfExists(resolve(legacyModTarget, 'strategy_forge.json')) || '{}').id !== 'strategy_forge') throw new Error('Unrecognized legacy mod directory: ' + legacyModTarget);
+  for (const target of [library, resolve(gameDirectory, 'run_lovely_macos.sh'), steamoddedTarget, modTarget]) await rejectLinks(target);
   const backupRoot = resolve(context.project, 'build/mod-install-backups');
   if (backupRoot === profileDirectory || inside(profileDirectory, backupRoot)) throw new Error('Project backup folder must be outside the Balatro profile.');
   await rejectLinks(backupRoot);
   const lovelyAsset = `lovely-${arch === 'arm64' ? 'aarch64' : 'x86_64'}-apple-darwin.tar.gz`;
-  return { gameDirectory, executable, arch, modsDirectory, profileDirectory, library, steamoddedTarget, source, backupRoot, legacyModTarget,
+  return { gameDirectory, executable, arch, modsDirectory, profileDirectory, library, steamoddedTarget, source, backupRoot,
     needLovely, needSteamodded: options.updateLoaders === true || steamodded.length === 0,
     lovelyUrl: `https://github.com/ethangreen-dev/lovely-injector/releases/download/${lovelyVersion}/${lovelyAsset}`,
     steamoddedUrl: `https://api.github.com/repos/Steamodded/smods/zipball/${steamoddedVersion}` };
@@ -209,7 +207,6 @@ export async function installMacMod(options: MacOptions, suppliedContext?: MacCo
     replacements.push({ source: roots[0], target: plan.steamoddedTarget });
   }
   replacements.push({ source: plan.source, target: resolve(plan.modsDirectory, 'balatro_mcp_mod') });
-  if (await exists(plan.legacyModTarget)) replacements.push({ target: plan.legacyModTarget });
   await mkdir(backup, { recursive: true });
   if (await exists(plan.profileDirectory)) await cp(plan.profileDirectory, resolve(backup, 'profile'), { recursive: true, dereference: false });
   await mkdir(plan.modsDirectory, { recursive: true });
@@ -240,7 +237,7 @@ export async function installMacMod(options: MacOptions, suppliedContext?: MacCo
 export async function macLaunchCommand(options: MacOptions, suppliedContext?: MacContext) {
   const context = suppliedContext ?? await defaultMacContext();
   const plan = await planMacInstall(options, context);
-  if (plan.needLovely || plan.needSteamodded || await exists(plan.legacyModTarget) || !await exists(resolve(plan.modsDirectory, 'balatro_mcp_mod/balatro_mcp_mod.lua'))) throw new Error('Install or migrate the mod and required loaders first: npm run install:macos');
+  if (plan.needLovely || plan.needSteamodded || !await exists(resolve(plan.modsDirectory, 'balatro_mcp_mod/balatro_mcp_mod.lua'))) throw new Error('Install the mod and required loaders first: npm run install:macos');
   if (options.port !== undefined && (!Number.isInteger(options.port) || options.port < 1024 || options.port > 65535)) throw new Error('--port must be an integer from 1024 to 65535.');
   if (options.actionTimeout !== undefined && (!Number.isFinite(options.actionTimeout) || options.actionTimeout < 1 || options.actionTimeout > 600)) throw new Error('--action-timeout must be 1–600 seconds.');
   // SIP-protected /usr/bin/arch can strip DYLD_* from its environment. Set the
