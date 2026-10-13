@@ -1,5 +1,5 @@
 -- Wire protocol and operation lifecycle; independent of the socket transport.
-return function(json, game, clock, instance, timeout, scoreSnapshot)
+return function(json, game, clock, instance, timeout)
   local bridge = {}
   local serial, runSerial, previousRun, fingerprint = 0, 0, nil, ''
   local pending, poisoned, operations, order = nil, false, {}, {}
@@ -12,10 +12,6 @@ return function(json, game, clock, instance, timeout, scoreSnapshot)
     reason = blocked() or not ready and reason or nil
     -- Deck-only edits also invalidate action references, without adding deck
     -- composition to ordinary observations or model context.
-    -- Internal input is fingerprinted but filtered before any model-facing output.
-    if scoreSnapshot and ready and state.state == 'SELECTING_HAND' and not state.won then
-      state.scoringSnapshot = scoreSnapshot.read()
-    end
     return state, ready, reason, json.encode({state=state,ready=ready,notReadyReason=reason,cards=game.cards()})
   end
   local function snapshot()
@@ -38,7 +34,7 @@ return function(json, game, clock, instance, timeout, scoreSnapshot)
       reason = blocked() or not ready and reason or nil
       return {status='ok',bridge='balatro_mcp_mod',protocol=1,instanceId=instance,gameVersion=G.VERSION,luaRuntime=jit and jit.version,
         ready=ready,notReadyReason=reason,preservesTiming=true,transport='http-jsonrpc',
-        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state','scoring_snapshot'})}
+        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state'})}
     elseif method == 'sf.observe' then exact(params, {}); return snapshot()
     elseif method == 'sf.deck_observe' then
       exact(params, {})

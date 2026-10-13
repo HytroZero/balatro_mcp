@@ -646,3 +646,29 @@ Verification was offline. No live game actions, mod installation or game restart
 were performed. The installer requires Balatro to be closed; install the staged
 mod and restart the game to load the repaired exporter. Restarting only the MCP
 process does not reload this Lua code.
+
+## Stop automatic plays advice — 2026-10-13
+
+MCP observations, action results and operation inspections no longer return
+`plays`. Removed the backend's automatic sandbox worker integration and its
+post-scoring revision read. The mod no longer loads or builds scoring snapshots
+or advertises `scoring_snapshot`. Independent offline sandbox scoring and the
+snapshot exporter remain available. Updated the output schema, guide and current
+documentation to match.
+
+Executed checks:
+
+- `npm run check` — passed.
+- `node --test tests/bridge.test.ts tests/compact.test.ts` — 43 passed.
+  Regressions cover legacy-field filtering, exact read/action RPC counts, and
+  full/delta observations without plays.
+- `npm test` — build passed; 98 tests passed, two skipped, zero failures.
+- `luajit tests/observation.test.lua`, `luajit tests/decision.test.lua` and
+  `luajit tests/score-snapshot.test.lua` — 88, 38 and 16 checks passed.
+  A throwing snapshot reader confirms the bridge never invokes it.
+- `npm run stage-mod` — staged the updated standalone mod.
+- `npm run release:check` — distribution audit passed (110 source files).
+
+Verification was offline. No live game actions, installation or restart were
+performed. Restart MCP to load the server change; install the staged mod and
+restart Balatro to stop the old mod from constructing scoring snapshots.

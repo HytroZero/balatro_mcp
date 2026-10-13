@@ -25,11 +25,6 @@ are no API keys or model settings to configure here.
   reroll, and start new runs.
 - Consult the bundled rules reference and strategy skills while playing.
 
-During hand selection, optional `plays` advice is scored in an independent LuaJIT
-sandbox. It requires LuaJIT and locally prepared original game source
-(`npm run sandbox:prepare`); see the [sandbox setup and limits](env/sandbox/README.md).
-Missing dependencies leave advice unavailable while normal game controls remain usable.
-
 Ask for advice or hand over a whole run:
 
 > Look at my current hand and Jokers. What would you play, and why?

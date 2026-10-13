@@ -3,8 +3,6 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 import { Check } from 'typebox/value';
 import { ActionSchema, BackendError, playerState, record, type Action, type Backend, type Data, type DeckObservation, type ErrorCode, type Observation, type RequestContext } from '../env/contract.ts';
-import { ScoringSnapshotSchema, type PlaysWorker } from './plays.ts';
-import { ScoringSandbox, LiveScoreStateSchema, type SandboxOptions } from '../env/sandbox/index.ts';
 
 const ObservationSchema = Type.Object({ contract: Type.Literal(1),backend: Type.Literal('balatro_mcp_mod'),revision: Type.String({minLength:1}),runId: Type.String({minLength:1}),
   gameVersion: Type.String(),terminal: Type.Boolean(),outcome: Type.Enum(['won','lost','ongoing']),ready: Type.Boolean(),notReadyReason: Type.Optional(Type.String()),state: Type.Record(Type.String(),Type.Unknown()),
@@ -20,19 +18,14 @@ export class ForgeBridgeBackend implements Backend {
   private requestId = 0;
   private instanceId?: string;
   private deckObserveSupported = false;
-  private scoringSnapshotSupported = false;
-  private createPlaysWorker: (options: SandboxOptions) => PlaysWorker;
-  private playsWorker?: PlaysWorker;
   private uncertain = false;
   private busy = false;
   private endpoint: URL;
   private timeoutMs: number;
   private gameVersion: string;
   lastActionId?: string;
-  constructor(endpoint = 'http://127.0.0.1:12347',timeoutMs = 30000,gameVersion = '1.0.1o',
-    createPlaysWorker: (options: SandboxOptions) => PlaysWorker = options => new ScoringSandbox(options)) {
+  constructor(endpoint = 'http://127.0.0.1:12347',timeoutMs = 30000,gameVersion = '1.0.1o') {
     this.endpoint = new URL(endpoint); this.timeoutMs = timeoutMs; this.gameVersion = gameVersion;
-    this.createPlaysWorker = createPlaysWorker;
     if (this.endpoint.protocol !== 'http:' || !['127.0.0.1','localhost','[::1]'].includes(this.endpoint.hostname) || this.endpoint.pathname !== '/' || this.endpoint.username || this.endpoint.password || this.endpoint.search || this.endpoint.hash) {
       throw new Error('Game bridge endpoint must be loopback HTTP at / without credentials or query parameters.');
     }
@@ -85,7 +78,6 @@ export class ForgeBridgeBackend implements Backend {
     }
     this.instanceId = health.instanceId;
     this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
-    this.scoringSnapshotSupported = Array.isArray(health.capabilities) && health.capabilities.includes('scoring_snapshot');
   }
   /** Health runs once per bridge instance; a revision from another instance means the mod restarted. */
   private async ensureIdentity(context: RequestContext,revision?: unknown): Promise<void> {
@@ -94,13 +86,11 @@ export class ForgeBridgeBackend implements Backend {
   private observation(value: unknown): Observation {
     if (!Check(ObservationSchema,value) || value.gameVersion !== this.gameVersion || !value.revision.startsWith(this.instanceId + ':') || typeof value.state.state !== 'string') throw new BackendError('backend_failure','Invalid bridge observation contract.');
     const state = playerState(value.state);
-    // Legacy in-game shadow scores are never exposed by the sandbox integration.
-    delete state.plays;
     return {...value,state};
   }
   async observe(request?: RequestContext): Promise<Observation> {
     const context = this.context(request);
-    return this.withPlays(await this.readObservation(context), context);
+    return this.observation(await this.readObservation(context));
   }
   /** Preflight and version checks only read the game; they never run a worker. */
   private async readObservation(context: RequestContext): Promise<unknown> {
@@ -119,38 +109,6 @@ export class ForgeBridgeBackend implements Backend {
     }
     this.remaining(context);
     return raw;
-  }
-  private async withPlays(raw: unknown, context: RequestContext): Promise<Observation> {
-    const observation = this.observation(raw);
-    if (!observation.ready || observation.terminal || observation.state.state !== 'SELECTING_HAND') return observation;
-    const attach = (lines: string[]) => ({ ...observation, state: { ...observation.state, plays: [...lines] } });
-    if (!this.scoringSnapshotSupported) return attach(['unavailable: Update balatro_mcp_mod and restart Balatro for sandbox scoring']);
-    try {
-      const parsed = ScoringSnapshotSchema.safeParse(record(record(raw).state).scoringSnapshot);
-      if (!parsed.success) return attach(['unavailable: Invalid scoring snapshot; update balatro_mcp_mod and restart Balatro']);
-      const snapshot = parsed.data;
-      if (snapshot.status === 'ready' && !LiveScoreStateSchema.safeParse(snapshot.state).success) {
-        return attach(['unavailable: Incomplete live scoring snapshot']);
-      }
-      if (snapshot.status === 'unavailable') return attach(['unavailable: ' + snapshot.message]);
-      const remaining = this.remaining(context);
-      // The VM belongs to this backend; cancellation belongs only to this search.
-      this.playsWorker ??= this.createPlaysWorker({});
-      const lines = await this.playsWorker.plays(snapshot.state, snapshot.selectionLimit,
-        { signal: context.signal, timeoutMs: Math.max(1, Math.ceil(remaining)) });
-      // Human input can change the game while the independent worker is scoring.
-      const checked = await this.rpc('sf.observe', {}, false, context);
-      if (this.observation(checked).revision !== observation.revision) return attach(['unavailable: State changed during sandbox scoring; call game_observe']);
-      return attach(lines);
-    } catch {
-      const worker = this.playsWorker;
-      this.playsWorker = undefined;
-      await worker?.close();
-      // Advice failure never turns a verified completed action into an uncertain one.
-      if (context.signal?.aborted) return attach(['unavailable: Sandbox scoring cancelled before complete enumeration']);
-      if (performance.now() >= context.deadline!) return attach(['unavailable: Sandbox scoring deadline exceeded before complete enumeration']);
-      return attach(['unavailable: Sandbox scoring failed; verify LuaJIT and run npm run sandbox:prepare']);
-    }
   }
   async observeDeck(request?: RequestContext): Promise<DeckObservation> {
     const context = this.context(request);
@@ -195,7 +153,7 @@ export class ForgeBridgeBackend implements Backend {
         if (result.status === 'completed') {
           const outcome = this.observation(result.observation);
           if (result.applied !== true || !outcome.revision.startsWith(this.instanceId + ':')) throw new BackendError('uncertain_outcome','Invalid completed operation identity.','unknown');
-          return {...await this.withPlays(result.observation,context),actionId:this.lastActionId};
+          return {...outcome,actionId:this.lastActionId};
         }
         if (result.status !== 'pending') throw new BackendError('uncertain_outcome',String(result.message ?? 'Operation requires manual inspection.'),result.applied === true ? true : 'unknown');
         await delay(Math.min(40,this.remaining(context)),undefined,{signal:context.signal});
@@ -209,9 +167,5 @@ export class ForgeBridgeBackend implements Backend {
       throw error;
     } finally { this.busy = false; }
   }
-  async close(): Promise<void> {
-    const worker = this.playsWorker;
-    this.playsWorker = undefined;
-    await worker?.close();
-  }
+  async close(): Promise<void> {}
 }

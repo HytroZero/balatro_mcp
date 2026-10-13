@@ -107,7 +107,7 @@ G.STATE = G.STATES.SELECTING_HAND
 local health = bridge.dispatch('sf.health',{})
 check(not health.ready and health.notReadyReason == 'Close the open game dialog','health explains readiness blockers')
 local capabilities={};for _,name in ipairs(health.capabilities)do capabilities[name]=true end
-check(capabilities.decision_state and capabilities.scoring_snapshot,'health advertises decision fields and scoring snapshots')
+check(capabilities.decision_state and not capabilities.scoring_snapshot,'health advertises decision fields without scoring snapshots')
 
 -- Graceful localization failure must not make observations unusable.
 localize = function() error('Unsupported modded localization') end

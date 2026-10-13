@@ -45,10 +45,10 @@ G.playing_cards[4]=nil
 G.VERSION='1.0.1o-FULL'
 local fake = {state=function()return {state='SELECTING_HAND'}end,ready=function()return true end,
   cards=function()return {}end,methods=function()return json.array()end,phase=function()return 'SELECTING_HAND'end}
-local bridge = dofile('play/mod/bridge.lua')(json,fake,function()return 0 end,'test',20,snapshot)
+local bridge = dofile('play/mod/bridge.lua')(json,fake,function()return 0 end,'test',20,{read=function()error('must not build scoring snapshots')end})
 local observed = bridge.dispatch('sf.observe',{})
-check(observed.state.scoringSnapshot.status == 'ready' and observed.state.plays == nil, 'bridge exports input without executing scoring')
+check(observed.state.scoringSnapshot == nil and observed.state.plays == nil, 'bridge does not build scoring snapshots or plays')
 check(observed.revision == bridge.dispatch('sf.observe',{}).revision, 'repeated input retains revision')
 G.GAME.probabilities.normal=4
-check(observed.revision ~= bridge.dispatch('sf.observe',{}).revision, 'scoring-only dependencies invalidate revision')
+check(observed.revision == bridge.dispatch('sf.observe',{}).revision, 'unused scoring-only dependencies do not change observation revision')
 print('Score snapshot checks passed: ' .. checks)

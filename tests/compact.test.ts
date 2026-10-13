@@ -129,14 +129,14 @@ test('consumables and hand still patch elements while membership and order are u
     assert.deepEqual(delta.state?.hand, { 0: '0: AH [selected]' });
 });
 
-test('plays are a SELECTING_HAND view that replaces whole and is dropped with the phase', () => {
+test('legacy plays are omitted from full observations and action deltas', () => {
     const lines = ['0 1: Pair 120', '0: High Card 16'];
     const playing = observation({ plays: lines });
     const full = compactObservation(playing);
     assert.ok(Check(FullObservationSchema, full));
-    assert.deepEqual(full.state.plays, lines);
+    assert.equal('plays' in full.state, false);
     const discarded = at(playing, 'i:8', { round: { chips: 0, hands_left: 4, discards_left: 2, handHistoryKnown: true, handTypeCounts: {} }, plays: ['0: High Card 16'] });
-    assert.deepEqual(checkDelta(playing, discarded, { method: 'discard', cards: [0] }).state?.plays, ['0: High Card 16']);
+    assert.equal('plays' in (checkDelta(playing, discarded, { method: 'discard', cards: [0] }).state ?? {}), false);
     const shop = at(playing, 'i:9', { state: 'SHOP' }, { availableMethods: ['next_round'] });
     assert.equal('plays' in compactObservation(shop).state, false);
 });

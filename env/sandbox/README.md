@@ -149,37 +149,10 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 不作为输出；它不能用于推进整局游戏。Steamodded 和其他 mod 的规则尚未接入。
 `runtime.lua` 仅供独立 worker 使用，不应加载进实机 mod。
 
-## MCP `plays` 接入
+## MCP 观察
 
-`plays` 已通过 `play/client.ts` 接入此沙盒。实机 Mod 的 `score_snapshot.lua`
-只读取局面，包含当前卡牌能力、Joker 成长值、牌型等级、Boss 记忆和概率；不运行试算。
-内部快照参与 revision 指纹，但不会出现在模型观察、工具追踪结果或操作检查结果中。
-抽牌堆按内容排序，仅导出成员，不导出抽牌顺序；实机种子和 RNG 流不导出。
-`current_round` 仅导出评分所需的出牌/弃牌计数、牌型历史和 Joker 目标；商店与 UI
-附加状态不进入快照，因此 Steamodded 的混合表 `current_round.voucher` 不会阻断评分。
-`round_resets` 仅导出 `ante`、`hands`、`discards`，不复制盲注原型或 Steamodded 的
-`blind_tag` UI 对象；Tag 与 Sprite 的循环引用不会阻断评分，实机对象不会被修改。
-
-快照使用 `passiveEffectsApplied: true`：概率、槽位和牌面数值已经是被动效果生效后的值，
-worker 不再执行 `add_to_deck`、Boss 卡牌 debuff 或每帧 `Card:update`。
-`base` / `editionValues` 保留当前卡牌值，`backConfig` 保留当前牌背配置。
-普通离线调用省略该标记，继续按前文的输入基值约定初始化。
-
-后端仅在需要 `plays` 时创建常驻 worker，跨观察复用，后端关闭或进程故障时释放。
-只调用 `sandbox.plays`；组合枚举、评分、排序和行格式都留在沙盒里。按当前手牌顺序
-完整枚举 1–5 张的组合，受选择上限和强制选牌约束，只受调用方整体 deadline 限制。
-完整评分后返回全局前 15 个组合，同一牌型可以有多个候选；不足 15 个时返回全部。
-同分优先更少的牌，再按索引字典序排列。超时、取消或失败不返回部分候选。
-`plays` 强制使用 `minimal`；实际触发随机奖励排除或 Misprint 下限计算的候选在行尾
-追加 `minimal`，没有触发的确定性候选不加后缀。标记逐候选重置，不显示 `random`；
-构造阶段随机、石牌 rank 标识和被屏蔽的出牌后效果不触发标记。
-它不推演出牌后的牌局。
-同一 revision 也重新枚举；计算后再次读取实机 revision，变化时丢弃评分。
-动作前置检查与 `game_operation` 不启动评分；评分失败也不会把已确认完成的动作变为不确定。
-
-使用前需要准备本地原版源码、安装 LuaJIT，并更新 Mod 和重启游戏/MCP 服务。
-缺少环境或不支持的局面返回 `unavailable`，不回退到实机影子计分。
-此路径尚未经过实机 Steamodded 对照验证；不支持自定义 mod 的计分规则。
+MCP 观察和动作结果不再计算或返回 `plays`，Mod 不再生成评分快照。
+本目录的独立沙盒 API 保留，可显式调用 `sandbox.plays` 进行离线评分。
 
 ## 源码来源
 

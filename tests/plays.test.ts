@@ -3,13 +3,11 @@ import assert from 'node:assert/strict';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises';
-import { createServer } from 'node:http';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { projectRoot } from '../src/config.ts';
 import { ScoringSandbox, LiveScoreStateSchema, type ScoreResult, type ScoreState } from '../env/sandbox/index.ts';
 import { ScoringSnapshotSchema } from '../play/plays.ts';
-import { ForgeBridgeBackend } from '../play/client.ts';
 
 const lua = process.env.LUAJIT ?? 'luajit';
 const source = process.env.BALATRO_SANDBOX_SOURCE ?? resolve(projectRoot, 'env/sandbox/vendor');
@@ -197,43 +195,4 @@ test('live snapshot export round-trips original scores without applying passive 
       assert.deepEqual(await sandbox.scoreBatch(fixture.plays),fixture.expected);
     }
   } finally { await sandbox.close(); }
-});
-
-test('HTTP observation reaches one persistent worker and returns only sandbox recommendations', { skip }, async () => {
-  const [fixture] = JSON.parse(execFileSync(lua,['tests/score-snapshot-original.lua',source],{cwd:projectRoot,encoding:'utf8'}));
-  const requests: string[] = [];
-  const http = createServer(async (request,response) => {
-    let body='';for await(const chunk of request) body+=chunk;
-    const rpc=JSON.parse(body);requests.push(rpc.method);
-    const value=rpc.method==='sf.health'?{status:'ok',bridge:'balatro_mcp_mod',protocol:1,instanceId:'test',
-      gameVersion:'1.0.1o-FULL',preservesTiming:true,capabilities:['scoring_snapshot']}:
-      {contract:1,backend:'balatro_mcp_mod',revision:'test:1',runId:'test:run:1',gameVersion:'1.0.1o',
-        ready:true,terminal:false,outcome:'ongoing',legality:'backend-authoritative',availableMethods:['play'],
-        state:{state:'SELECTING_HAND',scoringSnapshot:fixture.snapshot}};
-    response.end(JSON.stringify({jsonrpc:'2.0',id:rpc.id,result:value}));
-  });
-  await new Promise<void>(accept => http.listen(0,'127.0.0.1',accept));
-  const address=http.address();assert.ok(address && typeof address==='object');
-  let worker: ScoringSandbox | undefined;
-  const backend=new ForgeBridgeBackend(`http://127.0.0.1:${address.port}`,5000,'1.0.1o',
-    options => worker = new ScoringSandbox({...options,lua,sourceDir:source}));
-  const controller = new AbortController();
-  try {
-    const observation=await backend.observe({signal:controller.signal});
-    assert.deepEqual(observation.state.plays,[
-      '0 1: Pair 210','0 1 2: Pair 210','2: High Card 96',
-      '0 2: High Card 96','1 2: High Card 96','0: High Card 90','1: High Card 90',
-    ]);
-    assert.doesNotMatch(JSON.stringify(observation),/scoringSnapshot|passiveEffectsApplied|pseudorandom/);
-    controller.abort();
-    const again = await backend.observe();
-    assert.deepEqual(again.state.plays, observation.state.plays);
-    assert.equal((await worker!.stats()).sourceLoads, 1);
-    assert.equal((await worker!.stats()).positionLoads, 2);
-    assert.deepEqual(requests,['sf.health','sf.observe','sf.observe','sf.observe','sf.observe']);
-  } finally {
-    await backend.close();http.closeAllConnections();
-    await new Promise<void>(accept => http.close(() => accept()));
-  }
-  await assert.rejects(worker!.stats(), /closed/);
 });
