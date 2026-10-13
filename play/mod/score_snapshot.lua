@@ -82,11 +82,25 @@ return function(json)
       state.hands[name] = {level=h.level,chips=h.chips,mult=h.mult,played=h.played,played_this_round=h.played_this_round}
     end
     -- No engine objects, save data, seed, or RNG streams cross this boundary.
-    for _, key in ipairs({'dollars','bankrupt_at','chips','round','hands_played','skips','current_round','round_resets',
+    for _, key in ipairs({'dollars','bankrupt_at','chips','round','hands_played','skips',
       'probabilities','used_vouchers','modifiers','starting_params','cards_played','last_hand_played',
       'last_tarot_planet','consumeable_buffer','joker_buffer','dollar_buffer','discount_percent','inflation',
       'interest_amount','interest_cap','starting_deck_size','pool_flags','ecto_minus','blind_on_deck'}) do
       state.game[key] = copy(live[key])
+    end
+    -- Steamodded's blind_tag contains a cyclic Tag/Sprite UI graph, not scoring data.
+    if live.round_resets then
+      state.game.round_resets = {}
+      for _, key in ipairs({'ante','hands','discards'}) do
+        state.game.round_resets[key] = copy(live.round_resets[key])
+      end
+    end
+    -- Shop/UI state (including Steamodded's mixed voucher table) is not scoring input.
+    local round = assert(live.current_round, 'Missing current round')
+    state.game.current_round = {}
+    for _, key in ipairs({'hands_left','discards_left','hands_played','discards_used',
+      'most_played_poker_hand','current_hand','idol_card','ancient_card','castle_card','mail_card'}) do
+      state.game.current_round[key] = copy(round[key])
     end
     assert(#state.hand > 0, 'No hand to score')
     assert(type(G.hand.config.highlighted_limit) == 'number', 'Missing selection limit')

@@ -13,8 +13,6 @@ const scoringSnapshot = {status:'ready',selectionLimit:5,state:{
     current_round:{hands_left:4,discards_left:3,hands_played:0,discards_used:0,most_played_poker_hand:'High Card',current_hand:{}},round_resets:{ante:1},
     probabilities:{normal:1},used_vouchers:{},modifiers:{},starting_params:{},cards_played:{}},
 }};
-const scoredResult = {status:'ok' as const,version:'1.0.1o-FULL' as const,hand:'High Card',displayHand:'High Card',
-  chips:16,mult:1,score:16,scoringCards:[0],notAllowed:false,random:false,randomPolicy:'fixed' as const,seed:'SANDBOX'};
 
 async function server(handler: (request: Data,response: ServerResponse) => void) {
   const requests: Data[] = [];
@@ -32,14 +30,14 @@ function result(response: ServerResponse,request: Data,value: unknown) {response
 function failure(response: ServerResponse,request: Data,code: string) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:code,data:{code,applied:false}}}));}
 const action={method:'start' as const,deck:'RED' as const,stake:'WHITE' as const};
 
-test('bridge attaches sandbox plays, caches by revision and never leaks internal snapshots through reads or inspections',async () => {
-  let revision='instance-a:1', loads=0, closes=0;
+test('bridge fully recomputes sandbox plays on every read and never leaks internal snapshots through reads or inspections',async () => {
+  let revision='instance-a:1', searches=0;
   const raw=() => ({...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',scoringSnapshot,
     plays:['legacy shadow score'],seed:'HIDDEN_SEED'}});
   const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:
     req.method==='sf.operation'?{actionId:'a1',status:'completed',applied:true,observation:raw()}:raw()));
   const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => ({
-    load:async () => {loads++;return {status:'ready'};},scoreBatch:async plays => plays.map(() => scoredResult),close:async () => {closes++;},
+    plays:async () => {searches++;return ['0: High Card 16'];},close:async () => {},
   }));
   try {
     for(let i=0;i<2;i++) {
@@ -48,27 +46,26 @@ test('bridge attaches sandbox plays, caches by revision and never leaks internal
       assert.equal(current.state.scoringSnapshot,undefined);
       assert.doesNotMatch(JSON.stringify(current),/passiveEffectsApplied|legacy shadow/);
     }
-    assert.equal(loads,1);assert.equal(closes,1);
     const inspected=await client.inspectOperation('a1');
     assert.doesNotMatch(JSON.stringify(inspected),/scoringSnapshot|passiveEffectsApplied|legacy shadow/);
-    assert.equal(loads,1);
-    revision='instance-a:2'; await client.observe();assert.equal(loads,2);
+    assert.equal(searches,2);
+    revision='instance-a:2'; await client.observe();assert.equal(searches,3);
   } finally {await client.close();await mock.close();}
 });
 
-test('a changed live revision discards sandbox scores and does not cache the stale result',async () => {
-  let revision='instance-a:1',loads=0;
+test('a changed live revision discards sandbox scores',async () => {
+  let revision='instance-a:1';
   const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:
     {...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',scoringSnapshot}}));
-  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => ({load:async () => {loads++;return {status:'ready'};},
-    scoreBatch:async plays => {revision='instance-a:2';return plays.map(() => scoredResult);},close:async () => {},
+  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => ({
+    plays:async () => {revision='instance-a:2';return ['0: High Card 16'];},close:async () => {},
   }));
   try {
     assert.match(String((await client.observe()).state.plays),/State changed/);
     assert.deepEqual((await client.observe()).state.plays,['0: High Card 16']);
-    assert.equal(loads,2);
-  } finally {await mock.close();}
+  } finally {await client.close();await mock.close();}
 });
+
 
 test('sandbox failure after a completed action preserves its success and never locks or repeats the action',async () => {
   let mutations=0,workers=0,closes=0,revision='instance-a:1';
@@ -83,7 +80,7 @@ test('sandbox failure after a completed action preserves its success and never l
   });
   const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => {
     workers++;
-    return {load:async () => {throw new Error('missing LuaJIT');},scoreBatch:async () => [],close:async () => {closes++;}};
+    return {plays:async () => {throw new Error('missing LuaJIT');},close:async () => {closes++;}};
   });
   try {
     const first=await client.act({method:'play',cards:[0]},revision);
@@ -92,7 +89,7 @@ test('sandbox failure after a completed action preserves its success and never l
     await client.act({method:'play',cards:[0]},first.revision);
     assert.equal(mutations,2);assert.equal(workers,2);assert.equal(closes,2);
     assert.equal(mock.requests.filter(r => r.method==='sf.act').length,2);
-  } finally {await mock.close();}
+  } finally {await client.close();await mock.close();}
 });
 
 test('not-ready, terminal, hidden and incomplete scoring snapshots never start a worker',async () => {
@@ -111,7 +108,7 @@ test('not-ready, terminal, hidden and incomplete scoring snapshots never start a
       assert.ok(!current.state.plays || String(current.state.plays).includes('unavailable:'));
     }
     assert.equal(workers,0);
-  } finally {await mock.close();}
+  } finally {await client.close();await mock.close();}
 });
 test('deck observation is read-only and rejects malformed or inconsistent deck responses',async () => {
   const deck={revision:'instance-a:1',runId:'run-1',remainingCards:2,previewCards:3,uncertainCards:1,

@@ -74,13 +74,15 @@ function sandbox.new(source, json)
   load('functions/state_events.lua')
 
   local input, all, restoreBaseline, baselineId, seedHash
-  local trace, randomUsed, denied, name, display, scoring
+  local scoreOnly, evaluating = false, false
+  local scoringFinished = {}
+  local trace, randomUsed, minimalUsed, denied, name, display, scoring
   local traceChips, traceMult = 0, 0
   local loads, calculations = 0, 0
   local runtime = {}
   for _, name in ipairs({'card_eval_status_text','juice_card','highlight_card','play_sound','delay',
     'attention_text','check_for_unlock','inc_career_stat','check_and_set_high_score','set_hand_usage','ease_discard',
-    'get_joker_win_sticker'}) do env[name] = noop end
+    'get_joker_win_sticker','juice_card_until'}) do env[name] = noop end
   env.Event = function(event) return event end
   -- evaluate_play computes score synchronously; queued animations and post-hand
   -- mutations are outside this one-hand query. Instant money changes (The Ox)
@@ -104,14 +106,47 @@ function sandbox.new(source, json)
   env.copy_card, env.create_card, env.create_playing_card = rejectCreation, rejectCreation, rejectCreation
   env.Card.init = rejectCreation
 
+  -- Skip lifecycle-only contexts at the original dispatch boundary, including
+  -- calls reached recursively through Blueprint/Brainstorm. Never invent cards.
+  local calculateJoker = env.Card.calculate_joker
+  env.Card.calculate_joker = function(self, context)
+    if scoreOnly then
+      if context.after or context.destroying_card or context.remove_playing_cards or context.cards_destroyed then return end
+      if context.before and self.ability.name == 'DNA' then return end
+      if context.individual and self.ability.name == '8 Ball' then return end
+      if context.joker_main and (self.ability.name == 'Vagabond' or self.ability.name == 'Superposition' or self.ability.name == 'Seance') then return end
+    end
+    return calculateJoker(self, context)
+  end
+  local triggerBack = env.Back.trigger_effect
+  env.Back.trigger_effect = function(self, context)
+    local chips, mult = triggerBack(self, context)
+    if scoreOnly and context and context.context == 'final_scoring_step' then
+      -- Original scoring is complete here (including Plasma). Everything below
+      -- this boundary is destruction, animations, and after-hand lifecycle.
+      env.hand_chips, env.mult = env.mod_chips(chips or env.hand_chips), env.mod_mult(mult or env.mult)
+      error(scoringFinished, 0)
+    end
+    return chips, mult
+  end
+
   local immutable = {}
   for _, pool in ipairs({G.P_CENTERS, G.P_CARDS, G.P_BLINDS}) do
     for _, prototype in pairs(pool) do immutable[prototype] = true end
   end
   local originals = {pseudorandom=env.pseudorandom, pseudoseed=env.pseudoseed, pseudorandom_element=env.pseudorandom_element}
+  -- These original 1.0.1o RNG streams only award chance-based scoring bonuses
+  -- or money. Minimal means they do not trigger, even if odds exceed 100%.
+  -- Infinity is an explicit failed-comparison sentinel, not a sampled roll.
+  local chanceBonuses = {lucky_mult=true, lucky_money=true, space=true, bloodstone=true, business=true, parking=true}
   env.pseudorandom = function(seed, min, max)
     randomUsed = true
     if input.random == 'fixed' then return min and max and min or 0.999999 end
+    if input.random == 'minimal' and evaluating then
+      if seed == 'misprint' and min ~= nil and max ~= nil then minimalUsed = true; return min end
+      if chanceBonuses[seed] then minimalUsed = true; return math.huge end
+      error({status='unsupported', message='Unsupported minimal scoring randomness: ' .. tostring(seed)}, 0)
+    end
     return originals.pseudorandom(seed, min, max)
   end
   env.pseudoseed = function(...)
@@ -121,13 +156,31 @@ function sandbox.new(source, json)
   end
   env.pseudorandom_element = function(t, seed)
     randomUsed = true
+    if input.random == 'minimal' and evaluating then
+      error({status='unsupported', message='Unsupported minimal random scoring selection'}, 0)
+    end
     if input.random ~= 'fixed' then return originals.pseudorandom_element(t, seed) end
     local keys = {}; for k in pairs(t) do keys[#keys + 1] = k end
     table.sort(keys, function(a,b) return tostring(a) < tostring(b) end)
     return t[keys[1]], keys[1]
   end
   local mathRandom = env.math.random
-  env.math.random = function(...) randomUsed = true; return mathRandom(...) end
+  env.math.random = function(...)
+    randomUsed = true
+    if input and input.random == 'minimal' and evaluating then
+      error({status='unsupported', message='Unsupported minimal math.random during scoring'}, 0)
+    end
+    return mathRandom(...)
+  end
+  local getId = env.Card.get_id
+  env.Card.get_id = function(self)
+    if input and input.random == 'minimal' and evaluating and self.ability.effect == 'Stone Card' and not self.vampired then
+      -- Original get_id samples a negative number only to keep rankless Stones
+      -- distinct. A unique negative identity preserves that poker-hand rule.
+      return -self.playing_card
+    end
+    return getId(self)
+  end
   local getHand = G.FUNCS.get_poker_hand_info
   G.FUNCS.get_poker_hand_info = function(cards)
     local poker, unlocalized
@@ -135,9 +188,12 @@ function sandbox.new(source, json)
     return name, display, poker, scoring, unlocalized
   end
 
-  function runtime.load(snapshot)
+  function runtime.load(snapshot, onlyScore)
     restoreBaseline = nil -- A failed load invalidates the previous position.
     input = clone(snapshot)
+    if onlyScore == true then input.random = 'minimal' end
+    scoreOnly = onlyScore == true or input.random == 'minimal'
+    evaluating = false
     trace, randomUsed, denied = input.trace and json.array() or nil, false, false
     traceChips, traceMult = 0, 0
     G.GAME = G:init_game_object()
@@ -254,6 +310,7 @@ function sandbox.new(source, json)
     assert(restoreBaseline, 'Load a position before scoring')
     assert(type(selection) == 'table' and #selection >= 1 and #selection <= 5, 'Select 1-5 cards')
     trace, randomUsed, denied = input.trace and not scalar and json.array() or nil, false, false
+    minimalUsed = false
     traceChips, traceMult = 0, 0
     env.hand_chips, env.mult, env.percent, env.percent_delta = nil, nil, nil, nil
     env.math.randomseed(seedHash)
@@ -271,10 +328,14 @@ function sandbox.new(source, json)
     G.GAME.current_round.hands_left = G.GAME.current_round.hands_left - 1
     if G.GAME.blind.name == 'The Tooth' and not G.GAME.blind.disabled then G.GAME.dollars = G.GAME.dollars - #G.play.cards end
     randomUsed = false -- Constructor randomness is not a random scoring effect.
-    G.FUNCS.evaluate_play()
+    evaluating = true
+    local ok, result = pcall(G.FUNCS.evaluate_play)
+    evaluating = false
+    if not ok and result ~= scoringFinished then error(result, 0) end
     local total = env.hand_chips * env.mult
     assert(total == total and total ~= math.huge and total ~= -math.huge, 'Non-finite score')
-    if scalar then return math.floor(total) end
+    if scalar == true then return math.floor(total) end
+    if scalar == 'play' then return {status='ok', hand=name, score=math.floor(total), notAllowed=denied, minimal=minimalUsed} end
     local indices = json.array()
     for _, c in ipairs(scoring) do for i, original in ipairs(all) do if original == c then indices[#indices + 1] = i - 1 end end end
     return {status='ok', version=G.VERSION, hand=name, displayHand=display, chips=env.hand_chips, mult=env.mult,
@@ -285,8 +346,65 @@ function sandbox.new(source, json)
   function runtime.score(selection, scalar)
     calculations = calculations + 1
     local ok, result = pcall(evaluate, selection, scalar)
+    evaluating = false
     if restoreBaseline then restoreBaseline(); G.playing_card = baselineId end
     if not ok then return type(result) == 'table' and result or {status='error', message=tostring(result)} end
+    return result
+  end
+
+  function runtime.plays(snapshot, selectionLimit)
+    local ok, result = pcall(function()
+      local loaded = runtime.load(snapshot, true)
+      if loaded.status ~= 'ready' then error(loaded, 0) end
+      assert(type(selectionLimit) == 'number' and selectionLimit % 1 == 0 and selectionLimit >= 0 and selectionLimit <= 5, 'Invalid selection limit')
+      local required, requiredCount = {}, 0
+      for i, c in ipairs(all) do
+        if c.ability.forced_selection then required[i] = true; requiredCount = requiredCount + 1 end
+      end
+      local max = math.min(#all, selectionLimit)
+      if max < math.max(1, requiredCount) then error({message='no legal selection'}, 0) end
+      local best, picked = {}, {}
+      local function precedes(a, b)
+        if a.score ~= b.score then return a.score > b.score end
+        if #a.play ~= #b.play then return #a.play < #b.play end
+        for i = 1, #a.play do
+          if a.play[i] ~= b.play[i] then return a.play[i] < b.play[i] end
+        end
+        return false
+      end
+      local function trial()
+        local scored = runtime.score(picked, 'play')
+        if scored.status ~= 'ok' then error(scored, 0) end
+        scored.play = picked
+        local at = #best + 1
+        while at > 1 and precedes(scored, best[at - 1]) do at = at - 1 end
+        if at <= 15 then
+          scored.play = clone(picked)
+          table.insert(best, at, scored)
+          if #best > 15 then best[16] = nil end
+        end
+      end
+      -- Depth-first combinations retain only the active selection and top 15.
+      -- A forced index ends sibling traversal so no required card is skipped.
+      local function walk(start, remaining, needed)
+        if needed > remaining then return end
+        if remaining == 0 then trial(); return end
+        for i = start, #all - remaining + 1 do
+          picked[#picked + 1] = i - 1
+          walk(i + 1, remaining - 1, needed - (required[i] and 1 or 0))
+          picked[#picked] = nil
+          if required[i] then break end
+        end
+      end
+      for size = max, math.max(1, requiredCount), -1 do walk(1, size, requiredCount) end
+      local lines = json.array()
+      for i, candidate in ipairs(best) do
+        lines[i] = table.concat(candidate.play, ' ') .. ': ' .. candidate.hand .. ' ' .. string.format('%.0f', candidate.score) ..
+          (candidate.notAllowed and ' not allowed' or '') .. (candidate.minimal and ' minimal' or '')
+      end
+      return lines
+    end)
+    if not ok then return json.array({'unavailable: ' .. (type(result) == 'table' and result.message or tostring(result))}) end
     return result
   end
   function runtime.stats()

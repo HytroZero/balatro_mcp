@@ -48,7 +48,9 @@ try {
   const result = await sandbox.score([0, 1]); // 完整记分结果
   const results = await sandbox.scoreBatch([[0, 1], [0], [2]]);
   const scores = await sandbox.scores([[0, 1], [0], [2]]); // 仅分数，适合搜索
-  // 后续继续调用 scores；换局面时再 load。
+  const plays = await sandbox.plays({ hand: ['S_K', 'H_K', 'D_A'] }, 5,
+    { timeoutMs: 10_000 }); // 原子加载、枚举、排序；默认 minimal
+  // 换局面继续调用 plays；回到 score/scores 前必须重新 load。
 } finally {
   await sandbox.close();
 }
@@ -57,6 +59,13 @@ try {
 构造参数可设置 `lua`、`sourceDir`、`timeoutMs`（每个请求默认 5000）和 `signal`。
 `BALATRO_SANDBOX_SOURCE` 也可指定源码目录。默认使用 `env/sandbox/vendor`，
 缺少源码时需先运行 `npm run sandbox:prepare`。模块支持项目源码和构建后的 `dist` 入口，从任意工作目录调用。
+
+`plays(state, selectionLimit, { timeoutMs, signal })` 在一个请求中完成加载、完整枚举和
+前 15 名排序，返回模型可读的行数组。每次重新加载局面，但复用同一个 LuaJIT VM。
+它的 deadline 包括排队等待；排队时取消不打断前一个请求，执行中取消会终止 VM。
+请求完成即移除其取消监听，已结束请求的 signal 不会杀死后续搜索。
+构造参数的 `signal` 则控制整个 worker 生命周期。调用 `plays` 后，普通 `score` /
+`scoreBatch` / `scores` 要先重新 `load`，不复用搜索内部的评分模式。
 
 `scores` 和 `scoreBatch` 每批接受 1–2048 组选择，全部在 Lua 内循环试算，只进行一次
 进程通信。`scores` 成功项为数字，失败项保留 `{status, message}`，并省略计分过程和
@@ -94,7 +103,7 @@ Lua 内的搜索可直接用 `runtime.lua` 的 `new(source, json)`、`load(state
 | `game` | 覆盖原版 `G.GAME` 普通数据，例如钱、回合计数、弃牌次数、概率、已用 Voucher、随机流 |
 | `jokerSlots` / `handSize` | 安装 Joker 前的槽位/手牌上限，默认取基础值及牌背修正 |
 | `seed` | 默认 `SANDBOX`；若 `game.pseudorandom.seed` 已有值则沿用，可同时传入随机流状态 |
-| `random` | `seeded`（默认）使用原版伪随机；`fixed` 使用固定随机结果 |
+| `random` | `seeded`（默认）使用原版伪随机；`fixed` 使用固定结果；`minimal` 排除随机奖励并启用 score-only |
 | `trace` | 返回 `update_hand_text` 在记分过程中的筹码/倍率快照 |
 
 牌也可写成对象：`{key, enhancement, edition, seal, debuff, facing, ability, sell_cost}`。
@@ -128,6 +137,14 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 它不是期望值，也不保证整体得分下界。`random: true` 表示记分过程中调用过随机函数，
 包括记分后的玻璃碎裂判定。
 
+`minimal` 是明确的“随机奖励不发生”策略：Lucky、Space Joker、Bloodstone 及随机金钱
+奖励不触发，即使概率加成超过 100%；Misprint 取配置下限。它不是期望值，也不是所有
+可能对局结果的数学最小值。原版石牌的随机负数 rank 只用于避免组成对子，改用每张牌
+唯一的负数标识；未知的计分随机调用显式返回 `unsupported`，不偷偷用 seeded 结果。
+`minimal` 在最终牌背修正后停止，不执行销毁和 after-hand 结算；DNA 与消耗牌创建
+在原版效果派发边界被屏蔽，不伪造卡牌。成长、重触发、持牌效果和本手相关的钱仍参与计分。
+普通 `seeded` / `fixed` 接口的行为不变，包括直接造牌时的 `unsupported`。
+
 这是当前一手的记分查询。动画、存档/解锁、延迟事件、计分后的造牌/销毁和下一手状态
 不作为输出；它不能用于推进整局游戏。Steamodded 和其他 mod 的规则尚未接入。
 `runtime.lua` 仅供独立 worker 使用，不应加载进实机 mod。
@@ -138,16 +155,26 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 只读取局面，包含当前卡牌能力、Joker 成长值、牌型等级、Boss 记忆和概率；不运行试算。
 内部快照参与 revision 指纹，但不会出现在模型观察、工具追踪结果或操作检查结果中。
 抽牌堆按内容排序，仅导出成员，不导出抽牌顺序；实机种子和 RNG 流不导出。
+`current_round` 仅导出评分所需的出牌/弃牌计数、牌型历史和 Joker 目标；商店与 UI
+附加状态不进入快照，因此 Steamodded 的混合表 `current_round.voucher` 不会阻断评分。
+`round_resets` 仅导出 `ante`、`hands`、`discards`，不复制盲注原型或 Steamodded 的
+`blind_tag` UI 对象；Tag 与 Sprite 的循环引用不会阻断评分，实机对象不会被修改。
 
 快照使用 `passiveEffectsApplied: true`：概率、槽位和牌面数值已经是被动效果生效后的值，
 worker 不再执行 `add_to_deck`、Boss 卡牌 debuff 或每帧 `Card:update`。
 `base` / `editionValues` 保留当前卡牌值，`backConfig` 保留当前牌背配置。
 普通离线调用省略该标记，继续按前文的输入基值约定初始化。
 
-每个新局面复用一个独立 worker 批量试算，结束后关闭。按当前手牌顺序枚举 1–5 张的组合，
-每批 32 组，评分预算 1 秒，启动和加载也受整体 2.5 秒及调用方 deadline 限制。
-每种牌型保留最佳组合，最终最多 5 条；预算不足时附 `truncated`。
-同一 revision 缓存结果，计算后再次读取实机 revision；变化时丢弃评分。
+后端仅在需要 `plays` 时创建常驻 worker，跨观察复用，后端关闭或进程故障时释放。
+只调用 `sandbox.plays`；组合枚举、评分、排序和行格式都留在沙盒里。按当前手牌顺序
+完整枚举 1–5 张的组合，受选择上限和强制选牌约束，只受调用方整体 deadline 限制。
+完整评分后返回全局前 15 个组合，同一牌型可以有多个候选；不足 15 个时返回全部。
+同分优先更少的牌，再按索引字典序排列。超时、取消或失败不返回部分候选。
+`plays` 强制使用 `minimal`；实际触发随机奖励排除或 Misprint 下限计算的候选在行尾
+追加 `minimal`，没有触发的确定性候选不加后缀。标记逐候选重置，不显示 `random`；
+构造阶段随机、石牌 rank 标识和被屏蔽的出牌后效果不触发标记。
+它不推演出牌后的牌局。
+同一 revision 也重新枚举；计算后再次读取实机 revision，变化时丢弃评分。
 动作前置检查与 `game_operation` 不启动评分；评分失败也不会把已确认完成的动作变为不确定。
 
 使用前需要准备本地原版源码、安装 LuaJIT，并更新 Mod 和重启游戏/MCP 服务。

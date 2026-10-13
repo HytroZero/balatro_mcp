@@ -11,7 +11,8 @@ G = {P_CARDS={S_A={},S_K={},S_2={}},hand={cards={a},config={card_limit=8,highlig
   jokers={cards={},config={card_limit=5}},consumeables={cards={},config={card_limit=2}},
   deck={cards={b,c}},discard={cards={}},playing_cards={a,b,c},
   GAME={selected_back={effect={center={key='b_red'},config={}}},blind={config={blind={key='bl_eye'}},hands={Pair=true}},
-    current_round={hands_left=3},probabilities={normal=2},hands={['High Card']={level=1,chips=5,mult=1,played=0,played_this_round=0}},
+    current_round={hands_left=3,voucher={'v_tarot_merchant',spawn={v_tarot_merchant=true}}},probabilities={normal=2},hands={['High Card']={level=1,chips=5,mult=1,played=0,played_this_round=0}},
+    round_resets={ante=5,hands=5,discards=2},
     dollars=20,pseudorandom={seed='PRIVATE_SEED',hidden_stream=0.2}}}
 local before = G.GAME.dollars
 local first = snapshot.read()
@@ -23,6 +24,13 @@ check(not json.encode(first):find('PRIVATE_SEED',1,true) and not first.state.gam
 G.deck.cards={c,b}
 check(json.encode(snapshot.read()) == json.encode(first), 'draw order is excluded')
 check(G.GAME.dollars == before and G.hand.cards[1] == a, 'read leaves run and card objects unchanged')
+local tag = {key='tag_holo'}
+tag.tag_sprite = {config={tag=tag}}
+G.GAME.round_resets.blind_tag = tag
+local withTag = snapshot.read()
+check(withTag.status == 'ready', withTag.message or 'UI Tag must not block scoring')
+check(json.encode(withTag) == json.encode(first), 'UI-only blind Tag does not change scoring input')
+check(G.GAME.round_resets.blind_tag.tag_sprite.config.tag == tag, 'snapshot leaves live Tag cycle untouched')
 a.facing='back'; a.ability=function() error('must not inspect hidden ability') end
 local hidden = snapshot.read()
 check(hidden.status == 'unavailable' and not json.encode(hidden):find('S_A',1,true), 'hidden identity is never serialized')

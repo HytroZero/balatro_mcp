@@ -130,7 +130,7 @@ test('consumables and hand still patch elements while membership and order are u
 });
 
 test('plays are a SELECTING_HAND view that replaces whole and is dropped with the phase', () => {
-    const lines = ['0 1: Pair 120', '0: High Card 16 random'];
+    const lines = ['0 1: Pair 120', '0: High Card 16'];
     const playing = observation({ plays: lines });
     const full = compactObservation(playing);
     assert.ok(Check(FullObservationSchema, full));

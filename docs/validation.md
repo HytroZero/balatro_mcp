@@ -489,3 +489,160 @@ All checks were offline. No real game installation, restart, or Steamodded/live
 score comparison was performed. Search still enumerates selections in the
 current hand order, without card-order permutations. Custom mod scoring rules,
 DNA card creation and The Hook pre-scoring discards remain unsupported.
+
+## Complete plays enumeration and top 15 selections — 2026-10-13
+
+Every SELECTING_HAND observation now scores all selections allowed by the current
+selection limit and forced cards before returning the global top 15 combinations
+(all combinations when fewer than 15 exist). Multiple selections of the same poker
+hand remain eligible. Ties prefer fewer cards, then ascending index order. The
+search keeps only 15 candidates in memory while visiting every combination.
+
+Removed the one-second scoring cutoff, the independent 2.5-second search timeout,
+revision caching and partial `truncated` recommendations. Enumeration shares the
+overall request deadline and cancellation signal; incomplete batches, scoring
+failures, timeout or cancellation never return partial candidates. The final live
+revision check and confirmed-action failure containment remain in place.
+
+Executed checks:
+
+- `npm run check` — passed.
+- `npm test` — 95 passed, 2 macOS-only skips, 0 failures. Coverage includes all
+  1,585 selections of a 12-card hand, a highest-scoring final selection, 15
+  candidates of the same hand type, enumeration beyond the former one-second
+  cutoff, missing batch results, cancellation cleanup, repeated observations,
+  original LuaJIT scoring and HTTP-to-worker integration.
+- `npm run release:check` and `git diff --check` — passed.
+
+All checks were offline. The server was rebuilt; no live game installation,
+restart or gameplay was performed. The MCP process must restart to load the change.
+
+## Steamodded voucher compatibility in scoring snapshots — 2026-10-13
+
+The scoring exporter now projects only scoring-relevant `current_round` fields:
+hand/discard counters, hand history, and Idol/Ancient Joker/Castle/Mail-In Rebate
+targets. Shop and presentation-only fields are excluded. Steamodded's voucher
+table combines numeric entries with a `spawn` member and is not a JSON array;
+copying the whole round previously rejected it before starting the sandbox.
+Strict rejection of unsupported tables in scoring inputs remains unchanged.
+
+Executed checks:
+
+- Added the mixed voucher table to the Lua snapshot fixture; before the fix,
+  `luajit tests/score-snapshot.test.lua` failed with `Sparse or mixed scoring array`.
+  After the fix, all 13 checks passed.
+- `luajit tests/observation.test.lua` — 88 checks passed.
+- `luajit tests/decision.test.lua` — 38 checks passed.
+- `node --test tests/plays.test.ts tests/bridge.test.ts tests/sandbox.test.ts` —
+  40 passed, no skips or failures. All 11 original-game round-trip configurations
+  now include a mixed voucher table. The added configuration checks non-default
+  Idol/Ancient Joker targets and last-hand/discard-dependent scoring.
+- A temporary offline smoke scenario combined the current saved Steamodded
+  `current_round` with a controlled three-card hand and original-game Jokers.
+  Snapshot validation and complete enumeration succeeded, returning all seven
+  plays; the leading recommendation was `0 1: Pair 808`.
+- `npm run check`, `npm run stage-mod`, and `npm run release:check` — passed.
+
+Verification was offline; the live game was not advanced, restarted, or reinstalled.
+Temporary scripts and the decompressed save were removed. The updated mod is
+staged; installation and a game restart are required to load it in the live game.
+
+## Persistent score-only plays and minimal chance rewards — 2026-10-13
+
+The backend now owns one lazily started `ScoringSandbox` across observations.
+`plays(state, selectionLimit, options)` reloads a position, enumerates every legal
+selection, scores and ranks the top 15, and formats its lines inside the Lua VM in
+one atomic request. The former host-side generator, batch search and formatter
+were removed. Normal completion keeps the worker; shutdown or an active request
+failure releases it. Request deadlines include queue wait, and cancellation
+listeners are removed after settlement so old signals cannot kill later searches.
+
+`minimal` excludes chance rewards even with boosted probabilities and takes
+Misprint's configured minimum. Unknown scoring randomness remains explicit rather
+than silently sampling; rankless Stone cards use unique negative rank identities.
+This is a no-chance-reward policy, not a mathematical minimum over every possible
+game outcome. Score-only evaluation suppresses DNA and consumable creation before
+constructors and stops after the original final deck modifier, before destruction
+and after-hand lifecycle. Same-hand growth, enhancement order, retriggers, held
+effects and relevant money changes remain active. Existing seeded/fixed APIs keep
+their previous behavior; The Hook remains unsupported. Updated the guide, core
+decision protocol and scoring documentation.
+
+Executed checks:
+
+- `node build/plays-smoke.ts` — passed using local original source and LuaJIT:
+  one process, one source load, three position loads and 443 evaluations. An
+  eight-card search visited all 218 selections and returned 15 lines; repeating
+  its position returned identical advice. Aborting a completed search's signal
+  left the next search usable. DNA/Misprint/Space were present; the leading
+  recommendation was `0 1: Pair 210`. The temporary script was removed afterward.
+- `npm run check` — passed.
+- `npm test` — build passed; 101 tests passed, two macOS-only skips, zero failures.
+  Includes real LuaJIT global-top15/forced-card search, public minimal scoring,
+  boosted probabilities, lifecycle isolation, same-hand scoring order, atomic
+  failures, queue/active cancellation and timeout, malformed protocol output,
+  live-snapshot round trips and HTTP-to-persistent-worker integration.
+- `npm run release:check` — passed (110 exported source files).
+
+All verification was offline. No live game actions, mod installation or game
+restart were performed. No Lua mod files changed; restart the MCP process to load
+the rebuilt server and sandbox behavior.
+
+## Mark actual minimal scoring branches in plays — 2026-10-13
+
+Each candidate now records whether scoring invoked a supported minimal chance
+reward or Misprint's lower bound, and appends `minimal` as the final token only
+when it did. The flag resets before each trial. Deterministic candidates, blocked
+hands that never reach chance scoring, constructor randomness, Stone rank
+identities and suppressed lifecycle events do not acquire the marker. Updated
+the response validator, scoring regressions and public scoring guide.
+
+Executed checks:
+
+- A one-off Node API smoke query using original source and LuaJIT returned
+  `0: High Card 16 minimal` and `1: High Card 15` for a Lucky Ace and ordinary King
+  in the same search. Misprint returned `0: High Card 16 minimal`.
+- `node --test tests/plays.test.ts tests/sandbox.test.ts tests/bridge.test.ts` —
+  46 passed, zero skips or failures, including per-candidate flag reset, blocked
+  hands, debuffed chance effects, boosted probabilities and copied Misprint.
+- `npm run check` and `npm run build` — passed.
+
+- `node --test tests/guide.test.ts tests/compact.test.ts` — 25 passed, zero skips
+  or failures. `npm run release:check` passed (110 exported source files).
+
+All checks were offline; no live game actions or mod changes were made.
+Restart the MCP process to load the rebuilt output contract.
+
+## Steamodded blind Tag cycles in scoring snapshots — 2026-10-13
+
+Selecting a Small or Big Blind under Steamodded retains the skip-reward Tag in
+`G.GAME.round_resets.blind_tag`. Its Sprite points back to the Tag, so copying
+the entire `round_resets` table failed with `Cyclic scoring value`. The live
+exporter now projects only `ante`, `hands` and `discards`, the round-reset fields
+needed by the independent scoring path. UI objects and blind prototypes are not
+exported; cycle validation remains active for scoring values. No live objects
+are modified. Updated the sandbox documentation and original-score round-trip
+fixtures to include the cyclic Tag/Sprite relationship.
+
+Executed checks:
+
+- `luajit tests/score-snapshot.test.lua` — the new cyclic Tag regression failed
+  before the source fix with `Cyclic scoring value`; after the fix, all 16 checks
+  passed, including identical scoring input with and without the UI Tag and
+  preservation of the live cycle.
+- `luajit tests/observation.test.lua` and `luajit tests/decision.test.lua` —
+  88 and 38 checks passed respectively.
+- `node --test tests/plays.test.ts` — 10 passed, zero skips or failures. Original
+  scoring round trips now include cyclic blind Tags, and HTTP observation still
+  reaches the persistent worker.
+- `node build/snapshot-tag-smoke.ts` — the temporary API smoke scenario exported
+  a ready snapshot from original-game state with a cyclic UI Tag, then returned
+  seven recommendations from one LuaJIT source load and one position load.
+  The leading recommendation was `0 1: Pair 210`. Removed the script afterward.
+- `npm run stage-mod` — staged the repaired standalone mod.
+- `npm run release:check` — distribution audit passed (110 source files).
+
+Verification was offline. No live game actions, mod installation or game restart
+were performed. The installer requires Balatro to be closed; install the staged
+mod and restart the game to load the repaired exporter. Restarting only the MCP
+process does not reload this Lua code.

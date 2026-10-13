@@ -3,7 +3,7 @@ import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 import { Check } from 'typebox/value';
 import { ActionSchema, BackendError, playerState, record, type Action, type Backend, type Data, type DeckObservation, type ErrorCode, type Observation, type RequestContext } from '../env/contract.ts';
-import { sandboxPlays, ScoringSnapshotSchema, type PlaysWorker } from './plays.ts';
+import { ScoringSnapshotSchema, type PlaysWorker } from './plays.ts';
 import { ScoringSandbox, LiveScoreStateSchema, type SandboxOptions } from '../env/sandbox/index.ts';
 
 const ObservationSchema = Type.Object({ contract: Type.Literal(1),backend: Type.Literal('balatro_mcp_mod'),revision: Type.String({minLength:1}),runId: Type.String({minLength:1}),
@@ -21,8 +21,8 @@ export class ForgeBridgeBackend implements Backend {
   private instanceId?: string;
   private deckObserveSupported = false;
   private scoringSnapshotSupported = false;
-  private playsCache?: { revision: string; lines: string[] };
   private createPlaysWorker: (options: SandboxOptions) => PlaysWorker;
+  private playsWorker?: PlaysWorker;
   private uncertain = false;
   private busy = false;
   private endpoint: URL;
@@ -82,7 +82,6 @@ export class ForgeBridgeBackend implements Backend {
     if (this.instanceId && this.instanceId !== health.instanceId) {
       if (this.busy) throw new BackendError('stale_state','Bridge restarted during an action; observe again before continuing.');
       this.uncertain = false; this.lastActionId = undefined;
-      this.playsCache = undefined;
     }
     this.instanceId = health.instanceId;
     this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
@@ -126,7 +125,6 @@ export class ForgeBridgeBackend implements Backend {
     if (!observation.ready || observation.terminal || observation.state.state !== 'SELECTING_HAND') return observation;
     const attach = (lines: string[]) => ({ ...observation, state: { ...observation.state, plays: [...lines] } });
     if (!this.scoringSnapshotSupported) return attach(['unavailable: Update balatro_mcp_mod and restart Balatro for sandbox scoring']);
-    if (this.playsCache?.revision === observation.revision) return attach(this.playsCache.lines);
     try {
       const parsed = ScoringSnapshotSchema.safeParse(record(record(raw).state).scoringSnapshot);
       if (!parsed.success) return attach(['unavailable: Invalid scoring snapshot; update balatro_mcp_mod and restart Balatro']);
@@ -136,18 +134,21 @@ export class ForgeBridgeBackend implements Backend {
       }
       if (snapshot.status === 'unavailable') return attach(['unavailable: ' + snapshot.message]);
       const remaining = this.remaining(context);
-      // The whole search, including startup/load, is bounded independently of actions.
-      const timeout = Math.max(1, Math.ceil(Math.min(remaining, 2500)));
-      const timeoutSignal = AbortSignal.timeout(timeout);
-      const signal = context.signal ? AbortSignal.any([context.signal, timeoutSignal]) : timeoutSignal;
-      const lines = await sandboxPlays(snapshot, { signal, timeoutMs: timeout }, this.createPlaysWorker);
+      // The VM belongs to this backend; cancellation belongs only to this search.
+      this.playsWorker ??= this.createPlaysWorker({});
+      const lines = await this.playsWorker.plays(snapshot.state, snapshot.selectionLimit,
+        { signal: context.signal, timeoutMs: Math.max(1, Math.ceil(remaining)) });
       // Human input can change the game while the independent worker is scoring.
       const checked = await this.rpc('sf.observe', {}, false, context);
       if (this.observation(checked).revision !== observation.revision) return attach(['unavailable: State changed during sandbox scoring; call game_observe']);
-      this.playsCache = { revision: observation.revision, lines: [...lines] };
       return attach(lines);
     } catch {
+      const worker = this.playsWorker;
+      this.playsWorker = undefined;
+      await worker?.close();
       // Advice failure never turns a verified completed action into an uncertain one.
+      if (context.signal?.aborted) return attach(['unavailable: Sandbox scoring cancelled before complete enumeration']);
+      if (performance.now() >= context.deadline!) return attach(['unavailable: Sandbox scoring deadline exceeded before complete enumeration']);
       return attach(['unavailable: Sandbox scoring failed; verify LuaJIT and run npm run sandbox:prepare']);
     }
   }
@@ -208,5 +209,9 @@ export class ForgeBridgeBackend implements Backend {
       throw error;
     } finally { this.busy = false; }
   }
-  async close(): Promise<void> {}
+  async close(): Promise<void> {
+    const worker = this.playsWorker;
+    this.playsWorker = undefined;
+    await worker?.close();
+  }
 }

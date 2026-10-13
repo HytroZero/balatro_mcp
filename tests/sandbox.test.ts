@@ -189,3 +189,104 @@ test('persistent sandbox recovers after scoring failures and invalidates failed 
     assert.equal((await sandbox.stats()).sourceLoads, 1);
   } finally { await sandbox.close(); }
 });
+
+test('plays minimal policy fails chance rewards even with boosted probabilities and keeps ranged minima', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    for (const normal of [1, 100]) {
+      assert.deepEqual(await sandbox.plays({
+        hand: [{ key: 'H_A', enhancement: 'm_lucky' }],
+        jokers: ['j_oops', 'j_space', 'j_bloodstone', 'j_lucky_cat', 'j_bull'],
+        game: { probabilities: { normal }, dollars: 10 },
+      }, 1), ['0: High Card 36 minimal']);
+      assert.deepEqual(await sandbox.plays({
+        hand: ['H_K'], jokers: ['j_business', 'j_bloodstone', 'j_bull'],
+        game: { probabilities: { normal }, dollars: 10 },
+      }, 1), ['0: High Card 35 minimal']);
+      assert.deepEqual(await sandbox.plays({
+        hand: [{ key: 'S_A', ability: { forced_selection: true } }, 'H_K'],
+        jokers: ['j_reserved_parking', 'j_bull'], game: { probabilities: { normal }, dollars: 10 },
+      }, 1), ['0: High Card 36 minimal']);
+    }
+    assert.deepEqual(await sandbox.plays({ hand: ['S_A'], jokers: ['j_misprint'] }, 1), ['0: High Card 16 minimal']);
+    assert.deepEqual(await sandbox.plays({
+      hand: ['S_A'], jokers: ['j_blueprint', { key: 'j_misprint', ability: { extra: { min: 3, max: 23 } } }],
+    }, 1), ['0: High Card 112 minimal']);
+    assert.deepEqual(await sandbox.plays({
+      hand: ['S_A'], jokers: [{ key: 'j_space', debuff: true }, 'j_cavendish'],
+      game: { probabilities: { normal: 100 } },
+    }, 1), ['0: High Card 48']);
+  } finally { await sandbox.close(); }
+});
+
+test('plays score-only skips copying and creation without changing deck tallies or normal seeded scoring', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    const state = { hand: ['S_A'], deck: ['H_2', 'D_3'], jokers: ['j_blueprint', 'j_dna', 'j_hologram', 'j_blue_joker'] };
+    assert.deepEqual(await sandbox.plays(state, 1), ['0: High Card 20']);
+    assert.deepEqual(await sandbox.plays(state, 1), ['0: High Card 20']);
+    await sandbox.load(state);
+    assert.equal((await sandbox.score([0])).status, 'unsupported');
+    assert.deepEqual(await sandbox.plays({
+      hand: ['S_8'], jokers: ['j_blueprint', 'j_8_ball', 'j_vagabond', 'j_seance', 'j_superposition'],
+      game: { probabilities: { normal: 100 } },
+    }, 1), ['0: High Card 13']);
+    const lucky = { hand: [{ key: 'S_A', enhancement: 'm_lucky' }], seed: 'REPEAT', trace: true };
+    await sandbox.load(lucky);
+    const seeded = await sandbox.score([0]);
+    await sandbox.plays(lucky, 1);
+    await sandbox.load(lucky);
+    assert.deepEqual(await sandbox.score([0]), seeded);
+  } finally { await sandbox.close(); }
+});
+
+test('plays retains same-hand growth, order, retriggers, deterministic money and final deck modifiers', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    const hiker = { hand: [{ key: 'S_2', seal: 'Red' as const }, { key: 'H_2' }], jokers: ['j_hiker'] };
+    assert.deepEqual(await sandbox.plays(hiker, 2), ['0 1: Pair 42', '0: High Card 14', '1: High Card 7']);
+    assert.deepEqual(await sandbox.plays({ hand: ['S_K'], jokers: ['j_midas_mask', 'j_vampire'] }, 1), ['0: High Card 16']);
+    assert.deepEqual(await sandbox.plays({ hand: ['S_K'], jokers: ['j_vampire', 'j_midas_mask'] }, 1), ['0: High Card 15']);
+    assert.deepEqual(await sandbox.plays({
+      hand: [{ key: 'D_A', seal: 'Gold' }], jokers: ['j_bull'], game: { dollars: 10 },
+    }, 1), ['0: High Card 42']);
+    assert.deepEqual(await sandbox.plays({
+      hand: ['S_A'], jokers: [{ key: 'j_todo_list', ability: { to_do_poker_hand: 'High Card' } }, 'j_bull'],
+      game: { dollars: 10 },
+    }, 1), ['0: High Card 44']);
+    assert.deepEqual(await sandbox.plays({ hand: [{ key: 'S_A', enhancement: 'm_glass' }], back: 'b_plasma' }, 1), ['0: High Card 81']);
+    assert.deepEqual(await sandbox.plays(hiker, 2), ['0 1: Pair 42', '0: High Card 14', '1: High Card 7']);
+    assert.deepEqual(await sandbox.plays({ ...hiker, hand: [...hiker.hand].reverse() }, 2), ['0 1: Pair 42', '1: High Card 14', '0: High Card 7']);
+    assert.deepEqual(await sandbox.plays({ hand: ['S_A'], jokers: ['j_ice_cream'] }, 1), ['0: High Card 116']);
+    assert.deepEqual(await sandbox.plays({ hand: ['S_A'], jokers: ['j_ice_cream'] }, 1), ['0: High Card 116']);
+  } finally { await sandbox.close(); }
+});
+
+test('plays returns no partial advice after a late trial failure and recovers on the next request', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    // The pair succeeds first; a later High Card overflows during the search.
+    const failed = await sandbox.plays({ ...baseState, hands: { 'High Card': { mult: 1e308 } } }, 2);
+    assert.equal(failed.length, 1);
+    assert.match(failed[0]!, /^unavailable: .*Non-finite score/);
+    assert.deepEqual(await sandbox.plays({ hand: ['S_A'] }, 1), ['0: High Card 16']);
+    assert.deepEqual(await sandbox.plays({ ...baseState, blind: 'bl_hook' }, 2), ['unavailable: The Hook pre-scoring discards are not supported']);
+    assert.match((await sandbox.plays({ hand: ['invalid'] }, 1))[0]!, /^unavailable: .*Unknown playing card/);
+    assert.deepEqual(await sandbox.plays({ ...baseState, blind: 'bl_psychic' }, 2), [
+      '0: High Card 0 not allowed', '1: High Card 0 not allowed', '2: High Card 0 not allowed',
+      '0 1: Pair 0 not allowed', '0 2: High Card 0 not allowed', '1 2: High Card 0 not allowed',
+    ]);
+  } finally { await sandbox.close(); }
+});
+
+test('public minimal scoring shares score-only boundaries and rankless Stones do not become a pair', { skip }, async () => {
+  assert.equal((await ok({ hand: [{ key: 'S_A', enhancement: 'm_glass' }], play: [0], random: 'minimal' })).score, 32);
+  assert.equal((await ok({ hand: ['S_A'], play: [0], jokers: ['j_dna'], random: 'minimal' })).score, 16);
+  const stones = await ok({
+    hand: [{ key: 'S_2', enhancement: 'm_stone' }, { key: 'H_2', enhancement: 'm_stone' }],
+    play: [0, 1], random: 'minimal',
+  });
+  assert.equal(stones.hand, 'High Card');
+  assert.equal(stones.score, 105);
+  assert.deepEqual(stones.scoringCards, [0, 1]);
+});

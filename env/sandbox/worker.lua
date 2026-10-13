@@ -12,6 +12,7 @@ for line in io.lines() do
     if request.method == 'load' then return runtime.load(request.state) end
     if request.method == 'score' then return runtime.score(request.play) end
     if request.method == 'stats' then return runtime.stats() end
+    if request.method == 'plays' then return runtime.plays(request.state, request.selectionLimit) end
     if request.method == 'batch' or request.method == 'scores' then
       local results = json.array()
       for i, play in ipairs(request.plays) do results[i] = runtime.score(play, request.method == 'scores') end
@@ -19,6 +20,10 @@ for line in io.lines() do
     end
     error('Unknown sandbox method')
   end)
-  if not ok then result = type(result) == 'table' and result or {status='error', message=tostring(result)} end
+  if not ok then
+    local message = type(result) == 'table' and result.message or tostring(result)
+    result = request and request.method == 'plays' and json.array({'unavailable: ' .. message}) or
+      (type(result) == 'table' and result or {status='error', message=message})
+  end
   io.write(json.encode({id=request and request.id, result=result}), '\n')
 end

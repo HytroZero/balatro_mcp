@@ -44,7 +44,7 @@ export const ScoreStateSchema = z.strictObject({
   game: data.refine(value => !['hands', 'blind', 'selected_back', 'selected_back_key'].some(key => key in value),
     'Use the hands, blind and back fields for engine objects').optional(),
   seed: z.string().min(1).max(64).optional(),
-  random: z.enum(['seeded', 'fixed']).optional(),
+  random: z.enum(['seeded', 'fixed', 'minimal']).optional(),
   trace: z.boolean().optional(),
 });
 const selection = z.array(z.number().int().nonnegative()).min(1).max(5);
@@ -97,7 +97,7 @@ const ScoreResultSchema = z.discriminatedUnion('status', [
     status: z.literal('ok'), version: z.literal('1.0.1o-FULL'), hand: z.string(), displayHand: z.string(),
     chips: z.number().finite(), mult: z.number().finite(), score: z.number().finite(),
     scoringCards: z.array(z.number().int().nonnegative()), notAllowed: z.boolean(), random: z.boolean(),
-    randomPolicy: z.enum(['seeded', 'fixed']), seed: z.string(),
+    randomPolicy: z.enum(['seeded', 'fixed', 'minimal']), seed: z.string(),
     trace: z.array(z.object({ chips: z.number().finite(), mult: z.number().finite() })).optional(),
   }),
   z.object({ status: z.literal('unsupported'), message: z.string() }),
@@ -108,13 +108,28 @@ export type ScoreResult = z.infer<typeof ScoreResultSchema>;
 const failure = z.object({ status: z.enum(['unsupported', 'unavailable', 'error']), message: z.string() });
 export type ScoreFailure = z.infer<typeof failure>;
 export type LoadResult = { status: 'ready' } | ScoreFailure;
-export interface SandboxOptions {
+const PlaysResultSchema = z.union([
+  z.tuple([z.string().regex(/^unavailable: .+/s)]),
+  z.array(z.string().regex(/^\d+(?: \d+)*: .+ -?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?: not allowed)?(?: minimal)?$/i)).min(1).max(15),
+]);
+export interface SandboxRequestOptions {
+  /** Includes queued wait for plays, not just execution time. */
+  timeoutMs?: number;
+  signal?: AbortSignal;
+}
+export interface SandboxOptions extends SandboxRequestOptions {
   /** LuaJIT executable; defaults to LUAJIT or luajit on PATH. */
   lua?: string;
   /** Original 1.0.1o source directory; defaults to the locally prepared vendor. */
   sourceDir?: string;
-  timeoutMs?: number;
+  /** Lifetime signal for the worker; use plays options for scoped cancellation. */
   signal?: AbortSignal;
+}
+
+function validateTimeout(timeoutMs: number): void {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0 || timeoutMs > 2_147_483_647) {
+    throw new Error('timeoutMs must be a positive finite number within the Node timer range');
+  }
 }
 
 /** One persistent LuaJIT VM; load a position once, then score many selections. */
@@ -133,9 +148,7 @@ export class ScoringSandbox {
   constructor(options: SandboxOptions = {}) {
     this.options = { ...options };
     this.timeout = options.timeoutMs ?? 5_000;
-    if (!Number.isFinite(this.timeout) || this.timeout <= 0 || this.timeout > 2_147_483_647) {
-      throw new Error('timeoutMs must be a positive finite number within the Node timer range');
-    }
+    validateTimeout(this.timeout);
   }
 
   get processId(): number | undefined { return this.child?.pid; }
@@ -190,7 +203,7 @@ export class ScoringSandbox {
     return pending;
   }
 
-  private async request(method: string, params: object): Promise<unknown> {
+  private async request(method: string, params: object, externallyTimed = false): Promise<unknown> {
     const id = ++this.serial;
     const request = JSON.stringify({ id, method, ...params });
     if (Buffer.byteLength(request) > 4_194_304) throw new Error('Sandbox request exceeds 4 MiB');
@@ -199,8 +212,10 @@ export class ScoringSandbox {
     try {
       return await new Promise((accept, reject) => {
         this.pending = { id, accept, reject };
-        timer = setTimeout(() => this.stop(new Error(`Sandbox worker timed out after ${this.timeout} ms`)), this.timeout);
-        timer.unref();
+        if (!externallyTimed) {
+          timer = setTimeout(() => this.stop(new Error(`Sandbox worker timed out after ${this.timeout} ms`)), this.timeout);
+          timer.unref();
+        }
         child.stdin.write(request + '\n');
       });
     } finally { clearTimeout(timer); }
@@ -213,6 +228,59 @@ export class ScoringSandbox {
       const result = z.union([z.object({ status: z.literal('ready') }), failure]).parse(await this.request('load', { state: parsed }));
       if (result.status === 'ready') this.handLength = parsed.hand.length;
       return result;
+    });
+  }
+
+  /** Reload and fully rank a position in one queued worker operation. */
+  plays(state: ScoreState, selectionLimit: number, options: SandboxRequestOptions = {}): Promise<string[]> {
+    const parsed = ScoreStateSchema.parse(state);
+    const limit = z.number().int().min(0).max(5).parse(selectionLimit);
+    const timeoutMs = options.timeoutMs ?? this.timeout;
+    validateTimeout(timeoutMs);
+    const deadline = performance.now() + timeoutMs;
+    const signal = options.signal;
+    return new Promise<string[]>((accept, reject) => {
+      let settled = false, active = false;
+      let timer: NodeJS.Timeout | undefined;
+      const cleanup = () => {
+        clearTimeout(timer);
+        signal?.removeEventListener('abort', abort);
+      };
+      const fail = (error: unknown) => {
+        if (settled) return;
+        settled = true;
+        cleanup();
+        reject(error);
+      };
+      const cancel = (error: Error) => {
+        if (settled) return;
+        if (active) this.stop(error);
+        fail(error);
+      };
+      const abort = () => {
+        const reason = signal!.reason;
+        cancel(reason instanceof Error ? reason : new Error('Sandbox request aborted', { cause: reason }));
+      };
+      const expire = () => cancel(new Error(`Sandbox worker timed out after ${timeoutMs} ms`));
+      signal?.addEventListener('abort', abort, { once: true });
+      if (signal?.aborted) { abort(); return; }
+      timer = setTimeout(expire, Math.max(0, deadline - performance.now()));
+      timer.unref();
+      void this.enqueue(async () => {
+        if (settled) return;
+        if (performance.now() >= deadline) { expire(); return; }
+        active = true;
+        this.handLength = undefined;
+        try {
+          const result = PlaysResultSchema.parse(await this.request('plays', { state: parsed, selectionLimit: limit }, true));
+          if (settled) return;
+          if (performance.now() >= deadline) { expire(); return; }
+          settled = true;
+          cleanup();
+          accept(result);
+        } catch (error) { fail(error); }
+        finally { active = false; }
+      });
     });
   }
 

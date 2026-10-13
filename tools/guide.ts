@@ -4,7 +4,7 @@ import { phaseViews } from '../env/compact.ts';
 export const phaseViewRows: readonly { keys: readonly string[]; content: string }[] = [
   { keys: ['hand', 'deck'], content: 'card lines; `"44/52"` = draw pile / deck size' },
   { keys: ['round'], content: '`{score,target,hands,discards}`, plus `played` (this round\'s hand counts, or `"?"`)' },
-  { keys: ['plays'], content: 'experimental; up to 5 lines `"0 2 3 5 6: Flush 1240"`: hand indices to play, poker hand and the score of that selection, best per poker hand (see below)' },
+  { keys: ['plays'], content: 'experimental; top 15 selections after complete enumeration (all if fewer), e.g. `"0 2 3 5 6: Flush 1240"`: hand indices to play, poker hand and score (see below)' },
   { keys: ['cashOut'], content: '`{blind,score,target,payout}`, `lines` when known' },
   { keys: ['shop'], content: '`{cards,vouchers,packs}`, each with its own indices; PACK only when opened from the shop' },
   { keys: ['pack'], content: '`{name,picks,items}`; picks are remaining choices' },
@@ -131,18 +131,27 @@ Phase views (dropped when the phase no longer uses them):
 
 ${phaseViewTable()}
 
-\`plays\` is computed in an independent LuaJIT sandbox using original Balatro
-1.0.1o scoring. The mod only exports a read-only position; no trial runs in the live
-game. Up to 5 best-per-hand-type lines use the current hand order (no permutations).
-Selections of 1-5 cards are evaluated in batches; forced cards and the current
-selection limit apply. A search has a 1-second scoring budget plus bounded startup.
-Results are cached by revision and checked against the live revision after scoring.
-\`random\` marks fixed chance results, not an expectation or guaranteed lower bound.
-The sandbox does not use the live seed or RNG stream. \`not allowed\` means the Boss
-rejects that hand (score 0). Money effects from The Tooth/The Ox are applied.
-\`unavailable\` reports missing LuaJIT/source, hidden cards, unsupported effects
-(including DNA card creation and The Hook discards), or a changed live position.
-\`truncated\` reports how many selections were scored before the budget ended.
+\`plays\` is computed in a persistent independent LuaJIT sandbox using original
+Balatro 1.0.1o scoring. The mod exports a read-only position; no trial runs in the
+live game. The backend starts the VM only when plays are needed and reuses it across
+observations. One sandbox call reloads the position, fully evaluates selections of
+1-5 cards in current hand order (no permutations), and ranks the top 15; forced
+cards and the current selection limit apply. Multiple selections of the same poker
+hand can appear. Ties prefer fewer cards, then ascending hand indices.
+Only the caller's overall deadline applies. Cancellation or timeout returns
+unavailable advice, never partial candidates. Results are checked against the live
+revision after scoring. The VM closes on backend shutdown or transport failure.
+\`minimal\` scoring excludes chance rewards (even with boosted probabilities) and
+uses Misprint's minimum. Each selection that actually invokes these rules ends
+with \`minimal\`; deterministic selections have no suffix. There is no \`random\`
+suffix. This is a
+no-random-reward policy, not an expectation or a mathematical minimum over every
+possible game outcome. The sandbox never uses the live seed or RNG stream.
+Score-only trials suppress copying/creation, destruction and after-hand lifecycle,
+while retaining changes that affect this hand's score, including growth,
+retriggers and The Tooth/The Ox money effects. \`not allowed\` means the Boss
+rejects that hand (score 0). \`unavailable\` reports missing LuaJIT/source, hidden
+cards, unsupported scoring (including The Hook discards), or a changed position.
 Steamodded/custom scoring rules are not simulated; live parity remains unverified.
 Plays are advice; any legal selection may be played.
 

@@ -21,6 +21,9 @@ local configurations = {
   {hand={'S_K','H_K','D_A'},blind={key='bl_eye',hands={Pair=true}}},
   {hand={'S_K','H_K','D_A'},blind={key='bl_mouth',only_hand='High Card'}},
   {hand={'S_K','H_K','D_A'},jokers={'j_stone'},deck={{key='D_2',enhancement='m_stone'}},discard={{key='C_2',enhancement='m_stone'}}},
+  {hand={'H_5','C_5','D_9'},jokers={'j_idol','j_ancient','j_banner','j_mystic_summit','j_acrobat'},
+    game={current_round={hands_left=1,discards_left=0,hands_played=2,discards_used=3,
+      idol_card={rank='5',id=5,suit='Hearts'},ancient_card={suit='Clubs'}}}},
 }
 local out=json.array()
 for _, configuration in ipairs(configurations) do
@@ -29,6 +32,12 @@ for _, configuration in ipairs(configurations) do
   assert(loaded.status=='ready',loaded.message)
   G=upvalue(runtime.load,'G')
   G.hand.config.highlighted_limit=5
+  -- Steamodded stores shop vouchers as a mixed table, not a scoring dependency.
+  G.GAME.current_round.voucher={'v_tarot_merchant',spawn={v_tarot_merchant=true}}
+  -- Selected blind Tags retain their Sprite's back-reference under Steamodded.
+  local tag={key='tag_holo'}
+  tag.tag_sprite={config={tag=tag}}
+  G.GAME.round_resets.blind_tag=tag
   local snapshot=exporter.read()
   assert(snapshot.status=='ready',snapshot.message)
   -- Scoring must not be necessary to serialize a live position.
