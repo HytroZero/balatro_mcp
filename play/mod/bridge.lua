@@ -1,9 +1,8 @@
 -- Wire protocol and operation lifecycle; independent of the socket transport.
-return function(json, game, clock, instance, timeout, scoring)
+return function(json, game, clock, instance, timeout, scoreSnapshot)
   local bridge = {}
   local serial, runSerial, previousRun, fingerprint = 0, 0, nil, ''
   local pending, poisoned, operations, order = nil, false, {}, {}
-  local plays, playsFingerprint = nil, nil
   local function blocked()
     return type(poisoned) == 'string' and poisoned or poisoned and 'Previous action needs manual inspection' or pending and 'Waiting for the current action' or nil
   end
@@ -13,25 +12,16 @@ return function(json, game, clock, instance, timeout, scoring)
     reason = blocked() or not ready and reason or nil
     -- Deck-only edits also invalidate action references, without adding deck
     -- composition to ordinary observations or model context.
+    -- Internal input is fingerprinted but filtered before any model-facing output.
+    if scoreSnapshot and ready and state.state == 'SELECTING_HAND' and not state.won then
+      state.scoringSnapshot = scoreSnapshot.read()
+    end
     return state, ready, reason, json.encode({state=state,ready=ready,notReadyReason=reason,cards=game.cards()})
   end
   local function snapshot()
     if G.GAME ~= previousRun then previousRun = G.GAME; runSerial = runSerial + 1 end
     local state, ready, reason, text = read()
     if text ~= fingerprint then serial = serial + 1; fingerprint = text end
-    -- Plays derive from the fingerprinted state, so they are attached after it and cached by it.
-    if scoring and ready and state.state == 'SELECTING_HAND' then
-      if playsFingerprint ~= text then
-        plays, playsFingerprint = scoring.plays(), text
-        local _, _, _, after = read()
-        if after ~= text then
-          scoring, plays = nil, nil
-          poisoned = 'Shadow scoring changed the game state; restart Balatro before continuing'
-          return snapshot()
-        end
-      end
-      state.plays = plays
-    end
     local outcome = state.won and 'won' or game.phase() == 'GAME_OVER' and 'lost' or 'ongoing'
     return {contract=1,backend='balatro_mcp_mod',revision=instance .. ':' .. serial,runId=instance .. ':run:' .. runSerial,
       gameVersion=(G.VERSION or ''):gsub('%-FULL$', ''),terminal=outcome ~= 'ongoing',outcome=outcome,ready=ready,state=state,
@@ -48,7 +38,7 @@ return function(json, game, clock, instance, timeout, scoring)
       reason = blocked() or not ready and reason or nil
       return {status='ok',bridge='balatro_mcp_mod',protocol=1,instanceId=instance,gameVersion=G.VERSION,luaRuntime=jit and jit.version,
         ready=ready,notReadyReason=reason,preservesTiming=true,transport='http-jsonrpc',
-        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state'})}
+        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state','scoring_snapshot'})}
     elseif method == 'sf.observe' then exact(params, {}); return snapshot()
     elseif method == 'sf.deck_observe' then
       exact(params, {})

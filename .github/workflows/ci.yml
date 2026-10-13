@@ -28,4 +28,4 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y luajit
       - run: luajit tests/observation.test.lua
       - run: luajit tests/decision.test.lua
-      - run: luajit tests/scoring.test.lua
+      - run: luajit tests/score-snapshot.test.lua

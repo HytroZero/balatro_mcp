@@ -34,8 +34,8 @@ local function utf8(code)
   if code < 65536 then return string.char(224 + math.floor(code / 4096), 128 + math.floor(code / 64) % 64, 128 + code % 64) end
   return string.char(240 + math.floor(code / 262144), 128 + math.floor(code / 4096) % 64, 128 + math.floor(code / 64) % 64, 128 + code % 64)
 end
-function J.decode(text)
-  assert(type(text) == 'string' and #text <= 65536, 'JSON input size limit')
+function J.decode(text, maxBytes)
+  assert(type(text) == 'string' and #text <= (maxBytes or 65536), 'JSON input size limit')
   local pos = 1
   local function ws() local _, finish = text:find('^[ \t\r\n]*', pos); pos = (finish or pos - 1) + 1 end
   local parse

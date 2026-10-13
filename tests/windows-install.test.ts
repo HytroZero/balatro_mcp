@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { cp, mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promises';
+import { cp, mkdir, mkdtemp, readFile, readdir, realpath, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { promisify } from 'node:util';
@@ -9,7 +9,8 @@ import { execFile } from 'node:child_process';
 const exec = promisify(execFile);
 for (const loader of ['winmm.dll', 'version.dll']) {
   test(`Windows reinstall only replaces MCP with existing ${loader} and custom Steamodded folder`, { skip: process.platform !== 'win32' }, async () => {
-    const root = await mkdtemp(resolve(tmpdir(), 'balatro-win-install-'));
+    // Windows TEMP may use 8.3 aliases while PowerShell records expanded paths.
+    const root = await realpath(await mkdtemp(resolve(tmpdir(), 'balatro-win-install-')));
     try {
       const project = resolve(root, 'project'), game = resolve(root, 'game'), mods = resolve(root, 'profile/Mods');
       await mkdir(resolve(project, 'scripts'), { recursive: true });

@@ -106,7 +106,8 @@ local bridge = assert(loadfile('play/mod/bridge.lua'))()(json,game,function() re
 G.STATE = G.STATES.SELECTING_HAND
 local health = bridge.dispatch('sf.health',{})
 check(not health.ready and health.notReadyReason == 'Close the open game dialog','health explains readiness blockers')
-check(health.capabilities[#health.capabilities] == 'decision_state','health advertises new decision fields')
+local capabilities={};for _,name in ipairs(health.capabilities)do capabilities[name]=true end
+check(capabilities.decision_state and capabilities.scoring_snapshot,'health advertises decision fields and scoring snapshots')
 
 -- Graceful localization failure must not make observations unusable.
 localize = function() error('Unsupported modded localization') end

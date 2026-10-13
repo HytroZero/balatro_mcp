@@ -132,6 +132,28 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 不作为输出；它不能用于推进整局游戏。Steamodded 和其他 mod 的规则尚未接入。
 `runtime.lua` 仅供独立 worker 使用，不应加载进实机 mod。
 
+## MCP `plays` 接入
+
+`plays` 已通过 `play/client.ts` 接入此沙盒。实机 Mod 的 `score_snapshot.lua`
+只读取局面，包含当前卡牌能力、Joker 成长值、牌型等级、Boss 记忆和概率；不运行试算。
+内部快照参与 revision 指纹，但不会出现在模型观察、工具追踪结果或操作检查结果中。
+抽牌堆按内容排序，仅导出成员，不导出抽牌顺序；实机种子和 RNG 流不导出。
+
+快照使用 `passiveEffectsApplied: true`：概率、槽位和牌面数值已经是被动效果生效后的值，
+worker 不再执行 `add_to_deck`、Boss 卡牌 debuff 或每帧 `Card:update`。
+`base` / `editionValues` 保留当前卡牌值，`backConfig` 保留当前牌背配置。
+普通离线调用省略该标记，继续按前文的输入基值约定初始化。
+
+每个新局面复用一个独立 worker 批量试算，结束后关闭。按当前手牌顺序枚举 1–5 张的组合，
+每批 32 组，评分预算 1 秒，启动和加载也受整体 2.5 秒及调用方 deadline 限制。
+每种牌型保留最佳组合，最终最多 5 条；预算不足时附 `truncated`。
+同一 revision 缓存结果，计算后再次读取实机 revision；变化时丢弃评分。
+动作前置检查与 `game_operation` 不启动评分；评分失败也不会把已确认完成的动作变为不确定。
+
+使用前需要准备本地原版源码、安装 LuaJIT，并更新 Mod 和重启游戏/MCP 服务。
+缺少环境或不支持的局面返回 `unavailable`，不回退到实机影子计分。
+此路径尚未经过实机 Steamodded 对照验证；不支持自定义 mod 的计分规则。
+
 ## 源码来源
 
 `prepare.ts` 只复制必要的 9 个原版模块到本地 `vendor/`，保持文件逐字节不变。

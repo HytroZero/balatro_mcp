@@ -3,6 +3,18 @@ import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { BackendError, type Data } from '../env/contract.ts';
+import type { PlaysWorker } from '../play/plays.ts';
+
+const scoringSnapshot = {status:'ready',selectionLimit:5,state:{
+  hand:[{key:'S_A',ability:{set:'Default'},base:{value:'Ace',suit:'Spades'}}],deck:[],discard:[],passiveEffectsApplied:true,
+  jokers:[],consumables:[],back:'b_red',backConfig:{},blind:{key:'bl_small',disabled:false},jokerSlots:5,handSize:8,
+  hands:{'High Card':{level:1,chips:5,mult:1,played:0,played_this_round:0}},
+  game:{dollars:0,bankrupt_at:0,chips:0,round:1,hands_played:0,skips:0,
+    current_round:{hands_left:4,discards_left:3,hands_played:0,discards_used:0,most_played_poker_hand:'High Card',current_hand:{}},round_resets:{ante:1},
+    probabilities:{normal:1},used_vouchers:{},modifiers:{},starting_params:{},cards_played:{}},
+}};
+const scoredResult = {status:'ok' as const,version:'1.0.1o-FULL' as const,hand:'High Card',displayHand:'High Card',
+  chips:16,mult:1,score:16,scoringCards:[0],notAllowed:false,random:false,randomPolicy:'fixed' as const,seed:'SANDBOX'};
 
 async function server(handler: (request: Data,response: ServerResponse) => void) {
   const requests: Data[] = [];
@@ -19,6 +31,88 @@ const observation=(revision='instance-a:1',state='MENU') => ({contract:1,backend
 function result(response: ServerResponse,request: Data,value: unknown) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,result:value}));}
 function failure(response: ServerResponse,request: Data,code: string) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:code,data:{code,applied:false}}}));}
 const action={method:'start' as const,deck:'RED' as const,stake:'WHITE' as const};
+
+test('bridge attaches sandbox plays, caches by revision and never leaks internal snapshots through reads or inspections',async () => {
+  let revision='instance-a:1', loads=0, closes=0;
+  const raw=() => ({...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',scoringSnapshot,
+    plays:['legacy shadow score'],seed:'HIDDEN_SEED'}});
+  const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:
+    req.method==='sf.operation'?{actionId:'a1',status:'completed',applied:true,observation:raw()}:raw()));
+  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => ({
+    load:async () => {loads++;return {status:'ready'};},scoreBatch:async plays => plays.map(() => scoredResult),close:async () => {closes++;},
+  }));
+  try {
+    for(let i=0;i<2;i++) {
+      const current=await client.observe();
+      assert.deepEqual(current.state.plays,['0: High Card 16']);
+      assert.equal(current.state.scoringSnapshot,undefined);
+      assert.doesNotMatch(JSON.stringify(current),/passiveEffectsApplied|legacy shadow/);
+    }
+    assert.equal(loads,1);assert.equal(closes,1);
+    const inspected=await client.inspectOperation('a1');
+    assert.doesNotMatch(JSON.stringify(inspected),/scoringSnapshot|passiveEffectsApplied|legacy shadow/);
+    assert.equal(loads,1);
+    revision='instance-a:2'; await client.observe();assert.equal(loads,2);
+  } finally {await client.close();await mock.close();}
+});
+
+test('a changed live revision discards sandbox scores and does not cache the stale result',async () => {
+  let revision='instance-a:1',loads=0;
+  const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:
+    {...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',scoringSnapshot}}));
+  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => ({load:async () => {loads++;return {status:'ready'};},
+    scoreBatch:async plays => {revision='instance-a:2';return plays.map(() => scoredResult);},close:async () => {},
+  }));
+  try {
+    assert.match(String((await client.observe()).state.plays),/State changed/);
+    assert.deepEqual((await client.observe()).state.plays,['0: High Card 16']);
+    assert.equal(loads,2);
+  } finally {await mock.close();}
+});
+
+test('sandbox failure after a completed action preserves its success and never locks or repeats the action',async () => {
+  let mutations=0,workers=0,closes=0,revision='instance-a:1';
+  const raw=() => ({...observation(revision,'SELECTING_HAND'),availableMethods:['play'],state:{state:'SELECTING_HAND',scoringSnapshot}});
+  const mock=await server((req,res) => {
+    if(req.method==='sf.health') return result(res,req,{...health,capabilities:['scoring_snapshot']});
+    if(req.method==='sf.act') {
+      mutations++;revision='instance-a:'+(mutations+1);
+      return result(res,req,{actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:raw()});
+    }
+    result(res,req,raw());
+  });
+  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',() => {
+    workers++;
+    return {load:async () => {throw new Error('missing LuaJIT');},scoreBatch:async () => [],close:async () => {closes++;}};
+  });
+  try {
+    const first=await client.act({method:'play',cards:[0]},revision);
+    assert.equal(first.revision,'instance-a:2');assert.ok(first.actionId);
+    assert.match(String(first.state.plays),/unavailable: Sandbox/);
+    await client.act({method:'play',cards:[0]},first.revision);
+    assert.equal(mutations,2);assert.equal(workers,2);assert.equal(closes,2);
+    assert.equal(mock.requests.filter(r => r.method==='sf.act').length,2);
+  } finally {await mock.close();}
+});
+
+test('not-ready, terminal, hidden and incomplete scoring snapshots never start a worker',async () => {
+  let raw:Data=observation('instance-a:1','SELECTING_HAND'), workers=0;
+  const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:raw));
+  const client=new ForgeBridgeBackend(mock.endpoint,1000,'1.0.1o',():PlaysWorker => {workers++;throw new Error('must not start worker');});
+  try {
+    const variants = [
+      {...raw,ready:false}, {...raw,terminal:true,outcome:'won'},
+      {...raw,state:{state:'SELECTING_HAND',scoringSnapshot:{status:'unavailable',message:'Face-down cards cannot be scored'}}},
+      {...raw,state:{state:'SELECTING_HAND',scoringSnapshot:{...scoringSnapshot,state:{hand:['S_A']}}}},
+    ];
+    for(const [i,variant] of variants.entries()) {
+      raw={...variant,revision:'instance-a:'+(i+1)};
+      const current=await client.observe();
+      assert.ok(!current.state.plays || String(current.state.plays).includes('unavailable:'));
+    }
+    assert.equal(workers,0);
+  } finally {await mock.close();}
+});
 test('deck observation is read-only and rejects malformed or inconsistent deck responses',async () => {
   const deck={revision:'instance-a:1',runId:'run-1',remainingCards:2,previewCards:3,uncertainCards:1,
     cards:[{rank:'Ace',suit:'Hearts',enhancement:'m_steel',edition:'foil',seal:'Red',count:3}]};

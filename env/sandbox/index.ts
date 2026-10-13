@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { projectRoot } from '../../src/config.ts';
 
 const data = z.record(z.string(), z.json());
-const card = z.union([z.string().min(1), z.strictObject({
+const cardState = z.strictObject({
   key: z.string().min(1),
   enhancement: z.string().optional(),
   edition: z.enum(['foil', 'holo', 'polychrome', 'negative']).optional(),
@@ -13,7 +13,10 @@ const card = z.union([z.string().min(1), z.strictObject({
   facing: z.enum(['front', 'back']).optional(),
   sell_cost: z.number().finite().nonnegative().optional(),
   ability: data.optional(),
-})]);
+  base: data.optional(),
+  editionValues: data.optional(),
+});
+const card = z.union([z.string().min(1), cardState]);
 export const ScoreStateSchema = z.strictObject({
   hand: z.array(card).min(1).max(52),
   jokers: z.array(card).max(100).optional(),
@@ -23,6 +26,9 @@ export const ScoreStateSchema = z.strictObject({
   /** Already discarded cards, included in total deck tallies but not Blue Joker. */
   discard: z.array(card).max(520).optional(),
   back: z.string().optional(),
+  backConfig: data.optional(),
+  /** Exact live position: passive hooks and per-frame tallies have already run. */
+  passiveEffectsApplied: z.boolean().optional(),
   blind: z.union([z.string(), z.strictObject({
     key: z.string(), disabled: z.boolean().optional(),
     only_hand: z.string().optional(), hands: z.record(z.string(), z.boolean()).optional(),
@@ -49,6 +55,42 @@ export const ScoreInputSchema = ScoreStateSchema.extend({ play: selection }).sup
 });
 export type ScoreInput = z.infer<typeof ScoreInputSchema>;
 export type ScoreState = z.infer<typeof ScoreStateSchema>;
+
+/** Live imports must not receive the offline API's guessed/default position data. */
+export const LiveScoreStateSchema = ScoreStateSchema.extend({
+  passiveEffectsApplied: z.literal(true),
+  hand: z.array(cardState.required({ ability: true, base: true })).min(1).max(52),
+  deck: z.array(cardState.required({ ability: true, base: true })).max(520),
+  discard: z.array(cardState.required({ ability: true, base: true })).max(520),
+  jokers: z.array(cardState.required({ ability: true })).max(100),
+  consumables: z.array(cardState.required({ ability: true })).max(100),
+  back: z.string().min(1), backConfig: data,
+  blind: z.strictObject({ key: z.string(), disabled: z.boolean(), only_hand: z.string().optional(),
+    hands: z.record(z.string(), z.boolean()).optional() }),
+  jokerSlots: ScoreStateSchema.shape.jokerSlots.unwrap(), handSize: ScoreStateSchema.shape.handSize.unwrap(),
+  hands: ScoreStateSchema.shape.hands.unwrap().refine(value => Object.keys(value).length > 0 && Object.values(value).every(hand =>
+    hand.level !== undefined && hand.chips !== undefined && hand.mult !== undefined && hand.played !== undefined && hand.played_this_round !== undefined),
+  'Live poker hand values must be complete'),
+  game: ScoreStateSchema.shape.game.unwrap().superRefine((value, ctx) => {
+    for (const key of ['dollars','bankrupt_at','chips','round','hands_played','skips']) {
+      if (typeof value[key] !== 'number') ctx.addIssue({ code:'custom', message:'Missing live numeric field: ' + key });
+    }
+    for (const key of ['current_round','round_resets','probabilities','used_vouchers','modifiers','starting_params','cards_played']) {
+      if (!data.safeParse(value[key]).success) ctx.addIssue({ code:'custom', message:'Missing live data field: ' + key });
+    }
+    const round = data.safeParse(value.current_round);
+    if (round.success) {
+      for (const key of ['hands_left','discards_left','hands_played','discards_used']) {
+        if (typeof round.data[key] !== 'number') ctx.addIssue({ code:'custom', message:'Missing live round field: ' + key });
+      }
+      if (typeof round.data.most_played_poker_hand !== 'string' || !data.safeParse(round.data.current_hand).success) {
+        ctx.addIssue({ code:'custom', message:'Missing live round hand history' });
+      }
+    }
+    const probabilities = data.safeParse(value.probabilities);
+    if (probabilities.success && typeof probabilities.data.normal !== 'number') ctx.addIssue({ code:'custom', message:'Missing live normal probability' });
+  }),
+});
 
 const ScoreResultSchema = z.discriminatedUnion('status', [
   z.object({
@@ -151,7 +193,7 @@ export class ScoringSandbox {
   private async request(method: string, params: object): Promise<unknown> {
     const id = ++this.serial;
     const request = JSON.stringify({ id, method, ...params });
-    if (Buffer.byteLength(request) > 65_536) throw new Error('Sandbox request exceeds 64 KiB');
+    if (Buffer.byteLength(request) > 4_194_304) throw new Error('Sandbox request exceeds 4 MiB');
     const child = this.start();
     let timer: NodeJS.Timeout | undefined;
     try {

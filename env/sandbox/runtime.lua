@@ -159,6 +159,7 @@ function sandbox.new(source, json)
     G.GAME.round_resets.hands, G.GAME.round_resets.discards = 4 + (back.config.hands or 0), 3 + (back.config.discards or 0)
     merge(G.GAME.round_resets, input.game and input.game.round_resets)
     G.GAME.selected_back = env.Back(back)
+    if input.backConfig then G.GAME.selected_back.effect.config = clone(input.backConfig) end
     G.GAME.selected_back_key = back.key
     G.STAGE, G.STATE = G.STAGES.RUN, G.STATES.SELECTING_HAND
     local function area(kind, limit)
@@ -186,11 +187,15 @@ function sandbox.new(source, json)
         unique_val=index, sort_id=index, children={}, states={focus={is=false}}, sticker_run='NONE', facing='front', debuff=false, area=target}, env.Card)
       env.Card.set_base(result, front, true)
       env.Card.set_ability(result, center, true)
-      merge(result.ability, spec.ability)
+      if input.passiveEffectsApplied then
+        if spec.base then result.base = clone(spec.base) end
+        if spec.ability then result.ability = clone(spec.ability) end
+      else merge(result.ability, spec.ability) end
       if spec.edition then
         assert(G.P_CENTERS['e_' .. spec.edition], 'Unknown edition')
         result:set_edition({[spec.edition]=true}, true, true)
       end
+      if spec.editionValues then result.edition = clone(spec.editionValues) end
       result.seal = spec.seal
       result:set_debuff(spec.debuff or false)
       if result.ability.perma_debuff then result.debuff = true end
@@ -225,16 +230,18 @@ function sandbox.new(source, json)
       end
     end
     -- Passive deck-wide effects (e.g. Oops! All 6s) use the original hooks.
-    for _, c in ipairs(G.jokers.cards) do if not c.debuff then c:add_to_deck() end end
-    for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    if not input.passiveEffectsApplied then
+      for _, c in ipairs(G.jokers.cards) do if not c.debuff then c:add_to_deck() end end
+      for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    end
     if blind.name == 'The Hook' and not G.GAME.blind.disabled then
       return {status='unsupported', message='The Hook pre-scoring discards are not supported'}
     end
     for _, c in ipairs(G.playing_cards) do
       local explicit = c.debuff
-      G.GAME.blind:debuff_card(c)
+      if not input.passiveEffectsApplied then G.GAME.blind:debuff_card(c) end
       if explicit then c.debuff = true end
-      c:update(0)
+      if not input.passiveEffectsApplied then c:update(0) end
     end
     assert(G.GAME.current_round.hands_left > 0, 'No hands left')
     baselineId = G.playing_card

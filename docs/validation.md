@@ -441,3 +441,51 @@ Executed checks:
 - `git diff --check` — passed.
 
 All checks were offline; no live game was exercised.
+
+## Windows installer CI: short temporary paths — 2026-10-13
+
+The Windows CI job failed both reinstall tests because the temporary directory
+used an 8.3 alias while PowerShell recorded its expanded path. Canonicalized the
+test fixture root with `realpath` before deriving paths, keeping the exact
+replacement-target assertion and installer behavior unchanged.
+
+Executed checks:
+
+- Reproduced both assertion failures using a temporary directory's 8.3 alias as
+  `TEMP` and `TMP`; both tests passed under the same setup after the fix.
+- `npm run check` — passed.
+- `npm test` — 82 passed, 2 macOS-only skips, 0 failures.
+
+All checks were offline against temporary installation fixtures; no live game
+installation or gameplay was performed.
+
+## Automatic plays in the independent scoring sandbox — 2026-10-13
+
+Replaced the in-game shadow scorer with a read-only scoring snapshot and a
+server-side batch search in the independent LuaJIT worker. Snapshot inputs
+participate in the bridge revision, preserve already-applied passive effects,
+and exclude draw order and the live RNG stream. Internal inputs are filtered
+from observations and operation inspections. Advice uses revision caching and
+a final read-only version check; advice failures never invalidate a confirmed
+action completion. Updated both installer file lists, the guide and CI Lua tests.
+
+Executed checks:
+
+- `npm run check` — passed.
+- `npm test` — 92 passed, 2 macOS-only skips, 0 failures, including sandbox tests
+  with local original source and LuaJIT, plus an HTTP-to-worker integration check.
+- `luajit tests/observation.test.lua` — 88 checks passed.
+- `luajit tests/decision.test.lua` — 38 checks passed.
+- `luajit tests/score-snapshot.test.lua` — 13 checks passed.
+- Original headless state -> snapshot -> independent worker comparisons passed
+  for 10 configurations, including Green Joker, Oops! All 6s, Joker Stencil,
+  Chicot, Observatory, Steel/Red Seal/Baron, Plasma, Stone Joker, The Eye,
+  The Mouth, and The Tooth/The Ox money effects.
+- `npm run stage-mod` — passed; staged only the read-only snapshot module,
+  with the old in-game scorer absent.
+- `npm run release:check` and `git diff --check` — passed.
+
+All checks were offline. No real game installation, restart, or Steamodded/live
+score comparison was performed. Search still enumerates selections in the
+current hand order, without card-order permutations. Custom mod scoring rules,
+DNA card creation and The Hook pre-scoring discards remain unsupported.

@@ -131,17 +131,20 @@ Phase views (dropped when the phase no longer uses them):
 
 ${phaseViewTable()}
 
-\`plays\` is experimental and not yet verified against the live Steamodded game.
-It comes from running the game's own hand evaluation on each selection and then
-restoring every touched value; it advances no RNG and reads no face-down card.
-\`random\` marks a score that involved a chance effect; the shown score assumes every
-chance fails (lowest outcome). \`not allowed\` means the Boss rejects that hand (score 0).
-Money lost before Jokers score (The Tooth, The Ox) is applied. DNA's copy is ignored,
-also when copied by Blueprint or Brainstorm: scores are as if DNA had no effect.
-Any other card creation gives \`unavailable\` before creating a card. The Hook's
-random discard before scoring is not simulated. \`plays\` is absent while any card
-in hand or Jokers is face-down. \`truncated\` means the time budget ended before
-every selection was scored. Plays are advice; any legal selection may be played.
+\`plays\` is computed in an independent LuaJIT sandbox using original Balatro
+1.0.1o scoring. The mod only exports a read-only position; no trial runs in the live
+game. Up to 5 best-per-hand-type lines use the current hand order (no permutations).
+Selections of 1-5 cards are evaluated in batches; forced cards and the current
+selection limit apply. A search has a 1-second scoring budget plus bounded startup.
+Results are cached by revision and checked against the live revision after scoring.
+\`random\` marks fixed chance results, not an expectation or guaranteed lower bound.
+The sandbox does not use the live seed or RNG stream. \`not allowed\` means the Boss
+rejects that hand (score 0). Money effects from The Tooth/The Ox are applied.
+\`unavailable\` reports missing LuaJIT/source, hidden cards, unsupported effects
+(including DNA card creation and The Hook discards), or a changed live position.
+\`truncated\` reports how many selections were scored before the budget ended.
+Steamodded/custom scoring rules are not simulated; live parity remains unverified.
+Plays are advice; any legal selection may be played.
 
 Line tags, in order: \`Tarot\`/\`Planet\`/\`Spectral\`, \`$N\` (buy price), \`sell $N\` or
 \`eternal\`, \`rental\`, \`perishable N\`, edition, \`debuffed\`, target count such as

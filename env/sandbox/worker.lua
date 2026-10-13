@@ -7,7 +7,7 @@ io.stdout:setvbuf('no')
 for line in io.lines() do
   local request
   local ok, result = pcall(function()
-    request = json.decode(line)
+    request = json.decode(line, 4194304)
     if not runtime then runtime = sandbox.new(source, json) end
     if request.method == 'load' then return runtime.load(request.state) end
     if request.method == 'score' then return runtime.score(request.play) end
