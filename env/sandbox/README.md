@@ -149,10 +149,17 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 不作为输出；它不能用于推进整局游戏。Steamodded 和其他 mod 的规则尚未接入。
 `runtime.lua` 仅供独立 worker 使用，不应加载进实机 mod。
 
+`scoreBatch(plays, { ordered: true })` 按每组选择列出的顺序计分，而不是手牌顺序。它等价于
+先把这些牌在各自占用的手牌位置内重排、再按原游戏从左到右出牌，用于比较出牌顺序；
+不改变已加载的局面。完整结果在 Joker 的 `mult`、`x_mult` 或 `extra.chips` 于本手内变化时
+附带 `jokerChanges`（零基 Joker 下标、字段、前后值），例如 Ride the Bus 被计分人头牌清零。
+`minimal` 模式不执行 after-hand 结算，因此只包含计分过程中的变化。
+
 ## MCP 观察
 
-MCP 观察和动作结果不再计算或返回 `plays`，Mod 不再生成评分快照。
-本目录的独立沙盒 API 保留，可显式调用 `sandbox.plays` 进行离线评分。
+MCP 观察和动作结果不计算或返回 `plays`。`game_analyze` 按需调用时，Mod 通过只读的
+`sf.analysis_snapshot` 导出评分输入，由 `env/analysis` 在本沙盒中枚举并评分
+（见 `docs/game-analyze-design.md`）。`sandbox.plays` 仍可用于离线评分。
 
 ## 源码来源
 

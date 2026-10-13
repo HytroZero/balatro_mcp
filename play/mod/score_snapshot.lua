@@ -45,17 +45,18 @@ return function(json)
     end
     return out
   end
-  local function area(a, playing, unordered)
+  local function area(a, playing, unordered, hidden)
     assert(a and type(a.cards) == 'table', 'Missing scoring card area')
     local out = json.array()
-    for _, c in ipairs(a.cards) do out[#out + 1] = card(c, playing) end
+    -- A face-down held card keeps its slot but exports no identity or ability.
+    for _, c in ipairs(a.cards) do out[#out + 1] = hidden and c.facing == 'back' and {facing='back'} or card(c, playing) end
     -- Deck membership is public; its draw order is not part of a scoring snapshot.
     if unordered then table.sort(out, function(a,b) return json.encode(a) < json.encode(b) end) end
     return out
   end
-  local function build()
+  local function build(hiddenHand)
     -- Check before inspecting any identity or ability of a hidden card.
-    for _, a in ipairs({G.hand, G.jokers, G.consumeables}) do
+    for _, a in ipairs(hiddenHand and {G.jokers, G.consumeables} or {G.hand, G.jokers, G.consumeables}) do
       for _, c in ipairs(a.cards) do assert(c.facing ~= 'back', 'Face-down cards cannot be scored') end
     end
     local live = assert(G.GAME, 'Missing game')
@@ -71,7 +72,7 @@ return function(json)
     end
     assert(type(G.playing_cards) == 'table' and #G.playing_cards == count, 'Incomplete playing card membership')
     for _, c in ipairs(G.playing_cards) do assert(members[c], 'Playing card outside scoring areas') end
-    local state = {hand=area(G.hand, true), jokers=area(G.jokers), consumables=area(G.consumeables),
+    local state = {hand=area(G.hand, true, false, hiddenHand), jokers=area(G.jokers), consumables=area(G.consumeables),
       deck=area(G.deck, true, true), discard=area(G.discard, true, true),
       back=vanilla(back.center), backConfig=copy(back.config),
       blind={key=vanilla(blind.config and blind.config.blind), disabled=blind.disabled == true,
@@ -105,6 +106,36 @@ return function(json)
     assert(#state.hand > 0, 'No hand to score')
     assert(type(G.hand.config.highlighted_limit) == 'number', 'Missing selection limit')
     return {status='ready',state=state,selectionLimit=math.min(5,G.hand.config.highlighted_limit)}
+  end
+  -- Money rules the game shows in its own UI: interest, round rewards and rent.
+  local function economy()
+    local live = assert(G.GAME, 'Missing game')
+    local modifiers, rewards, rentals = live.modifiers or {}, {}, 0
+    for role, key in pairs(live.round_resets and live.round_resets.blind_choices or {}) do
+      local blind = G.P_BLINDS and G.P_BLINDS[key]
+      if blind and type(blind.dollars) == 'number' then
+        rewards[role] = modifiers.no_blind_reward and modifiers.no_blind_reward[role] and 0 or blind.dollars
+      end
+    end
+    for _, c in ipairs(G.jokers and G.jokers.cards or {}) do
+      if c.facing ~= 'back' and c.ability.rental then rentals = rentals + 1 end
+    end
+    return {dollars=live.dollars, interestAmount=live.interest_amount, interestCap=live.interest_cap,
+      noInterest=modifiers.no_interest == true, moneyPerHand=modifiers.money_per_hand or 1,
+      moneyPerDiscard=modifiers.money_per_discard or 0, rentalRate=live.rental_rate, rentals=rentals,
+      blindRewards=rewards, handsPlayed=live.hands_played, unusedDiscards=live.unused_discards, skips=live.skips}
+  end
+  -- On-demand input for game_analyze. Ordinary observations never call this.
+  function snapshot.analysis(phase)
+    local result = {phase=phase}
+    if phase == 'SELECTING_HAND' then
+      local ok, value = pcall(build, true)
+      result.scoring = ok and value or {status='unavailable',message=tostring(value)}
+    end
+    local ok, value = pcall(economy)
+    if ok then result.economy = value end
+    if pcall(json.encode, result) then return result end
+    return {phase=phase,scoring={status='unavailable',message='Analysis snapshot cannot be serialized'}}
   end
   function snapshot.read()
     local ok, result = pcall(build)

@@ -99,6 +99,8 @@ const ScoreResultSchema = z.discriminatedUnion('status', [
     scoringCards: z.array(z.number().int().nonnegative()), notAllowed: z.boolean(), random: z.boolean(),
     randomPolicy: z.enum(['seeded', 'fixed', 'minimal']), seed: z.string(),
     trace: z.array(z.object({ chips: z.number().finite(), mult: z.number().finite() })).optional(),
+    /** Joker values the original code grew or reset while scoring this hand (zero-based Joker index). */
+    jokerChanges: z.array(z.object({ joker: z.number().int().nonnegative(), field: z.string(), from: z.number().finite(), to: z.number().finite() })).optional(),
   }),
   z.object({ status: z.literal('unsupported'), message: z.string() }),
   z.object({ status: z.literal('unavailable'), message: z.string() }),
@@ -304,10 +306,11 @@ export class ScoringSandbox {
     });
   }
 
-  scoreBatch(plays: number[][]): Promise<ScoreResult[]> {
+  /** With `ordered`, each selection scores in its listed order instead of hand order. */
+  scoreBatch(plays: number[][], options: { ordered?: boolean } = {}): Promise<ScoreResult[]> {
     const copy = plays.map(play => [...play]);
     return this.enqueue(async () => {
-      const results = z.array(ScoreResultSchema).parse(await this.request('batch', { plays: this.selections(copy) }));
+      const results = z.array(ScoreResultSchema).parse(await this.request('batch', { plays: this.selections(copy), ordered: options.ordered === true }));
       if (results.length !== copy.length) throw new Error('Sandbox batch length mismatch');
       return results;
     });

@@ -672,3 +672,110 @@ Executed checks:
 Verification was offline. No live game actions, installation or restart were
 performed. Restart MCP to load the server change; install the staged mod and
 restart Balatro to stop the old mod from constructing scoring snapshots.
+
+## Decision-oriented game_analyze redesign — 2026-10-13
+
+Replaced `docs/game-analyze-design.md` with a proposal organized around situation,
+baseline, candidate consequences, tradeoffs, coverage and unknowns. It preserves
+on-demand read-only analysis and existing observation/action behavior. The design
+prefers the independent sandbox over a new full TypeScript scorer, separates
+exact/conditional/sampled results, allows caller-specified actions, and prioritizes
+shop costs and Boss preparation before broader draw search. Future engine fuel
+and partners remain explicit hypothetical scenarios, not current offer returns.
+
+Executed checks:
+
+- An in-memory Node/TypeScript check extracted both TypeScript blocks and the
+  JSON example from the document. The draft contracts and example compiled with
+  strict checking and zero diagnostics; example actions passed the existing
+  ActionSchema, candidate references and work counts were consistent, and the
+  documented eight-card selection count was confirmed as 218. No temporary
+  source file was written.
+- An offline ScoringSandbox API smoke loaded two ordinary Kings and a Blue Seal
+  Ace. Both requested selections, `[0,1]` and `[0,1,2]`, returned Pair, score 60
+  and scoringCards `[0,1]`, matching the document's arithmetic. This verified
+  single-hand scores only; it did not execute round-end Planet generation.
+
+Documentation only. No runtime code, tool schemas, gameplay skills or gameplay
+behavior changed. No build, project test suite, mod staging, installation, game
+actions or live deployment validation were performed. The proposed game_analyze
+tool, budgets and strategy gains remain unimplemented and unmeasured.
+
+## Shorten game_analyze proposal — 2026-10-13
+
+Reduced the proposal from 477 to 120 lines, removing full result types, the large
+JSON example, repeated explanations and speculative tuning details. Preserved
+decision comparisons, input semantics, quality labels, public-information and
+revision boundaries, module scope and delivery order. An in-memory strict
+TypeScript check of the remaining input draft passed with zero diagnostics;
+Markdown code fences were balanced. Documentation only; no runtime or game checks.
+
+## Rewrite game_analyze proposal around balatro-ai's evidence — 2026-10-13
+
+Rewrote `docs/game-analyze-design.md` as a numeric brief for the deciding model.
+The design follows the adjacent balatro-ai experiment log and plan: the model keeps
+every decision, shop-side numbers (build pace, offer deltas, economy, skip value,
+next-ante horizon) carry the most value, and in-blind scores must be exact. It
+adds original-engine scoring through `env/sandbox`, caller-supplied hypothetical
+lines, a Boss vulnerability profile, in-round state commits and a prediction
+audit against real play results. The snapshot boundary now allows whole `ability`
+copies as internal sandbox input and puts the hidden-information check on model
+output; staging starts with an unpublished foundation stage.
+
+Executed checks:
+
+- Read balatro-ai's README, architecture, strategy library, experiment log, plan,
+  coach prompt and the analysis, pace, economy and survival modules for method
+  only; no source was copied.
+- Read this repository's sandbox README, `runtime.lua` structure, `worker.lua`,
+  `score_snapshot.lua`, `play/client.ts`, `src/server.ts`, `tools/index.ts` and the
+  bridge fingerprint to ground reuse and concurrency statements.
+- A Node check found six balanced code fences and parsed both JSON examples
+  (444 and 878 bytes). The hand example's arithmetic (Flush 560 and 520, Pair
+  180, Flush 850 after Jupiter) was worked by hand from level-1 base values.
+
+Documentation only. The build example's numbers are invented for format, and the
+budget table is an estimate from the sandbox README's single benchmark. No
+runtime code, tool schema, sandbox run, build, test suite, mod staging or game
+action was executed.
+
+## game_analyze stage 1: hand brief, economy and play audit — 2026-10-13
+
+Implemented the first slice of `docs/game-analyze-design.md` (status table in its
+section 11). The mod gains the on-demand read-only `sf.analysis_snapshot` RPC and
+an `analysis_snapshot` capability; `score_snapshot.lua` exports the sandbox input
+with face-down held cards as identity-free placeholders plus the money rules the
+game shows. The server gains `env/analysis/` and the `game_analyze` tool: exact
+scores for every legal selection through the original scoring code in
+`env/sandbox`, one best play per poker hand, plays that keep a Blue Seal or Gold
+card or avoid resetting a Joker, Planet use, Joker and hand order suggestions,
+caller-supplied lines, and economy, reward and skip lines outside a hand. A play
+made at an analysed revision is compared with its prediction; a mismatch
+suspends `exact` labels for that run. The sandbox runtime gained ordered scoring
+and per-trial Joker growth reporting. Ordinary observations and the revision
+fingerprint are unchanged.
+
+Executed checks:
+
+- `npm run check` passed.
+- `npm test` passed: 111 tests, 109 passed, 2 skipped (the existing macOS-only
+  installer cases). New coverage: selection enumeration, economy arithmetic, the
+  hand brief on positions exported from the headless original engine (Flush 560
+  and 520, Pair 180 and Flush 850 after Jupiter, as in the design example),
+  Joker-order and hand-order suggestions, lines, Joker growth facts, face-down
+  cards, a forced card, The Hook, revision and stale-state handling, the audit,
+  the client's capability gate and lock behaviour, the MCP schema, and one
+  end-to-end path over the HTTP client and the scoring worker.
+- `luajit tests/observation.test.lua` (88), `tests/decision.test.lua` (38) and
+  `tests/score-snapshot.test.lua` (27) passed.
+- `npm run stage-mod` and `npm run release:check` passed.
+- Measured locally with 8 held cards and 5 Jokers: about 0.9 ms per position
+  load and 31 ms to score all 218 selections with full results.
+- Without LuaJIT, and without the prepared source, the tool returned
+  `status: unavailable` with the reason and no path in the message.
+
+All verification was offline. The staged mod was not installed, Balatro and the
+MCP process were not restarted, and no live game action or analysis was run, so
+agreement between predicted and actual scores under Steamodded is unverified.
+Build pace, offer values, draw continuation, Tarot use, Boss and engine analysis
+are not implemented.

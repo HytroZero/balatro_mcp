@@ -34,7 +34,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     pending = next.catch(() => {});
     return next;
   }
-  registerGameTools(server, backend, trace, sequential, options.timeoutMs);
+  const tools = registerGameTools(server, backend, trace, sequential, options.timeoutMs);
   if (backend instanceof ForgeBridgeBackend) {
     server.registerTool('game_health', {
       title: 'Game bridge health', description: 'Read mod identity, game version, Lua runtime, capabilities and readiness/notReadyReason. decision_state capability indicates extended decision fields. Does not start a run. Returns {ok,value} or {ok:false,code,applied,message}.',
@@ -69,5 +69,5 @@ export async function createBalatroServer(options: Options, backend: Backend = n
     description: 'The field contract of this server: every state key, how to merge game_action results, worked examples, and recovery after timeouts and uncertain outcomes. Starts with installation notes for people.',
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: toolGuide }] }));
   registerGameplayResources(server, context);
-  return { server, async close() { await pending; await server.close(); await backend.close(); await trace.flush().catch(() => {}); } };
+  return { server, async close() { await pending; await server.close(); await tools.close(); await backend.close(); await trace.flush().catch(() => {}); } };
 }

@@ -2,7 +2,7 @@ import { nextId } from '../src/ids.ts';
 import { setTimeout as delay } from 'node:timers/promises';
 import { Type } from 'typebox';
 import { Check } from 'typebox/value';
-import { ActionSchema, BackendError, playerState, record, type Action, type Backend, type Data, type DeckObservation, type ErrorCode, type Observation, type RequestContext } from '../env/contract.ts';
+import { ActionSchema, BackendError, playerState, record, type Action, type AnalysisRead, type Backend, type Data, type DeckObservation, type ErrorCode, type Observation, type RequestContext } from '../env/contract.ts';
 
 const ObservationSchema = Type.Object({ contract: Type.Literal(1),backend: Type.Literal('balatro_mcp_mod'),revision: Type.String({minLength:1}),runId: Type.String({minLength:1}),
   gameVersion: Type.String(),terminal: Type.Boolean(),outcome: Type.Enum(['won','lost','ongoing']),ready: Type.Boolean(),notReadyReason: Type.Optional(Type.String()),state: Type.Record(Type.String(),Type.Unknown()),
@@ -18,6 +18,7 @@ export class ForgeBridgeBackend implements Backend {
   private requestId = 0;
   private instanceId?: string;
   private deckObserveSupported = false;
+  private analysisSupported = false;
   private uncertain = false;
   private busy = false;
   private endpoint: URL;
@@ -78,6 +79,7 @@ export class ForgeBridgeBackend implements Backend {
     }
     this.instanceId = health.instanceId;
     this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
+    this.analysisSupported = Array.isArray(health.capabilities) && health.capabilities.includes('analysis_snapshot');
   }
   /** Health runs once per bridge instance; a revision from another instance means the mod restarted. */
   private async ensureIdentity(context: RequestContext,revision?: unknown): Promise<void> {
@@ -119,6 +121,16 @@ export class ForgeBridgeBackend implements Backend {
     if (!Check(DeckObservationSchema,value) || !value.revision.startsWith(this.instanceId + ':') || value.cards.reduce((sum,card) => sum + card.count,0) !== value.previewCards ||
       value.uncertainCards > value.previewCards || value.remainingCards > value.previewCards) throw new BackendError('backend_failure','Invalid bridge deck observation contract.');
     return value;
+  }
+  /** Read-only input for game_analyze. Unlike observe, it never inspects or releases the action lock. */
+  async analysisSnapshot(request?: RequestContext): Promise<AnalysisRead> {
+    const context = this.context(request);
+    await this.ensureIdentity(context);
+    if (this.busy || this.uncertain) throw new BackendError('illegal_action','A previous action is unresolved; inspect it with game_operation before analysing.');
+    if (!this.analysisSupported) throw new BackendError('incompatible_backend','The installed mod does not support game_analyze. Update the balatro_mcp_mod mod and restart Balatro.');
+    const value = record(await this.rpc('sf.analysis_snapshot',{},false,context));
+    await this.ensureIdentity(context,record(value.observation).revision);
+    return { observation: this.observation(value.observation), analysis: record(value.analysis) };
   }
   /** Read-only inspection remains available after a timeout; it never clears the action lock. */
   async inspectOperation(actionId = this.lastActionId,request?: RequestContext): Promise<Data> {

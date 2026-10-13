@@ -34,7 +34,20 @@ check(G.GAME.round_resets.blind_tag.tag_sprite.config.tag == tag, 'snapshot leav
 a.facing='back'; a.ability=function() error('must not inspect hidden ability') end
 local hidden = snapshot.read()
 check(hidden.status == 'unavailable' and not json.encode(hidden):find('S_A',1,true), 'hidden identity is never serialized')
+local partial = snapshot.analysis('SELECTING_HAND')
+check(partial.scoring.status == 'ready' and partial.scoring.state.hand[1].facing == 'back', 'analysis keeps a hidden hand slot')
+check(next(partial.scoring.state.hand[1], 'facing') == nil and not json.encode(partial):find('S_A',1,true), 'hidden hand slot exports no identity')
 a.facing='front'; a.ability={set='Default'}
+G.GAME.modifiers={no_blind_reward={Small=true},money_per_hand=2}; G.GAME.interest_amount=1; G.GAME.interest_cap=25; G.GAME.rental_rate=3
+G.GAME.round_resets.blind_choices={Small='bl_small',Big='bl_big',Boss='bl_eye'}
+G.P_BLINDS={bl_small={dollars=3},bl_big={dollars=4},bl_eye={dollars=5}}
+G.jokers.cards={{facing='front',config={center={key='j_joker'}},ability={rental=true}}}
+local shop = snapshot.analysis('SHOP')
+check(shop.scoring == nil and shop.phase == 'SHOP', 'only the hand phase exports scoring input')
+check(shop.economy.dollars == 20 and shop.economy.interestCap == 25 and shop.economy.moneyPerHand == 2 and shop.economy.rentals == 1, 'economy rules are exported')
+check(shop.economy.blindRewards.Small == 0 and shop.economy.blindRewards.Big == 4 and shop.economy.blindRewards.Boss == 5, 'stake reward rules apply per blind')
+check(not json.encode(shop):find('PRIVATE_SEED',1,true), 'analysis excludes the seed')
+G.jokers.cards={}; G.GAME.modifiers=nil; G.GAME.round_resets.blind_choices=nil
 a.config.center.mod={id='custom'}
 check(snapshot.read().status == 'unavailable', 'custom prototypes explicitly unsupported')
 a.config.center.mod=nil
@@ -45,10 +58,20 @@ G.playing_cards[4]=nil
 G.VERSION='1.0.1o-FULL'
 local fake = {state=function()return {state='SELECTING_HAND'}end,ready=function()return true end,
   cards=function()return {}end,methods=function()return json.array()end,phase=function()return 'SELECTING_HAND'end}
-local bridge = dofile('play/mod/bridge.lua')(json,fake,function()return 0 end,'test',20,{read=function()error('must not build scoring snapshots')end})
+local analysisReads = 0
+local bridge = dofile('play/mod/bridge.lua')(json,fake,function()return 0 end,'test',20,{read=function()error('must not build scoring snapshots')end,
+  analysis=function(phase) analysisReads = analysisReads + 1; return {phase=phase} end})
 local observed = bridge.dispatch('sf.observe',{})
 check(observed.state.scoringSnapshot == nil and observed.state.plays == nil, 'bridge does not build scoring snapshots or plays')
 check(observed.revision == bridge.dispatch('sf.observe',{}).revision, 'repeated input retains revision')
 G.GAME.probabilities.normal=4
 check(observed.revision == bridge.dispatch('sf.observe',{}).revision, 'unused scoring-only dependencies do not change observation revision')
+check(analysisReads == 0, 'ordinary observations never build the analysis snapshot')
+local analysed = bridge.dispatch('sf.analysis_snapshot',{})
+check(analysisReads == 1 and analysed.analysis.phase == 'SELECTING_HAND' and analysed.observation.revision == observed.revision, 'analysis read returns the same-frame observation without a new revision')
+check(not pcall(bridge.dispatch,'sf.analysis_snapshot',{revision='x'}), 'analysis read rejects unexpected arguments')
+local capabilities = bridge.dispatch('sf.health',{}).capabilities
+check(capabilities[#capabilities] == 'analysis_snapshot', 'analysis capability is advertised')
+local plain = dofile('play/mod/bridge.lua')(json,fake,function()return 0 end,'plain',20)
+check(not pcall(plain.dispatch,'sf.analysis_snapshot',{}), 'a bridge without the snapshot module refuses analysis reads')
 print('Score snapshot checks passed: ' .. checks)

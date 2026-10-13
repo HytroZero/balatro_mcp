@@ -144,6 +144,59 @@ hidden card identities. The Lua HTTP wire protocol remains version 1; v3 is the
 model projection. Stage and install the updated mod, then restart Balatro to load
 it. Staging does not reload the game. \`game_health\` reports \`notReadyReason\`.
 
+## game_analyze
+
+\`game_analyze({"revision":"<rev>"})\` is read-only: it returns numbers for the
+current decision and never acts, issues a revision or changes the delta baseline.
+Its rows are candidates to compare, not an allowlist and not a recommendation.
+It needs LuaJIT and the locally prepared original scoring source on the server
+machine (\`npm run sandbox:prepare\`); without them it returns \`status:"unavailable"\`
+with the reason in \`notes\`, and the other tools keep working.
+
+While selecting a hand it scores every legal selection with the original game's
+scoring code in a separate process. The value holds \`rev\`, \`phase\`, \`focus:"hand"\`,
+\`status\` (\`complete\`, \`partial\` or \`unavailable\`) and:
+
+| key | content |
+| --- | --- |
+| \`need\` | \`"500 to clear; hands 1, discards 0"\` |
+| \`plays\` | \`"<hand indices>: <poker hand> <score> <exact or conditional>; <facts>"\`: the best play of each poker hand, then plays that differ in what they keep |
+| \`use\` | a held Planet that raises the best play when used first |
+| \`order\` | a full \`rearrange\` permutation of Jokers or hand that raises the best play |
+| \`lines\` | one row per line you passed, in order |
+| \`notes\` | assumptions behind \`conditional\` rows, and anything skipped |
+| \`audit\` | how earlier predictions matched the plays actually made this run |
+
+Facts on a row: \`clears\` or \`short N\`; \`holds Blue Seal (card 3) -> Jupiter at round end\`;
+\`plays the Blue Seal\`; a Joker value the play grows or resets, such as
+\`Ride the Bus Mult 6 -> 0\`; \`up to N more cards can ride along at the same score\`
+(extra cards that change nothing, useful for cycling the hand). \`exact\` is the
+deterministic score of the visible state. \`conditional\` rests on an assumption
+named in \`notes\`: random bonuses counted as not triggering, face-down cards held
+unscored, or The Hook's discards ignored. Only an \`exact\` row says \`clears\`; a
+\`conditional\` one says \`reaches the target\`.
+
+\`lines\` prices your own idea without executing it: up to 4 lines of up to 3 steps,
+each step \`{"method":"use","consumable":i}\` (a Planet),
+\`{"method":"rearrange","jokers":[...]}\`, \`{"method":"rearrange","hand":[...]}\` or a
+final \`{"method":"play","cards":[...]}\`. Every index in a line refers to the current
+observation, also after a rearrange inside the line. A line without \`play\` reports
+the best play after its steps. Execute the real actions one at a time afterwards.
+
+An \`order\` row is a first step: execute the \`rearrange\`, read the new state, then
+decide. After a hand rearrange the row gives the positions to play in the new order.
+
+\`audit\` compares each \`exact\` prediction with the score of the play made at the
+same revision, at no extra game cost. After a mismatch every row of that run is
+\`conditional\` and \`audit\` names the hand that differed.
+
+In \`SHOP\`, \`PACK\` and \`BLIND_SELECT\` this version returns \`focus:"build"\`,
+\`status:"partial"\` and only money facts: \`economy\`
+(\`"$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round"\`),
+\`rewards\` (base reward of each blind still to play) and, when a Small or Big
+Blind is offered, \`skip\` (what its Tag gives and what skipping forgoes). Build
+pace and the value of shop offers are not computed yet.
+
 ## Examples
 
 1. Attach to a run: \`game_health({})\`, \`game_observe({})\`, then
@@ -152,6 +205,8 @@ it. Staging does not reload the game. \`game_health\` reports \`notReadyReason\`
 3. With the returned rev, select a blind:
    \`game_action({"revision":"<rev>","action":{"method":"select"}})\`.
 4. In a hand: \`game_action({"revision":"<rev>","action":{"method":"play","cards":[0,1,2,3,4]}})\`.
+5. Before a hard hand: \`game_analyze({"revision":"<rev>"})\`, or with your own idea
+   \`game_analyze({"revision":"<rev>","lines":[[{"method":"use","consumable":0},{"method":"play","cards":[0,1,2,3,4]}]]})\`.
 
 ## Recovery and persistence
 

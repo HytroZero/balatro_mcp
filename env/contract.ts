@@ -58,11 +58,15 @@ export function errorEnvelope(error: unknown): { ok: false; code: ErrorCode; app
 }
 /** A monotonic deadline shared by every RPC in one tool invocation. */
 export interface RequestContext { signal?: AbortSignal; deadline?: number; }
+/** One same-frame read for game_analyze: the public observation and the mod's analysis input. */
+export interface AnalysisRead { observation: Observation; analysis: Data; }
 export interface Backend {
   readonly name: string;
   observe(context?: RequestContext): Promise<Observation>;
   observeDeck(context?: RequestContext): Promise<DeckObservation>;
   act(action: Action, revision: string, context?: RequestContext): Promise<Observation>;
+  /** Read-only; never issues a revision baseline and never releases an action lock. */
+  analysisSnapshot?(context?: RequestContext): Promise<AnalysisRead>;
   close(): Promise<void>;
 }
 export function record(value: unknown): Data {

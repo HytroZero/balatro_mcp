@@ -290,3 +290,22 @@ test('public minimal scoring shares score-only boundaries and rankless Stones do
   assert.equal(stones.score, 105);
   assert.deepEqual(stones.scoringCards, [0, 1]);
 });
+
+test('ordered batches score a listed card order and results report Joker growth', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    // Pair of Kings, 30 chips x 2 Mult: Glass (X2) then Mult (+4) is 8, the other order is 12.
+    assert.deepEqual(await sandbox.load({ hand: [{ key: 'S_K', enhancement: 'm_glass' }, { key: 'H_K', enhancement: 'm_mult' }, 'D_3'], random: 'minimal' }), { status: 'ready' });
+    const score = async (plays: number[][], ordered?: boolean) => (await sandbox.scoreBatch(plays, { ordered })).map(r => r.status === 'ok' ? r.score : r.message);
+    assert.deepEqual(await score([[0, 1], [1, 0]]), [240, 240]);
+    assert.deepEqual(await score([[0, 1], [1, 0]], true), [240, 360]);
+    assert.deepEqual(await score([[1, 0]]), [240], 'an ordered trial leaves the loaded hand order unchanged');
+    assert.deepEqual(await sandbox.load({ hand: ['S_K', 'H_K', 'D_3'], jokers: [{ key: 'j_ride_the_bus', ability: { mult: 6 } }, 'j_joker'], random: 'minimal' }), { status: 'ready' });
+    const [pair, high, again] = await sandbox.scoreBatch([[0, 1], [2], [0, 1]]);
+    assert.equal(pair!.status, 'ok'); assert.equal(high!.status, 'ok');
+    if (pair!.status !== 'ok' || high!.status !== 'ok') return;
+    assert.deepEqual(pair!.jokerChanges, [{ joker: 0, field: 'mult', from: 6, to: 0 }]);
+    assert.deepEqual(high!.jokerChanges, [{ joker: 0, field: 'mult', from: 6, to: 7 }]);
+    assert.deepEqual(again, pair, 'growth is reported per trial and restored between trials');
+  } finally { await sandbox.close(); }
+});

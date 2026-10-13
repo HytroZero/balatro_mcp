@@ -73,7 +73,12 @@ function sandbox.new(source, json)
   load('back.lua')
   load('functions/state_events.lua')
 
-  local input, all, restoreBaseline, baselineId, seedHash
+  local input, all, restoreBaseline, baselineId, seedHash, jokerBase
+  -- Values the original Joker code grows or resets while it scores a hand.
+  local function growth(c)
+    local extra = type(c.ability.extra) == 'table' and c.ability.extra or {}
+    return {mult=c.ability.mult, x_mult=c.ability.x_mult, ['extra.chips']=extra.chips}
+  end
   local scoreOnly, evaluating = false, false
   local scoringFinished = {}
   local trace, randomUsed, minimalUsed, denied, name, display, scoring
@@ -301,12 +306,14 @@ function sandbox.new(source, json)
     end
     assert(G.GAME.current_round.hands_left > 0, 'No hands left')
     baselineId = G.playing_card
+    jokerBase = {}
+    for i, c in ipairs(G.jokers.cards) do jokerBase[i] = growth(c) end
     restoreBaseline = checkpoint({G.GAME, G.hand, G.play, G.jokers, G.consumeables, G.deck.config}, immutable)
     loads = loads + 1
     return {status='ready'}
   end
 
-  local function evaluate(selection, scalar)
+  local function evaluate(selection, scalar, ordered)
     assert(restoreBaseline, 'Load a position before scoring')
     assert(type(selection) == 'table' and #selection >= 1 and #selection <= 5, 'Select 1-5 cards')
     trace, randomUsed, denied = input.trace and not scalar and json.array() or nil, false, false
@@ -322,8 +329,19 @@ function sandbox.new(source, json)
     G.hand.cards = {}
     for i, c in ipairs(all) do
       assert(not c.ability.forced_selection or selected[i], 'play must include every forced card')
-      if selected[i] then c.area = G.play; G.play.cards[#G.play.cards + 1] = c
-      else G.hand.cards[#G.hand.cards + 1] = c end
+      if not selected[i] then G.hand.cards[#G.hand.cards + 1] = c
+      elseif not ordered then c.area = G.play; G.play.cards[#G.play.cards + 1] = c end
+    end
+    if ordered then
+      -- The game plays highlighted cards left to right. A listed order stands for
+      -- the same cards rearranged within their own hand slots before the play.
+      local slots = {}
+      for _, index in ipairs(selection) do slots[#slots + 1] = all[index + 1].T.x end
+      table.sort(slots)
+      for position, index in ipairs(selection) do
+        local c = all[index + 1]
+        c.area = G.play; c.T.x = slots[position]; G.play.cards[position] = c
+      end
     end
     G.GAME.current_round.hands_left = G.GAME.current_round.hands_left - 1
     if G.GAME.blind.name == 'The Tooth' and not G.GAME.blind.disabled then G.GAME.dollars = G.GAME.dollars - #G.play.cards end
@@ -338,14 +356,25 @@ function sandbox.new(source, json)
     if scalar == 'play' then return {status='ok', hand=name, score=math.floor(total), notAllowed=denied, minimal=minimalUsed} end
     local indices = json.array()
     for _, c in ipairs(scoring) do for i, original in ipairs(all) do if original == c then indices[#indices + 1] = i - 1 end end end
+    local changes = json.array()
+    for i, c in ipairs(G.jokers.cards) do
+      local now = growth(c)
+      for _, field in ipairs({'mult', 'x_mult', 'extra.chips'}) do
+        local from, to = jokerBase[i] and jokerBase[i][field], now[field]
+        if type(from) == 'number' and type(to) == 'number' and from ~= to then
+          changes[#changes + 1] = {joker=i - 1, field=field, from=from, to=to}
+        end
+      end
+    end
     return {status='ok', version=G.VERSION, hand=name, displayHand=display, chips=env.hand_chips, mult=env.mult,
       score=math.floor(total), scoringCards=indices, notAllowed=denied, random=randomUsed,
-      randomPolicy=input.random or 'seeded', seed=G.GAME.pseudorandom.seed, trace=input.trace and trace or nil}
+      randomPolicy=input.random or 'seeded', seed=G.GAME.pseudorandom.seed, trace=input.trace and trace or nil,
+      jokerChanges=#changes > 0 and changes or nil}
   end
 
-  function runtime.score(selection, scalar)
+  function runtime.score(selection, scalar, ordered)
     calculations = calculations + 1
-    local ok, result = pcall(evaluate, selection, scalar)
+    local ok, result = pcall(evaluate, selection, scalar, ordered)
     evaluating = false
     if restoreBaseline then restoreBaseline(); G.playing_card = baselineId end
     if not ok then return type(result) == 'table' and result or {status='error', message=tostring(result)} end

@@ -199,6 +199,7 @@ error message.
 - [macOS setup and troubleshooting](docs/macos.md)
 - [Tools and gameplay workflow](tools/guide.ts) (served as `balatro://guide`)
 - [Observation field design and staged implementation](docs/game-observation-design.md)
+- [`game_analyze` design and staged implementation](docs/game-analyze-design.md)
 - [Game rules and strategy context](docs/context.md)
 - [Gameplay skills](skills/README.md)
 - [Source attribution and validation](docs/upstream.md)

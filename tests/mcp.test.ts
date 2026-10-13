@@ -94,7 +94,7 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.match(instructions, /balatro:\/\/skills/);
     assert.match(instructions, /balatro:\/\/rules/);
     assert.doesNotMatch(instructions, /## Phase policy/);
-    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'game_health', 'game_operation'].sort());
+    assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'game_analyze', 'game_health', 'game_operation'].sort());
     for (const tool of tools) { assert.ok(tool.outputSchema); assert.ok(tool.annotations); assert.equal(tool.inputSchema.type, 'object'); }
     for (const name of ['file_read', 'file_write', 'memory_query', 'memory_record']) {
       await assert.rejects(h.call(name, { path: 'notes.txt', content: 'removed' }), /not found/);
@@ -103,6 +103,10 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.match(JSON.stringify(action.inputSchema), /uniqueItems/);
     assert.equal(action.annotations?.readOnlyHint, false);
     assert.equal(tools.find(tool => tool.name === 'game_observe')?.annotations?.readOnlyHint, true);
+    const analyze = tools.find(tool => tool.name === 'game_analyze')!;
+    assert.equal(analyze.annotations?.readOnlyHint, true); assert.equal(analyze.annotations?.destructiveHint, false);
+    assert.deepEqual(record(analyze.inputSchema).required, ['revision']);
+    assert.match(JSON.stringify(analyze.inputSchema), /"maxItems":4/);
     const resources = await h.client.listResources(); assert.equal(resources.resources[0]?.uri, 'balatro://guide');
     const guide = await h.client.readResource({ uri: 'balatro://guide' }); assert.match(String(record(guide.contents[0]).text), /uncertain_outcome/);
     const fullContext = await h.client.readResource({ uri:'balatro://context' });
@@ -116,6 +120,15 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.deepEqual(observed.state,{});
     assert.doesNotMatch(JSON.stringify(observed), /King|Hearts/);
     assert.equal(record(record((await h.call('deck_observe')).structuredContent).value).remainingCards, 2);
+    // This mod build predates analysis: the tool says so and leaves the game and the baseline alone.
+    const analysed = await h.call('game_analyze', { revision: '1' });
+    assert.equal(analysed.isError, true); assert.equal(record(analysed.structuredContent).code, 'incompatible_backend');
+    assert.equal(record((await h.call('game_analyze', { revision: '9' })).structuredContent).code, 'stale_state');
+    // Unimplemented focus values and action variants are outside the schema.
+    for (const args of [{ revision: '1', focus: 'boss' }, { revision: '1', lines: [[{ method: 'discard', cards: [0] }]] }]) {
+      const invalid = await h.call('game_analyze', args);
+      assert.equal(invalid.isError, true); assert.match(JSON.stringify(invalid.content), /Input validation error/);
+    }
     assert.equal(h.mutations, 0);
   } finally { await h.close(); }
 });
@@ -276,7 +289,7 @@ test('MCP startup and guide access work with the game offline; game errors retai
     args: [resolve('dist/src/index.js'), '--data-dir', root, '--endpoint', 'http://127.0.0.1:1', '--timeout-ms', '50'], stderr: 'pipe' });
   try {
     await client.connect(transport);
-    assert.equal((await client.listTools()).tools.length, 6);
+    assert.equal((await client.listTools()).tools.length, 7);
     const result = await client.callTool({ name: 'game_observe', arguments: {} });
     assert.equal(result.isError, true); assert.equal(record(result.structuredContent).code, 'backend_failure');
     assert.equal(record(result.structuredContent).applied, false);

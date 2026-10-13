@@ -1,6 +1,7 @@
 import { fromJsonSchema, type CallToolResult, type McpServer } from '@modelcontextprotocol/server';
 import { Type, type Static, type TSchema } from 'typebox';
-import { ActionSchema, StartGameSchema, BackendError, errorEnvelope, type Action, type Backend, type Observation, type RequestContext } from '../env/contract.ts';
+import { ActionSchema, StartGameSchema, BackendError, errorEnvelope, record, type Action, type Backend, type Observation, type RequestContext } from '../env/contract.ts';
+import { Analyzer, LinesSchema, playKey } from '../env/analysis/index.ts';
 import { compactActionObservation, compactDeckObservation, compactObservation, shortRevision, ObservationResultSchema, FullObservationResultSchema } from '../env/compact.ts';
 import type { Trace } from '../model/trace.ts';
 import { phaseViewSentence } from './guide.ts';
@@ -9,7 +10,7 @@ type ToolValue = { value: unknown; observation?: Observation };
 type Sequential = <T>(operation: () => Promise<T>) => Promise<T>;
 
 /** Register MCP tools directly; raw observations stay in trace records, outside the tool result. */
-export function registerGameTools(server: McpServer, backend: Backend, trace: Trace, sequential: Sequential, timeoutMs = 30000): void {
+export function registerGameTools(server: McpServer, backend: Backend, trace: Trace, sequential: Sequential, timeoutMs = 30000, analyzer = new Analyzer()): { close(): Promise<void> } {
   let delivered: Observation | undefined;
   // The full revision last shown to the caller. Unlike the delta baseline it survives failed actions.
   let issued: string | undefined;
@@ -18,13 +19,30 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
     if (issued && shortRevision(issued) === revision) return issued;
     throw new BackendError('stale_state','Revision was not issued by this connection; call game_observe before choosing another action.');
   }
+  // Exact scores of the latest hand analysis, checked against a play made at the same revision.
+  let predicted: { revision: string; runId: string; chips: number; scores: Map<string, number> } | undefined;
+  const audit = { runId: '', matched: 0, mismatched: 0, last: '' };
+  async function auditPlay(expected: NonNullable<typeof predicted>, cards: number[], after: Observation): Promise<void> {
+    const score = expected.scores.get(playKey(cards)), chips = record(after.state.round).chips;
+    if (score === undefined || after.runId !== expected.runId || typeof chips !== 'number' || chips < expected.chips) return;
+    const gain = chips - expected.chips, matched = gain === score;
+    if (matched) audit.matched++;
+    else { audit.mismatched++; audit.last = `at rev ${shortRevision(expected.revision)} predicted ${score}, scored ${gain}`; }
+    try { await trace.write('score_audit', { revision: expected.revision, cards, predicted: score, scored: gain, matched }); }
+    catch { /* The audit counters above stay authoritative for this connection. */ }
+  }
+  function auditLine(): string | undefined {
+    const total = audit.matched + audit.mismatched;
+    if (!total) return undefined;
+    return audit.mismatched ? `MISMATCH ${audit.last}; ${audit.matched}/${total} predictions matched this run, exact labels are suspended` : `exact ${total}/${total} matched this run`;
+  }
   function observed(observation: Observation, action?: Action, before?: Observation): ToolValue {
     return { observation, value: action ? compactActionObservation(observation, action, before) : compactObservation(observation) };
   }
   function tool<S extends TSchema>(name: string, description: string, parameters: S, execute: (params: Static<S>, context: RequestContext) => Promise<ToolValue>): void {
     const outputSchema = name === 'game_action' ? ObservationResultSchema : ['game_observe','game_start'].includes(name) ? FullObservationResultSchema :
       Type.Object({ ...ObservationResultSchema.properties, value: Type.Optional(Type.Unknown()) }, { additionalProperties: false });
-    const readOnly = name === 'game_observe' || name === 'deck_observe';
+    const readOnly = name === 'game_observe' || name === 'deck_observe' || name === 'game_analyze';
     server.registerTool(name, {
       title: name.replaceAll('_', ' '), description,
       // Preserve TypeBox's exact strict unions and uniqueItems in the MCP schema.
@@ -69,6 +87,30 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
   tool('game_action','Perform one game action. Pass the rev of your latest result as revision; indices are zero-based. Returns rev, phase, actions, result (one English sentence on what happened) and state holding only the keys that changed. A result with full:true replaces your whole state. Otherwise merge it: a present key replaces the old value and an absent key keeps it, except that an object on an object key (such as hands or blinds) updates only the listed members, null deleting one, and an object such as {"2":"…"} on consumables or hand replaces only those elements. jokers is always a complete ordered array when present. Phase views the new phase does not use are dropped (see game_observe). After stale_state or lost context, call game_observe. After uncertain_outcome, stop and inspect it with game_operation; never resend the action.',
     Type.Object({ revision: Type.String(), action: ActionSchema },{ additionalProperties: false }),async (params,context) => {
       const revision = resolveRevision(params.revision);
-      return observed(await backend.act(params.action,revision,context), params.action, delivered?.revision === revision ? delivered : undefined);
+      const expected = predicted?.revision === revision ? predicted : undefined;
+      const after = await backend.act(params.action,revision,context);
+      predicted = undefined;
+      if (expected && params.action.method === 'play') await auditPlay(expected,params.action.cards,after);
+      return observed(after, params.action, delivered?.revision === revision ? delivered : undefined);
     });
+  tool('game_analyze','Read-only numbers for the current decision; it never acts and its rows are candidates to compare, not an allowlist or a recommendation. Pass the latest rev as revision. While selecting a hand it scores every legal play with the original game scoring code and returns need (chips still missing, hands, discards), plays ("<hand indices>: <poker hand> <score> <exact|conditional>; <facts>": the best play of each poker hand, plus plays that keep a Blue Seal or Gold card or avoid resetting a Joker), use (a held Planet that raises the best play if used first), order (a Joker or hand rearrange that raises the best play; execute it, observe, then decide) and lines when given. lines holds up to 4 hypothetical lines of up to 3 steps (use a Planet, rearrange jokers or hand, play) to price your own idea; every index refers to the current observation and nothing is executed. exact is the deterministic score of the visible state; conditional depends on an assumption stated in notes (random bonuses not triggering, face-down cards). In SHOP, PACK and BLIND_SELECT this version returns only economy (interest now and what can be spent without losing it), rewards and skip, with status partial. audit reports how earlier predictions matched the plays actually made this run. Read notes first. Details: balatro://guide.',
+    Type.Object({ revision: Type.String(), focus: Type.Optional(Type.Literal('auto')), lines: Type.Optional(LinesSchema) },{ additionalProperties: false }),async (params,context) => {
+      const revision = resolveRevision(params.revision);
+      if (!backend.analysisSnapshot) throw new BackendError('incompatible_backend','This backend does not support game_analyze.');
+      const first = await backend.analysisSnapshot(context);
+      if (first.observation.revision !== revision) throw new BackendError('stale_state','State changed; observe again before analysing.');
+      const head = { rev: shortRevision(revision), phase: String(first.observation.state.state) };
+      if (!first.observation.ready) return { value: { ...head, status: 'unavailable', notes: [first.observation.notReadyReason ?? 'the game is not at a decision point'] } };
+      if (audit.runId !== first.observation.runId) Object.assign(audit,{ runId: first.observation.runId, matched: 0, mismatched: 0, last: '' });
+      // Leave time for the closing read inside the same tool deadline.
+      const analysis = await analyzer.analyze(first,{ lines: params.lines, deadline: (context.deadline ?? performance.now() + timeoutMs) - 2000, trusted: audit.mismatched === 0 });
+      // Analysis inputs are outside the revision fingerprint, so compare them directly.
+      const second = await backend.analysisSnapshot(context);
+      if (second.observation.revision !== revision || JSON.stringify(second.analysis) !== JSON.stringify(first.analysis)) throw new BackendError('stale_state','State changed during analysis; observe again.');
+      const chips = record(first.observation.state.round).chips;
+      predicted = analysis.predictions.size && typeof chips === 'number' ? { revision, runId: first.observation.runId, chips, scores: analysis.predictions } : undefined;
+      const line = auditLine();
+      return { value: { ...head, ...analysis.brief, ...(line ? { audit: line } : {}) } };
+    });
+  return { close: () => analyzer.close() };
 }

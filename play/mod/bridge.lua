@@ -1,5 +1,5 @@
 -- Wire protocol and operation lifecycle; independent of the socket transport.
-return function(json, game, clock, instance, timeout)
+return function(json, game, clock, instance, timeout, analysis)
   local bridge = {}
   local serial, runSerial, previousRun, fingerprint = 0, 0, nil, ''
   local pending, poisoned, operations, order = nil, false, {}, {}
@@ -34,13 +34,20 @@ return function(json, game, clock, instance, timeout)
       reason = blocked() or not ready and reason or nil
       return {status='ok',bridge='balatro_mcp_mod',protocol=1,instanceId=instance,gameVersion=G.VERSION,luaRuntime=jit and jit.version,
         ready=ready,notReadyReason=reason,preservesTiming=true,transport='http-jsonrpc',
-        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state'})}
+        capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state',
+          analysis and analysis.analysis and 'analysis_snapshot' or nil})}
     elseif method == 'sf.observe' then exact(params, {}); return snapshot()
     elseif method == 'sf.deck_observe' then
       exact(params, {})
       local current = snapshot(); local cards = game.cards()
       cards.revision = current.revision; cards.runId = current.runId
       return cards
+    elseif method == 'sf.analysis_snapshot' then
+      -- Read-only and on demand: the public observation and the sandbox input
+      -- are taken in the same frame, and neither enters the revision fingerprint.
+      exact(params, {})
+      if not (analysis and analysis.analysis) then game.fail('incompatible_backend', 'Analysis snapshot is unavailable') end
+      return {observation=snapshot(),analysis=analysis.analysis(game.phase())}
     elseif method == 'sf.operation' then
       exact(params, {actionId=true,instanceId=true})
       if params.instanceId ~= instance then game.fail('incompatible_backend', 'Bridge instance changed') end

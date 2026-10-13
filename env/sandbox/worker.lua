@@ -15,7 +15,7 @@ for line in io.lines() do
     if request.method == 'plays' then return runtime.plays(request.state, request.selectionLimit) end
     if request.method == 'batch' or request.method == 'scores' then
       local results = json.array()
-      for i, play in ipairs(request.plays) do results[i] = runtime.score(play, request.method == 'scores') end
+      for i, play in ipairs(request.plays) do results[i] = runtime.score(play, request.method == 'scores', request.ordered == true) end
       return results
     end
     error('Unknown sandbox method')

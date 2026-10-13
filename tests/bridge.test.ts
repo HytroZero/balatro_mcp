@@ -320,3 +320,33 @@ test('health runs once per bridge instance; later reads and actions skip it unti
     assert.deepEqual(mock.requests.map(req => req.method),['sf.observe','sf.health']);
   } finally { await mock.close(); }
 });
+
+test('analysis snapshot is capability-gated, validated and never inspects or releases the action lock',async () => {
+  let capabilities=health.capabilities, analysis: unknown={phase:'SELECTING_HAND'}, revision='instance-a:1';
+  const mock=await server((req,res)=>{
+    if(req.method==='sf.health') result(res,req,{...health,capabilities});
+    else if(req.method==='sf.observe') result(res,req,observation(revision,'SELECTING_HAND'));
+    else if(req.method==='sf.analysis_snapshot') result(res,req,{observation:{...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',seed:'HIDDEN_SEED',scoringSnapshot}},analysis});
+    else if(req.method==='sf.act') {/* The dispatch response is lost. */}
+    else result(res,req,{actionId:(req.params as Data).actionId,status:'pending',applied:true});
+  });
+  try {
+    const old=new ForgeBridgeBackend(mock.endpoint,1000);
+    await assert.rejects(old.analysisSnapshot(),(e:unknown)=>e instanceof BackendError && e.code==='incompatible_backend' && e.applied===false);
+    assert.deepEqual(mock.requests.map(r => r.method),['sf.health']);
+    capabilities=[...health.capabilities,'analysis_snapshot'];
+    const client=new ForgeBridgeBackend(mock.endpoint,150);
+    const first=await client.analysisSnapshot();
+    assert.deepEqual(first.analysis,{phase:'SELECTING_HAND'});
+    assert.equal(first.observation.revision,'instance-a:1');
+    assert.equal(first.observation.state.scoringSnapshot,undefined,'the observation half passes the same public-state filter');
+    revision='foreign:1';
+    await assert.rejects(client.analysisSnapshot(),(e:unknown)=>e instanceof BackendError && e.code==='backend_failure');
+    revision='instance-a:1';
+    await assert.rejects(client.act({method:'select'},'instance-a:1'),(e:unknown)=>e instanceof BackendError && e.code==='uncertain_outcome');
+    const before=mock.requests.length;
+    await assert.rejects(client.analysisSnapshot(),(e:unknown)=>e instanceof BackendError && e.code==='illegal_action' && e.applied===false);
+    assert.equal(mock.requests.length,before,'a locked client refuses analysis without any RPC');
+    await assert.rejects(client.act({method:'select'},'instance-a:1'),/unresolved/);
+  } finally {await mock.close();}
+});
