@@ -258,3 +258,102 @@ Executed documentation checks:
 No implementation tests, game actions, mod staging, installation or restarts were
 performed for this documentation-only change. Proposed performance budgets and
 scoring capabilities have not been validated by this work.
+
+## Offline scoring sandbox — 2026-10-13
+
+Added `env/sandbox` with a validated TypeScript `scoreHand` interface, JSON CLI,
+isolated LuaJIT workers, an example and usage documentation. Each query initializes
+original 1.0.1o-FULL prototypes and invokes original `evaluate_play`, card/Joker,
+hand-recognition, Blind and Back logic. The adapter supplies non-rendering card
+objects, suppresses presentation/profile/queued post-hand events, handles The Tooth
+pre-scoring money loss and The Ox instant money reset, and reports active The Hook,
+direct card creation and hidden cards explicitly. Original Card update/passive hooks
+hydrate deck tallies, Joker Stencil, probabilities and sell-value effects.
+
+`sandbox:prepare` copies nine necessary original modules unchanged into ignored
+local `env/sandbox/vendor`. Public distributions explicitly exclude both that
+directory and `env/balatro`, and omit Finder metadata. The distribution regression
+checks these exclusions. Original game source is a local dependency, not newly
+published source.
+
+Executed checks:
+
+- `npm run sandbox:prepare` — nine original modules copied; byte-for-byte comparison
+  against local `env/balatro` passed for every file.
+- `npm run sandbox:test` with the locally built LuaJIT 2.1 executable — all six test
+  groups passed. Scenarios cover all 12 poker hands, scoring subsets, Splash/Stone,
+  Joker order/Blueprint/growth/Acrobat, seals and held Steel/Baron effects, editions,
+  hand upgrades, Boss restrictions/debuffs/Flint/Arm/Ox/Tooth/Chicot, Plasma, draw and
+  discard tallies, Swashbuckler, Observatory, fixed and seeded randomness, disabled
+  passive effects, repeatability, unchanged inputs, failures, timeouts and cancellation.
+- One-off all-Joker smoke check against the copied vanilla source — all 150 Jokers
+  returned `ok` for an ordinary five-card Straight. This checks execution coverage,
+  not every Joker interaction or lifecycle effect.
+- One-off comparison script in local `build/sandbox-validation`, using the adjacent
+  original full-game headless runtime — six Joker configurations, four hands each,
+  seeds SANDBOX1 through SANDBOX6; sandbox scores matched actual full-event-loop
+  chip gains in all 24 hands. Configurations included growth/final-hand/held effects,
+  Blueprint/Photograph/retriggers, deck tallies/Stencil, money effects,
+  Vampire/Midas/Hiker, and Bloodstone/Space/Lucky Cat/Misprint. Explicit remaining
+  deck, discard, hand values, history and RNG stream data were passed into each trial.
+- `npm run check` and `npm test` with `LUAJIT` set — passed; 80 tests passed and two
+  Windows-only tests skipped. The final sandbox passive-effect adjustment was also
+  verified with the focused sandbox suite and the 24-hand comparison again.
+- Existing Lua suites — observation 88, decision 38 and shadow scoring 63 checks
+  passed. `npm run release:check` and whitespace checks passed.
+- Source and compiled CLI examples passed; compiled CLI was also launched from
+  outside the repository. The bundled example reports Pair, 30 chips, 14.125 Mult,
+  and 423 points.
+
+All checks were offline. No mod installation, game restart, live gameplay, or
+Steamodded scoring validation was performed. The sandbox scores one hand and does
+not return a persistent next-game state.
+
+## Persistent scoring worker and million-trial throughput — 2026-10-13
+
+Replaced the per-calculation process architecture for search workloads with
+`ScoringSandbox`: one persistent LuaJIT VM, source/prototype initialization once,
+position construction on `load`, and a precompiled restoration plan reused after
+every trial. Newline-delimited requests are serialized and correlated by ID.
+`scoreBatch` returns complete results; `scores` evaluates up to 2048 selections
+inside Lua per request and returns scalar scores/failures without constructing
+traces or full scoring results. No result cache is used. The one-shot CLI helper
+is now explicitly named `scoreHandOnce`.
+
+State restoration preserves original table/prototype identities and removes newly
+introduced fields, including Joker growth, enhancement replacement, Boss history,
+hand counts, dollars, pseudorandom streams, destroyed-card flags and the playing
+card identifier. Failed scoring also restores the position. Failed loads invalidate
+the prior position; transport failures, timeout and cancellation invalidate the
+worker without automatic retries. The public API includes explicit `close`, process
+identity and diagnostic counters. Pure Lua callers can reuse `new/load/score`
+directly without host IPC.
+
+Executed checks:
+
+- Old one-shot baseline on this host: 100 fixed Pair evaluations, eight hand cards
+  and Joker/Green Joker/Baron/Acrobat — 1225.87 ms. This was measured before changing
+  the implementation.
+- `sandbox:bench` with LuaJIT 2.1: eight hand cards and the same four Jokers, cycling
+  all 218 legal selections, batches of 2048. After 2048 warm-up trials, **1,000,000
+  timed evaluations took 131,260.30 ms (7618.45/s)**, including Node/Lua IPC and
+  restoration. The worker reported one source load, one position load and 1,002,048
+  actual calculations including warm-up, with approximately 4794 KiB Lua heap at
+  the final sample. Every result was checked against its warm-up counterpart.
+  The old and new timings use different selection mixes; they are not a controlled
+  speedup ratio or a guarantee for other Joker configurations.
+- `npm run check` and `npm test` with `LUAJIT` set — passed: 82 tests passed, two
+  Windows-only skips. Eight sandbox groups passed, including persistent process
+  identity/counters, thousands of alternating trials, repeated position loads,
+  independent seeded randomness, growth/Vampire/Midas/Hiker/Arm/Tooth/Eye state,
+  trace construction before score globals exist, queued requests, failure recovery,
+  invalid-load invalidation, forced selection, timeout and cancellation.
+- Original full-event-loop comparison was rerun against the refactored scorer:
+  all 24 hand scores matched actual chip gains. The persistent API was additionally
+  checked against independent one-shot evaluations across six configurations.
+- `npm run release:check`, whitespace checks and the compiled CLI launched outside
+  the repository passed. The example remains Pair, 30 chips, 14.125 Mult, 423 points.
+
+All checks were offline; no live mod installation, restart or Steamodded validation
+was performed. Throughput remains dependent on Joker effects and retrigger counts.
+

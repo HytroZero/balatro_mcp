@@ -52,9 +52,14 @@ test('distribution rejects private data without printing it and excludes runtime
     const files = await distributionFiles(projectRoot);
     assert.ok(files.includes('package-lock.json')); assert.ok(files.includes('LICENSE'));
     assert.ok(!files.some(path => /^(?:\.git\/|build\/|data\/|dist\/|node_modules\/)|\.local\.json$/.test(path)));
+    assert.ok(!files.some(path => /^(?:env\/balatro\/|env\/sandbox\/vendor\/)|(?:^|\/)\.DS_Store$/.test(path)));
     assert.deepEqual(await auditDistribution(projectRoot, files), []);
     const destination = resolve(root, 'export');
     await copyDistribution(projectRoot, destination, files);
+    for (const path of ['env/balatro/card.lua', 'env/sandbox/vendor/card.lua', 'env/.DS_Store']) {
+      await mkdir(resolve(destination, path, '..'), { recursive: true });
+      await writeFile(resolve(destination, path), 'local-only source or OS metadata');
+    }
     assert.deepEqual(await distributionFiles(destination), files);
     assert.deepEqual(await auditDistribution(destination, files), []);
     const tar = gunzipSync(await readFile(await archiveDistribution(destination)));

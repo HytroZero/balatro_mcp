@@ -1,0 +1,8 @@
+{
+  "hand": ["S_K", "H_K", {"key": "D_K", "enhancement": "m_steel", "seal": "Red"}, "C_A"],
+  "play": [0, 1],
+  "jokers": ["j_joker", "j_baron"],
+  "game": {"current_round": {"hands_left": 4}},
+  "seed": "SANDBOX",
+  "trace": true
+}

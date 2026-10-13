@@ -24,6 +24,10 @@
     "install:windows": "powershell.exe -NoProfile -ExecutionPolicy Bypass -File scripts/install-mod.ps1",
     "launch:macos": "node scripts/macos.ts --launch",
     "test": "npm run build && node --test tests/*.test.ts",
+    "sandbox:prepare": "node env/sandbox/prepare.ts",
+    "sandbox:score": "node env/sandbox/cli.ts",
+    "sandbox:test": "node --test tests/sandbox.test.ts",
+    "sandbox:bench": "node env/sandbox/bench.ts",
     "release:check": "node scripts/release.ts --check",
     "release:export": "node scripts/release.ts"
   },

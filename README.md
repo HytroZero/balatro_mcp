@@ -202,6 +202,7 @@ error message.
 - [Game rules and strategy context](docs/context.md)
 - [Gameplay skills](skills/README.md)
 - [Source attribution and validation](docs/upstream.md)
+- [Offline scoring sandbox](env/sandbox/README.md)
 - [Preparing a release](docs/releasing.md)
 
 For server options, run `node dist/src/index.js --help`. A manual client

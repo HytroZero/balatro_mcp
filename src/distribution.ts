@@ -25,6 +25,8 @@ export interface DistributionIssue { path: string; line?: number; reason: string
 export async function distributionFiles(root: string): Promise<string[]> {
   const files: string[] = [];
   async function visit(path: string) {
+    // Locally supplied proprietary game code is never part of a public export.
+    if (path === 'env/balatro' || path === 'env/sandbox/vendor' || basename(path) === '.DS_Store') return;
     const entry = await lstat(resolve(root, path));
     if (entry.isSymbolicLink()) throw new Error('Distribution cannot contain symlinks: ' + path);
     if (entry.isDirectory()) {
