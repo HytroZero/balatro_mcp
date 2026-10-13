@@ -10,7 +10,7 @@ import { projectRoot } from '../src/config.ts';
 
 const lua = process.env.LUAJIT ?? 'luajit';
 const source = process.env.BALATRO_SANDBOX_SOURCE ??
-  resolve(projectRoot, existsSync(resolve(projectRoot, 'env/sandbox/vendor/globals.lua')) ? 'env/sandbox/vendor' : 'env/balatro');
+  resolve(projectRoot, 'env/sandbox/vendor');
 const skip = !existsSync(resolve(source, 'globals.lua')) ? 'Local Balatro source is required (sandbox:prepare)' :
   spawnSync(lua, ['-v']).status !== 0 ? 'LuaJIT is required (set LUAJIT)' : false;
 const base: ScoreInput = { hand: ['S_K', 'H_K', 'D_A'], play: [0, 1] };

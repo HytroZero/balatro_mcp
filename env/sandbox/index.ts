@@ -1,5 +1,4 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
-import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { projectRoot } from '../../src/config.ts';
@@ -112,9 +111,8 @@ export class ScoringSandbox {
     if (this.broken) throw this.broken;
     this.options.signal?.throwIfAborted();
     if (this.child) return this.child;
-    const vendor = resolve(projectRoot, 'env/sandbox/vendor');
     const source = resolve(this.options.sourceDir ?? process.env.BALATRO_SANDBOX_SOURCE ??
-      (existsSync(resolve(vendor, 'globals.lua')) ? vendor : resolve(projectRoot, 'env/balatro')));
+      resolve(projectRoot, 'env/sandbox/vendor'));
     const child = spawn(this.options.lua ?? process.env.LUAJIT ?? 'luajit',
       [resolve(projectRoot, 'env/sandbox/worker.lua'), projectRoot, source],
       { cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], signal: this.options.signal });

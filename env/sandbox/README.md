@@ -55,8 +55,8 @@ try {
 ```
 
 构造参数可设置 `lua`、`sourceDir`、`timeoutMs`（每个请求默认 5000）和 `signal`。
-`BALATRO_SANDBOX_SOURCE` 也可指定源码目录。默认优先使用 `env/sandbox/vendor`，
-尚未准备时使用 `env/balatro`。模块支持项目源码和构建后的 `dist` 入口，从任意工作目录调用。
+`BALATRO_SANDBOX_SOURCE` 也可指定源码目录。默认使用 `env/sandbox/vendor`，
+缺少源码时需先运行 `npm run sandbox:prepare`。模块支持项目源码和构建后的 `dist` 入口，从任意工作目录调用。
 
 `scores` 和 `scoreBatch` 每批接受 1–2048 组选择，全部在 Lua 内循环试算，只进行一次
 进程通信。`scores` 成功项为数字，失败项保留 `{status, message}`，并省略计分过程和

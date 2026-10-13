@@ -424,3 +424,20 @@ Executed checks:
 
 All checks were offline against mocks. The mod was staged, not installed; Balatro
 was not restarted or controlled, and live Steamodded behavior remains unverified.
+
+## Sandbox source default: vendor only — 2026-10-13
+
+Removed the automatic `env/balatro` fallback from the sandbox runtime and tests.
+The default source is now `env/sandbox/vendor`; explicit `sourceDir` and
+`BALATRO_SANDBOX_SOURCE` overrides remain supported. Updated the sandbox README
+to require preparation when the default source is missing.
+
+Executed checks:
+
+- `npm run check` — passed.
+- `npm run sandbox:test` — all eight tests passed, with no skips.
+- `npm run sandbox:score -- env/sandbox/example.json` — passed using the default
+  vendor source: Pair, 30 chips, 14.125 Mult, 423 points.
+- `git diff --check` — passed.
+
+All checks were offline; no live game was exercised.
