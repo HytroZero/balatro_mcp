@@ -1,6 +1,6 @@
 # game_analyze：给决策模型的数值简报
 
-状态：阶段 1 的核心已实现并通过离线测试，尚未在实机上验证；其余阶段仍是提案。日期：2026-10-13。已实现范围和与本文的差异见 §11。
+状态：阶段 1 的核心与阶段 2、4 的一部分已实现并通过离线测试，尚未在实机上验证；其余仍是提案。日期：2026-10-13。已实现范围和与本文的差异见 §10。
 
 ## 1. 目标与依据
 
@@ -277,21 +277,30 @@ type Line = AnalysisAction[];         // 1..3 步
 | --- | --- |
 | `sf.analysis_snapshot`、能力协商、不解除动作锁的只读读取 | 已实现 |
 | hand 简报：全部合法选择的精确评分、每个牌型的最佳、保留蓝蜡封 / Gold 和不重置 Joker 的方案、事实 | 已实现 |
-| `use`（Planet）、`order`（Joker 全排列或两两交换、前两手的出牌顺序）、`lines` | 已实现 |
+| `use`（Planet、指定目标的 Tarot）、`order`（Joker 全排列或两两交换、前两手的出牌顺序）、`lines` | 已实现 |
 | 背面牌按持有不计分处理、The Hook 按不弃牌处理，均标 `conditional` | 已实现 |
 | 对账：同一 revision 的出牌与预测比较，失配后本局停发 `exact` | 已实现 |
 | 经济：`economy`、`rewards`、`skip` | 已实现 |
-| build 简报的 `pace`、`jokers`、`offers`、`tarots`、`horizon` | 未实现；build 阶段返回 `status: partial` 和说明 |
-| `next`（补牌一步）、Tarot 的 `use`、`boss`、`engine` | 未实现，不在 schema 中 |
+| build 简报：`pace`、`jokers`、`offers`、`horizon`（§5.2、§5.3） | 已实现，范围见下 |
+| `focus: "boss"`：下一 Ante 可能出现的 Boss（§5.6 前半） | 已实现 |
+| build 简报的 `tarots`、build 阶段的 `lines` | 未实现；`lines` 在 build 阶段返回 `unavailable` |
+| `next`（补牌一步，§5.5）、`focus: "engine"` | 未实现，不在 schema 中 |
 
 与正文的差异：
 
-- **`lines` 的动作范围。** 目前只接受 `use`（Planet）、`rearrange`（jokers / hand）和 `play`。其余动作变体等对应阶段实现后再进 schema。
+- **`lines` 的动作范围。** 只接受 `use`（Planet，或带 `cards` 目标的 Tarot）、`rearrange`（jokers / hand）和 `play`，且只在选牌阶段。买、卖、开包选择等变体等 build 路线实现后再进 schema。
+- **Tarot 的 `use`。** 覆盖改强化（Magician、Empress、Hierophant、Lovers、Chariot、Justice、Devil、Tower）、改花色（Star、Moon、Sun、World）、Strength 和 Death。转换在沙盒里调用原版 `Card:use_consumeable` 里的那几行（`set_ability`、`change_suit`、`set_base`），不播放动画；Death 在局面副本上复制最右边的目标。Hanged Man 会改变手牌下标，未纳入。自动搜索枚举全部允许张数的目标组合（上限 100 组，少目标优先）；搜索时同牌型、同计分牌的选择只评一次，持牌效果（Steel、Baron、Mime 等）或张数相关的 Joker 在场时逐一评分；选中的目标再用完整枚举给出带事实的精确行。
 - **Joker 成长事实来自引擎。** 沙盒在评分后比较每张 Joker 的 `mult`、`x_mult`、`extra.chips`，所以“会清零 Ride the Bus”这类事实不需要逐张手写规则。所有选择都会发生的变化（如 Green Joker 每手 +1）不显示。只覆盖计分过程中的变化，after-hand 结算不在内。
 - **“可顺带打出的牌”。** 同分的超集存在时，行内注明最多还能带几张牌，用于判断能否借出牌换牌。
-- **并发。** hand 简报耗时约 0.1–0.3 秒，整段在串行队列内完成，没有做队列外计算和中途中止。build 阶段的重计算实现时再按 §7 拆分。
+- **节奏的牌池。** 每个样本的牌池是 `手牌上限 + min(5, 2 × 弃牌次数)` 张；构筑里有持牌效果时不加补牌。普通构筑只比较 5 张出牌，并按“牌型 + 计分牌（含 Stone）”分组、每组评一次：这在没有持牌和张数效果时与逐一评分等价，13 张牌池每样本约 30 次评分而不是 1,287 次。Half Joker、Square Joker 在场时按张数分组；持牌效果在场时不分组。
+- **盲注。** 每个仍要打的盲注都在原版 `Blind` 上重算 debuff（新增 `applyBlind`），Chicot 在场时 Boss 视为禁用。The Needle、The Water、The Manacle 改出牌次数、弃牌次数和手牌上限。The Eye、The Mouth、The Hook、The Arm 的后续效果、抽牌类 Boss、Cerulean Bell、Crimson Heart、Amber Acorn 只写说明，不改分布；不改计分的 Boss 与普通盲注共用样本。目标分用 `round_resets.ante`，与原版 `Blind:set_blind` 一致。
+- **报价与份额。** 报价都对“本 Ante 最后一个仍要打的盲注”定价，写每手均值的变化和过关估计的前后值；份额用每手均值（不是中位数）的下降比例。默认只重评每个样本已记下的各牌型前 4 名选择；Four Fingers、Shortcut、Smeared、Splash、Pareidolia 的增删，以及手牌上限、弃牌次数或分组方式变化的变体完整重算。Joker 槽位满时按份额最低的非 Eternal Joker 替换并写明卖价；Negative 不占槽。凭证只定价 Grabber / Nacho Tong（+1 出牌）、Wasteful / Recyclomancy（+1 弃牌）、Paint Brush / Palette（+1 手牌上限）。牌组里的 Tarot 目标、Spectral、加入牌组的扑克牌和其他凭证列在 `notes` 的 `not priced` 里，不给数字。
+- **horizon。** 用普通盲注样本，Boss 一律按 2 倍底注（最终 Boss 的 Violet Vessel 等不单列），给出下一 Ante 三个盲注的过关估计、每手所需增长倍数，以及典型 Boss 过关估计保持在 0.50 以上到哪个 Ante。
+- **boss。** Boss 池由 mod 按 `get_new_boss` 的资格和“最少出现”规则从公开的出现记录推出，不含抽中哪一个；Steamodded 开启按权重抽取时不导出，并在 `notes` 说明。行按过关估计升序，前 6 行完整，其余合成一行；花色 Boss 附“最佳出牌里该花色牌的占比”。
+- **样本缓存。** 样本是公开构筑、编辑和盲注的纯函数，按三者的哈希缓存在每个连接里（最多 256 组，不落盘），同一构筑再次调用约 3 毫秒。
+- **并发。** 分析整段在串行队列内完成，没有做队列外计算和中途中止；预算用尽时 `status` 为 `partial` 并列出未完成项。build 首次调用实测约 2.6–5.3 秒，超过 §7 的 3 秒目标的情形是持牌效果构筑（不能分组）。
 - **一致性复核。** 快照不进 revision 指纹；工具在计算后再读一次快照，revision 或快照文本不同即返回 `stale_state`。
 - **随机效果。** 现在按沙盒的 `minimal` 策略计为不触发并标 `conditional`，还没有按合成种子采样。
 - **沙盒实例。** 目前单进程，未做多进程并行。
 
-离线实测（本机，8 张手牌、5 张 Joker）：局面加载约 0.9 毫秒，218 种选择的完整评分约 31 毫秒。
+离线实测（本机）：8 张手牌、5 张 Joker 的局面加载约 0.9 毫秒，218 种选择的完整评分约 31 毫秒；52 张牌组的局面加载约 2 毫秒。

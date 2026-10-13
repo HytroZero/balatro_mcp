@@ -174,12 +174,105 @@ test('hand brief keeps face-down cards out of plays and respects a forced card',
   } finally { await analyzer.close(); }
 });
 
-test('build phases return economy only and other phases are unavailable', async () => {
+test('hand brief prices held Tarots on their best targets and in caller lines', { skip }, async () => {
+  const [strength, chariot] = fixtures([
+    { hand: ['S_K', 'H_K', 'D_Q', 'C_7', 'S_4'], consumables: ['c_strength', 'c_fool'] },
+    { hand: ['S_K', 'H_K', 'D_3'], consumables: ['c_chariot'] },
+  ]);
+  const analyzer = new Analyzer({ lua, sourceDir: source });
+  try {
+    const lines: Line[] = [
+      [{ method: 'use', consumable: 0, cards: [2] }, { method: 'play', cards: [0, 1, 2] }],
+      [{ method: 'use', consumable: 0, cards: [2, 3, 4] }],
+      [{ method: 'use', consumable: 0 }],
+    ];
+    const state = shown({ consumables: [{ key: 'c_strength', label: 'Strength' }, { key: 'c_fool', label: 'The Fool' }] });
+    const a = await analyzer.analyze(read(strength!, state), { lines, deadline: far(), trusted: true });
+    assert.equal(a.brief.focus, 'hand');
+    if (a.brief.focus !== 'hand') return;
+    // Strength turns the Queen into a third King: 60 chips x 3 Mult; the Kings alone are 30 x 2.
+    assert.equal(a.brief.plays![0]!.startsWith('0 1: Pair 60 exact'), true);
+    assert.equal(a.brief.use?.length, 1);
+    assert.match(a.brief.use![0]!, /^consumable 0 Strength on 2, then 0 1 2: Three of a Kind 180 exact; short 120.* \(best now 60\)$/);
+    assert.deepEqual(a.brief.lines, [
+      'line 1: use Strength on 2 > play 0 1 2 -> 0 1 2: Three of a Kind 180 exact; short 120',
+      'line 2: unavailable; Strength needs 1-2 target cards',
+      'line 3: unavailable; Strength needs 1-2 target cards',
+    ]);
+
+    // A new Steel card is held: the Kings score 60, X1.5 from the held Steel 3.
+    const b = await analyzer.analyze(read(chariot!, shown({ consumables: [{ key: 'c_chariot', label: 'The Chariot' }] })), { deadline: far(), trusted: true });
+    assert.equal(b.brief.focus, 'hand');
+    if (b.brief.focus !== 'hand') return;
+    assert.match(b.brief.use![0]!, /^consumable 0 The Chariot on 2, then 0 1: Pair 90 exact/);
+  } finally { await analyzer.close(); }
+});
+
+/** A shop position: Small defeated, Big and The Club still to play, $17. */
+const shopPosition = (extra: Data = {}): Data => ({ hand: ['S_K', 'H_K', 'S_9', 'S_7', 'S_5', 'S_4', 'D_3', 'S_2'], jokers: ['j_joker', 'j_greedy_joker'],
+  consumables: ['c_jupiter'], phase: 'SHOP', shop: ['j_cavendish', 'c_mercury', 'c_chariot'], vouchers: ['v_grabber', 'v_overstock_norm'], dollars: 17, defeated: ['Small'], ...extra });
+const shopShown = (jokers = ['Joker', 'Greedy Joker']): Data => ({ state: 'SHOP', blinds: { Boss: { displayName: 'The Club' } },
+  jokers: { cards: jokers.map((label, index) => ({ index, label })) },
+  shop: { cards: ['Cavendish', 'Mercury', 'The Chariot'].map((label, index) => ({ index, label })) },
+  vouchers: { cards: ['Grabber', 'Overstock'].map((label, index) => ({ index, label })) }, consumables: { cards: [{ index: 0, label: 'Jupiter' }] } });
+
+test('build brief samples pace, Joker shares, offers and the next Ante from the public deck', { skip }, async () => {
+  const [shop, full] = fixtures([shopPosition(), shopPosition({ jokers: ['j_joker', 'j_greedy_joker', 'j_jolly', 'j_zany', 'j_mad'], shop: ['j_cavendish'], vouchers: [], consumables: [] })]);
+  const input = record(record(shop!.build).input);
+  assert.equal(record(shop!.build).status, 'ready');
+  assert.equal((input.state as Data).hand instanceof Array && ((input.state as Data).hand as unknown[]).length, 0);
+  assert.equal(((input.state as Data).deck as unknown[]).length, 52);
+  assert.deepEqual(input.blinds, { Small: { key: 'bl_small', status: 'Defeated', target: 300 }, Big: { key: 'bl_big', status: 'Upcoming', target: 450 }, Boss: { key: 'bl_club', status: 'Upcoming', target: 600 } });
+  assert.doesNotMatch(JSON.stringify(shop), /SANDBOX|pseudorandom/);
+  const analyzer = new Analyzer({ lua, sourceDir: source });
+  try {
+    const { brief } = await analyzer.analyze(read(shop!, shopShown()), { deadline: far(), trusted: true });
+    assert.equal(brief.focus, 'build');
+    if (brief.focus !== 'build') return;
+    assert.equal(brief.status, 'complete');
+    assert.equal(brief.pace?.length, 2);
+    assert.match(brief.pace![0]!, /^Big 450: 4 hands, need 113\/hand; median \d+, p75 \d+; clear 1\.00$/);
+    assert.match(brief.pace![1]!, /^Boss The Club 600: 4 hands, need 150\/hand; median \d+, p75 \d+; clear \d\.\d\d$/);
+    assert.match(brief.jokers![0]!, /^0 Joker: \d+% of score$/);
+    assert.match(brief.jokers![1]!, /^1 Greedy Joker: \d+% of score$/);
+    // Cavendish is X3 Mult on every hand; the voucher adds a hand; a held Planet costs nothing.
+    assert.match(brief.offers![0]!, /^shop 0 Cavendish \$4: \+200%\/hand; Boss clear \d\.\d\d -> \d\.\d\d; interest -\$1\/round$/);
+    assert.match(brief.offers![1]!, /^shop 1 Mercury \$3: \+\d+%\/hand; Boss clear/);
+    assert.match(brief.offers![2]!, /^voucher 0 Grabber \$10: \+0%\/hand; Boss clear \d\.\d\d -> \d\.\d\d \(5 hands\); interest -\$2\/round$/);
+    assert.match(brief.offers![3]!, /^consumable 0 Jupiter: \+\d+%\/hand; Boss clear/);
+    assert.match(brief.horizon!, /^Ante 2: Small 800, Big 1200, most Bosses 1600; Boss needs 400\/hand vs mean \d+ now/);
+    assert.equal(brief.economy, '$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round');
+    assert.match(brief.notes[0]!, /^not priced: shop 2 The Chariot, voucher 1 Overstock/);
+    assert.ok(JSON.stringify(brief).length < 3000, 'the build brief stays within its size target');
+
+    // Only deck membership matters: the same cards in another order give the same brief.
+    const reordered = structuredClone(shop!);
+    (record(record(reordered.build).input).state as Data).deck = [...((input.state as Data).deck as unknown[])].reverse();
+    assert.deepEqual((await analyzer.analyze(read(reordered, shopShown()), { deadline: far(), trusted: true })).brief, brief);
+
+    // With every slot taken, a Joker offer is priced as replacing the weakest sellable Joker.
+    const crowded = await analyzer.analyze(read(full!, shopShown(['Joker', 'Greedy Joker', 'Jolly Joker', 'Zany Joker', 'Mad Joker'])), { deadline: far(), trusted: true });
+    assert.equal(crowded.brief.focus, 'build');
+    if (crowded.brief.focus !== 'build') return;
+    assert.match(crowded.brief.offers![0]!, /^shop 0 Cavendish \$4: [+-]\d+%\/hand; Boss clear .*; replaces \d [\w ]+ \(sell \+\$\d+\); interest -\$1\/round$/);
+
+    const boss = await analyzer.analyze(read(shop!, shopShown()), { focus: 'boss', deadline: far(), trusted: true });
+    assert.equal(boss.brief.focus, 'boss');
+    if (boss.brief.focus !== 'boss') return;
+    const rows = boss.brief.bosses!;
+    assert.ok(rows.length >= 2 && rows.length <= 7);
+    const clears = rows.slice(0, -1).map(row => Number(/clear (\d\.\d\d)/.exec(row)![1]));
+    assert.deepEqual(clears, [...clears].sort((x, y) => x - y), 'weakest Boss first');
+    assert.match(rows.at(-1)!, /^\d+ more clear /);
+  } finally { await analyzer.close(); }
+});
+
+test('build phases without a deck snapshot return economy only and other phases are unavailable', async () => {
   const analyzer = new Analyzer();
   const economy = { dollars: 17, interestAmount: 1, interestCap: 25, noInterest: false, moneyPerHand: 1, moneyPerDiscard: 0, rentalRate: 3, rentals: 0, blindRewards: { Small: 3, Big: 4 } };
   const blinds = { Small: { status: 'Select', skipReward: { key: 'tag_investment', displayName: 'Investment Tag' } }, Big: { status: 'Upcoming' } };
   const shop = await analyzer.analyze(read({ phase: 'BLIND_SELECT', economy }, { state: 'BLIND_SELECT', currentBlind: 'Small', blinds }), { deadline: far(), trusted: true });
-  assert.deepEqual(shop.brief, { focus: 'build', status: 'partial', notes: ['economy only: build pace and offer changes are not implemented in this version'],
+  assert.deepEqual(shop.brief, { focus: 'build', status: 'partial', notes: ['the installed mod does not export the deck for build numbers'],
     economy: '$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round', rewards: 'Small $3, Big $4; plus $1 per unused hand',
     skip: "skip Small: gives Investment Tag ($25 after the Boss is defeated); forgoes $3 reward, $1 per unused hand, this round's Joker scaling and the shop after it" });
   assert.equal((await analyzer.analyze(read({ phase: 'ROUND_EVAL', economy }, { state: 'ROUND_EVAL' }), { deadline: far(), trusted: true })).brief.status, 'unavailable');

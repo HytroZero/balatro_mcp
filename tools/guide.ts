@@ -161,7 +161,7 @@ scoring code in a separate process. The value holds \`rev\`, \`phase\`, \`focus:
 | --- | --- |
 | \`need\` | \`"500 to clear; hands 1, discards 0"\` |
 | \`plays\` | \`"<hand indices>: <poker hand> <score> <exact or conditional>; <facts>"\`: the best play of each poker hand, then plays that differ in what they keep |
-| \`use\` | a held Planet that raises the best play when used first |
+| \`use\` | a held Planet, or a held Tarot on its best target cards, that raises the best play when used first |
 | \`order\` | a full \`rearrange\` permutation of Jokers or hand that raises the best play |
 | \`lines\` | one row per line you passed, in order |
 | \`notes\` | assumptions behind \`conditional\` rows, and anything skipped |
@@ -177,7 +177,7 @@ unscored, or The Hook's discards ignored. Only an \`exact\` row says \`clears\`;
 \`conditional\` one says \`reaches the target\`.
 
 \`lines\` prices your own idea without executing it: up to 4 lines of up to 3 steps,
-each step \`{"method":"use","consumable":i}\` (a Planet),
+each step \`{"method":"use","consumable":i}\` (a Planet), \`{"method":"use","consumable":i,"cards":[...]}\` (a Tarot and its targets),
 \`{"method":"rearrange","jokers":[...]}\`, \`{"method":"rearrange","hand":[...]}\` or a
 final \`{"method":"play","cards":[...]}\`. Every index in a line refers to the current
 observation, also after a rearrange inside the line. A line without \`play\` reports
@@ -190,12 +190,31 @@ decide. After a hand rearrange the row gives the positions to play in the new or
 same revision, at no extra game cost. After a mismatch every row of that run is
 \`conditional\` and \`audit\` names the hand that differed.
 
-In \`SHOP\`, \`PACK\` and \`BLIND_SELECT\` this version returns \`focus:"build"\`,
-\`status:"partial"\` and only money facts: \`economy\`
-(\`"$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round"\`),
-\`rewards\` (base reward of each blind still to play) and, when a Small or Big
-Blind is offered, \`skip\` (what its Tag gives and what skipping forgoes). Build
-pace and the value of shop offers are not computed yet.
+In \`SHOP\`, \`PACK\` and \`BLIND_SELECT\` it returns \`focus:"build"\`. It samples the
+whole public deck (32 fixed shuffles, never the run's seed or draw order); each
+hand picks its best play from hand size plus up to 5 drawn cards. Hands are
+independent, Joker growth is frozen and random bonuses never trigger, so trust
+changes between options more than absolute levels.
+
+| key | content |
+| --- | --- |
+| \`pace\` | each blind still to play this Ante: target, hands, need per hand, median and p75 best hand, clear estimate, the Boss rule and whether it is modelled |
+| \`jokers\` | each Joker's share of the score (drop when it leaves), stickers, or \`no direct score\` |
+| \`offers\` | each priceable shop Joker or Planet, opened pack card, hand/discard/hand-size voucher and held Planet: per-hand change, clear estimate of the last open blind before and after, the Joker it replaces when slots are full, interest change |
+| \`horizon\` | the next Ante's targets, growth needed per hand and how far the typical Boss clear stays at 0.50 or more |
+| \`economy\` | \`"$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round"\` |
+| \`rewards\` | base reward of each blind still to play |
+| \`skip\` | when a Small or Big Blind is offered: what its Tag gives and what skipping forgoes |
+
+\`notes\` lists offers that are not priced (Tarot targets in the deck, Spectrals,
+added playing cards, other vouchers). \`game_analyze({"revision":"<rev>","focus":"boss"})\`
+adds \`bosses\`: every Boss the next Ante can bring by the game's own rule, weakest
+first, with its clear estimate next to the plain blind's and the reason where one
+is computable. It takes several seconds.
+
+While selecting a hand, \`use\` also prices each held Tarot that changes chosen
+cards (enhancements, suits, Strength, Death) on its best target cards, and a line
+step may be \`{"method":"use","consumable":i,"cards":[...]}\`.
 
 ## Examples
 

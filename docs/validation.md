@@ -779,3 +779,44 @@ MCP process were not restarted, and no live game action or analysis was run, so
 agreement between predicted and actual scores under Steamodded is unverified.
 Build pace, offer values, draw continuation, Tarot use, Boss and engine analysis
 are not implemented.
+
+## game_analyze stage 2 (part): build brief, Boss pool and Tarot use — 2026-10-13
+
+Outside a hand, `sf.analysis_snapshot` now also exports `build`: every playing
+card as one sorted pool (no order or area), Jokers, consumables, levels, the
+whitelisted `G.GAME` fields, this Ante's blinds with targets from
+`round_resets.ante`, base amounts for later Antes, shop / voucher / opened-pack
+offers with index and price, and the Bosses `get_new_boss` can draw next by its
+eligibility and least-used rule (omitted when Steamodded's weighted draw is on).
+The analysis samples 32 fixed shuffles of that pool against each open blind and
+returns `pace`, `jokers`, `offers` and `horizon`; `focus:"boss"` adds `bosses`.
+In the hand brief, `use` and `lines` price held Tarots on target cards through
+the original conversion code. The sandbox gained `applyBlind`, `jokerEdits`
+(original `add_to_deck` / `remove_from_deck`), per-card `convert`, round
+parameters on load and a `best` call that groups selections by poker hand and
+scoring cards. Ordinary observations and the revision fingerprint are unchanged.
+
+Executed checks:
+
+- `npm run check` passed.
+- `npm test` passed: 113 tests, 111 passed, 2 skipped (the existing macOS-only
+  installer cases). New coverage: Strength and The Chariot on their best targets
+  (Three of a Kind 180, Pair 90 with a held Steel card), Tarot lines and target
+  count errors, the build brief on a headless shop (pace, shares, Cavendish
+  +200%/hand, Grabber as a fifth hand, held Jupiter, horizon, unpriced Tarot and
+  voucher), deck-order invariance, the replacement row with full Joker slots,
+  Boss rows sorted weakest first, and the three-key schema change (`focus:"boss"`
+  accepted, `engine` rejected).
+- `luajit tests/score-snapshot.test.lua` (35), `tests/observation.test.lua` (88)
+  and `tests/decision.test.lua` (38) passed.
+- `npm run stage-mod` and `npm run release:check` passed.
+- Measured locally: `best` over 32 samples of a 13-card pool took about 0.5 s
+  (about 30 scorings per sample instead of 1,287). A first build brief took about
+  2.6 s with 2 Jokers and 4 offers, about 5.3 s with 5 Jokers including Baron and
+  Steel cards (every selection scored); a repeat call on the same build about
+  3 ms from the per-connection cache; `focus:"boss"` added about 5–6 s.
+
+All verification was offline against the vendored 1.0.1o source. The staged mod
+was not installed and no live shop was analysed. The Steamodded dump was read
+to confirm that `round_resets.ante` drives blind targets and that Boss counts sit
+under `bosses_used.boss`; neither was exercised in the running game.

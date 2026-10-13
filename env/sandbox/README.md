@@ -128,7 +128,7 @@ Lua 内的搜索可直接用 `runtime.lua` 的 `new(source, json)`、`load(state
 - `error`：原型键错误、无剩余出牌次数、原版运行错误等。输入结构错误、进程启动失败、
   超时和取消由 TypeScript 接口抛出异常。
 
-`load` 成功返回 `{status: 'ready'}`，失败后会清除旧局面。试算失败会恢复基准状态，
+`load` 成功返回 `{status: 'ready', round}`，失败后会清除旧局面。试算失败会恢复基准状态，
 仍可继续尝试同一局面的其他合法选牌。恢复包括成长数值、强化/原型引用、Boss 记忆、
 出牌计数、钱、伪随机流和造牌编号，避免试算之间相互影响。
 
@@ -154,6 +154,20 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 不改变已加载的局面。完整结果在 Joker 的 `mult`、`x_mult` 或 `extra.chips` 于本手内变化时
 附带 `jokerChanges`（零基 Joker 下标、字段、前后值），例如 Ride the Bus 被计分人头牌清零。
 `minimal` 模式不执行 after-hand 结算，因此只包含计分过程中的变化。
+
+构筑分析用的假设局面（都需要 `passiveEffectsApplied: true` 的实机快照）：
+
+- `jokerEdits: {added, removed}`：按 `jokers` 下标，`added` 的 Joker 执行原版 `add_to_deck`，
+  `removed` 的执行 `remove_from_deck` 后移出，手牌上限、弃牌次数、概率等随之变化。
+- `applyBlind: true`：按 `blind` 重算扑克牌的 debuff（保留 `perma_debuff`），Chicot 在场时禁用 Boss。
+- 牌对象的 `convert: 'c_<tarot>'`：载入时执行原版 Tarot 的转换行（`set_ability`、`change_suit`、
+  Strength 的 `set_base`），不播放动画。
+- 有以上任一项时，载入后对全部 Joker 执行 `Card:update`，钢牌数量等计数跟随新构筑。
+
+`load` 成功时附带 `round: {handSize, hands, discards, jokerSlots, jokers}`，是这些编辑之后的
+回合参数。`best({minSize, maxSize, key, keep})` 枚举已载入手牌的选择，按牌型返回分数最高的
+`keep` 个选择和总最佳分。`key: 'scoring'` 时，同牌型、同计分牌（含 Stone）的选择只评一次，
+只在构筑不读取出牌张数和持牌时与逐一评分等价；`'size'` 另区分张数，`'full'` 逐一评分。
 
 ## MCP 观察
 

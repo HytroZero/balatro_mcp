@@ -54,14 +54,7 @@ return function(json)
     if unordered then table.sort(out, function(a,b) return json.encode(a) < json.encode(b) end) end
     return out
   end
-  local function build(hiddenHand)
-    -- Check before inspecting any identity or ability of a hidden card.
-    for _, a in ipairs(hiddenHand and {G.jokers, G.consumeables} or {G.hand, G.jokers, G.consumeables}) do
-      for _, c in ipairs(a.cards) do assert(c.facing ~= 'back', 'Face-down cards cannot be scored') end
-    end
-    local live = assert(G.GAME, 'Missing game')
-    local blind = assert(live.blind, 'Missing blind')
-    local back = assert(live.selected_back and live.selected_back.effect, 'Missing deck back')
+  local function membership()
     local members, count = {}, 0
     for _, a in ipairs({G.hand,G.deck,G.discard}) do
       assert(a and type(a.cards) == 'table', 'Missing playing card area')
@@ -72,11 +65,16 @@ return function(json)
     end
     assert(type(G.playing_cards) == 'table' and #G.playing_cards == count, 'Incomplete playing card membership')
     for _, c in ipairs(G.playing_cards) do assert(members[c], 'Playing card outside scoring areas') end
-    local state = {hand=area(G.hand, true, false, hiddenHand), jokers=area(G.jokers), consumables=area(G.consumeables),
-      deck=area(G.deck, true, true), discard=area(G.discard, true, true),
+  end
+  -- Everything except the playing card areas and the blind.
+  local function shell()
+    for _, a in ipairs({G.jokers, G.consumeables}) do
+      for _, c in ipairs(a.cards) do assert(c.facing ~= 'back', 'Face-down cards cannot be scored') end
+    end
+    local live = assert(G.GAME, 'Missing game')
+    local back = assert(live.selected_back and live.selected_back.effect, 'Missing deck back')
+    local state = {jokers=area(G.jokers), consumables=area(G.consumeables),
       back=vanilla(back.center), backConfig=copy(back.config),
-      blind={key=vanilla(blind.config and blind.config.blind), disabled=blind.disabled == true,
-        only_hand=blind.only_hand, hands=copy(blind.hands)},
       jokerSlots=G.jokers.config.card_limit, handSize=G.hand.config.card_limit,
       hands={}, game={}, passiveEffectsApplied=true, random='fixed'}
     for name, h in pairs(live.hands) do
@@ -103,9 +101,81 @@ return function(json)
       'most_played_poker_hand','current_hand','idol_card','ancient_card','castle_card','mail_card'}) do
       state.game.current_round[key] = copy(round[key])
     end
+    return state
+  end
+  local function build(hiddenHand)
+    -- Check before inspecting any identity or ability of a hidden card.
+    if not hiddenHand then for _, c in ipairs(G.hand.cards) do assert(c.facing ~= 'back', 'Face-down cards cannot be scored') end end
+    local state = shell()
+    local blind = assert(G.GAME.blind, 'Missing blind')
+    membership()
+    state.hand, state.deck, state.discard = area(G.hand, true, false, hiddenHand), area(G.deck, true, true), area(G.discard, true, true)
+    state.blind = {key=vanilla(blind.config and blind.config.blind), disabled=blind.disabled == true,
+      only_hand=blind.only_hand, hands=copy(blind.hands)}
     assert(#state.hand > 0, 'No hand to score')
     assert(type(G.hand.config.highlighted_limit) == 'number', 'Missing selection limit')
     return {status='ready',state=state,selectionLimit=math.min(5,G.hand.config.highlighted_limit)}
+  end
+  -- Public offers: shop cards, vouchers and opened pack cards. Unopened boosters have no known content.
+  local function offers(a)
+    local out = json.array()
+    for i, c in ipairs(a and a.cards or {}) do
+      local playing = c.ability and (c.ability.set == 'Default' or c.ability.set == 'Enhanced')
+      local ok, value = pcall(card, c, playing)
+      if ok and c.facing ~= 'back' then
+        value.index, value.cost, value.set = i - 1, c.cost, c.ability.set
+        out[#out + 1] = value
+      end
+    end
+    return out
+  end
+  -- Outside a hand: the whole deck, this Ante's blinds and the rules for later ones.
+  local function deckBuild()
+    local state = shell()
+    membership()
+    -- Membership is public in the deck view; neither order nor area is exported.
+    local pool = json.array()
+    for _, c in ipairs(G.playing_cards) do pool[#pool + 1] = card(c, true) end
+    table.sort(pool, function(a, b) return json.encode(a) < json.encode(b) end)
+    state.hand, state.deck, state.discard = json.array(), pool, json.array()
+    state.blind, state.random = {key='bl_small', disabled=false}, 'minimal'
+    local live = G.GAME
+    local resets = assert(live.round_resets, 'Missing round resets')
+    -- After a Boss the blind choices already belong to the advanced Ante.
+    local ante, scaling = resets.ante, live.starting_params.ante_scaling
+    local blinds = {}
+    for role, key in pairs(resets.blind_choices or {}) do
+      local center = G.P_BLINDS[key]
+      blinds[role] = {key=vanilla(center), status=resets.blind_states and resets.blind_states[role],
+        target=get_blind_amount(ante) * center.mult * scaling}
+    end
+    -- Base amounts (before each blind's multiplier) by the original target formula.
+    local amounts = json.array()
+    for a = ante, math.max(ante, live.win_ante) + 1 do
+      amounts[#amounts + 1] = get_blind_amount(a) * scaling
+    end
+    -- The Bosses get_new_boss can draw for the next Ante: its eligibility and least-used
+    -- rule over the run's public Boss history. Which one it draws is random and not exported.
+    -- Steamodded keeps the counts under bosses_used.boss; its optional weighted draw has no such rule.
+    local nextAnte, eligible, least, bossPool = ante + 1, {}, math.huge, json.array()
+    local used = type(live.bosses_used) == 'table' and type(live.bosses_used.boss) == 'table' and live.bosses_used.boss or live.bosses_used or {}
+    local weighted = SMODS and SMODS.optional_features and SMODS.optional_features.object_weights
+    local showdown = nextAnte % live.win_ante == 0 and nextAnte >= 2
+    for key, b in pairs(G.P_BLINDS) do
+      if b.boss and not b.mod and not (live.banned_keys or {})[key] and
+          (b.boss.showdown and showdown or not b.boss.showdown and not showdown and b.boss.min <= math.max(1, nextAnte)) then
+        eligible[key] = used[key] or 0
+        least = math.min(least, eligible[key])
+      end
+    end
+    for key, count in pairs(eligible) do
+      if count == least then bossPool[#bossPool + 1] = {key=key, name=G.P_BLINDS[key].name, mult=G.P_BLINDS[key].mult} end
+    end
+    table.sort(bossPool, function(a, b) return a.key < b.key end)
+    if weighted then bossPool = nil end
+    return {state=state, round={hands=resets.hands, discards=resets.discards}, ante=ante, winAnte=live.win_ante,
+      blinds=blinds, amounts=amounts, bossPool=bossPool,
+      offers={shop=offers(G.shop_jokers), vouchers=offers(G.shop_vouchers), pack=offers(G.pack_cards)}}
   end
   -- Money rules the game shows in its own UI: interest, round rewards and rent.
   local function economy()
@@ -131,10 +201,17 @@ return function(json)
     if phase == 'SELECTING_HAND' then
       local ok, value = pcall(build, true)
       result.scoring = ok and value or {status='unavailable',message=tostring(value)}
+    elseif phase == 'SHOP' or phase == 'PACK' or phase == 'BLIND_SELECT' then
+      local ok, value = pcall(deckBuild)
+      result.build = ok and {status='ready', input=value} or {status='unavailable', message=tostring(value)}
     end
     local ok, value = pcall(economy)
     if ok then result.economy = value end
     if pcall(json.encode, result) then return result end
+    if result.build then
+      result.build = {status='unavailable', message='Build snapshot cannot be serialized'}
+      if pcall(json.encode, result) then return result end
+    end
     return {phase=phase,scoring={status='unavailable',message='Analysis snapshot cannot be serialized'}}
   end
   function snapshot.read()

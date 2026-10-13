@@ -125,7 +125,7 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.equal(analysed.isError, true); assert.equal(record(analysed.structuredContent).code, 'incompatible_backend');
     assert.equal(record((await h.call('game_analyze', { revision: '9' })).structuredContent).code, 'stale_state');
     // Unimplemented focus values and action variants are outside the schema.
-    for (const args of [{ revision: '1', focus: 'boss' }, { revision: '1', lines: [[{ method: 'discard', cards: [0] }]] }]) {
+    for (const args of [{ revision: '1', focus: 'engine' }, { revision: '1', lines: [[{ method: 'discard', cards: [0] }]] }]) {
       const invalid = await h.call('game_analyze', args);
       assert.equal(invalid.isError, true); assert.match(JSON.stringify(invalid.content), /Input validation error/);
     }

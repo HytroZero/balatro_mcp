@@ -79,7 +79,7 @@ function sandbox.new(source, json)
     local extra = type(c.ability.extra) == 'table' and c.ability.extra or {}
     return {mult=c.ability.mult, x_mult=c.ability.x_mult, ['extra.chips']=extra.chips}
   end
-  local scoreOnly, evaluating = false, false
+  local scoreOnly, evaluating, classifying = false, false, false
   local scoringFinished = {}
   local trace, randomUsed, minimalUsed, denied, name, display, scoring
   local traceChips, traceMult = 0, 0
@@ -179,7 +179,7 @@ function sandbox.new(source, json)
   end
   local getId = env.Card.get_id
   env.Card.get_id = function(self)
-    if input and input.random == 'minimal' and evaluating and self.ability.effect == 'Stone Card' and not self.vampired then
+    if input and input.random == 'minimal' and (evaluating or classifying) and self.ability.effect == 'Stone Card' and not self.vampired then
       -- Original get_id samples a negative number only to keep rankless Stones
       -- distinct. A unique negative identity preserves that poker-hand rule.
       return -self.playing_card
@@ -232,6 +232,7 @@ function sandbox.new(source, json)
     G.deck, G.discard = area('deck', 52), area('discard', 52)
     G.playing_cards, G.playing_card = {}, 0
 
+    local converted = false
     local blindInput = type(input.blind) == 'table' and input.blind or {key=input.blind or 'bl_small'}
     local blind = assert(G.P_BLINDS[blindInput.key], 'Unknown blind')
     G.GAME.blind = setmetatable({name=blind.name, config={blind=blind}, debuff=clone(blind.debuff),
@@ -258,6 +259,18 @@ function sandbox.new(source, json)
       end
       if spec.editionValues then result.edition = clone(spec.editionValues) end
       result.seal = spec.seal
+      if spec.convert then
+        converted = true
+        -- The conversion lines of the original Card:use_consumeable, without its queued animation.
+        local tarot = assert(G.P_CENTERS[spec.convert], 'Unknown conversion').config
+        if spec.convert == 'c_strength' then
+          local id = result.base.id == 14 and 2 or math.min(result.base.id + 1, 14)
+          local suffix = id < 10 and tostring(id) or ({[10]='T',[11]='J',[12]='Q',[13]='K',[14]='A'})[id]
+          result:set_base(G.P_CARDS[string.sub(result.base.suit, 1, 1) .. '_' .. suffix])
+        elseif tarot.suit_conv then result:change_suit(tarot.suit_conv)
+        elseif tarot.mod_conv and G.P_CENTERS[tarot.mod_conv] then result:set_ability(G.P_CENTERS[tarot.mod_conv], nil, true)
+        else error('Unsupported conversion: ' .. spec.convert) end
+      end
       result:set_debuff(spec.debuff or false)
       if result.ability.perma_debuff then result.debuff = true end
       result:set_cost()
@@ -294,13 +307,35 @@ function sandbox.new(source, json)
     if not input.passiveEffectsApplied then
       for _, c in ipairs(G.jokers.cards) do if not c.debuff then c:add_to_deck() end end
       for _, c in ipairs(G.jokers.cards) do c:update(0) end
+    elseif input.jokerEdits then
+      -- A hypothetical build: live Jokers are already in the deck; added ones join and
+      -- removed ones leave through the original hooks (hand size, discards, probabilities).
+      local added, removed = {}, {}
+      for _, i in ipairs(input.jokerEdits.added or {}) do added[i + 1] = true end
+      for _, i in ipairs(input.jokerEdits.removed or {}) do removed[i + 1] = true end
+      local kept = {}
+      for i, c in ipairs(G.jokers.cards) do
+        if added[i] then if not c.debuff then c:add_to_deck() end else c.added_to_deck = not c.debuff end
+        if removed[i] then c:remove_from_deck() else kept[#kept + 1] = c end
+      end
+      G.jokers.cards = kept
+    end
+    if input.applyBlind and G.GAME.blind.boss then
+      -- Chicot disables a Boss when the blind is set.
+      for _, c in ipairs(G.jokers.cards) do if c.ability.name == 'Chicot' and not c.debuff then G.GAME.blind.disabled = true end end
+    end
+    if input.passiveEffectsApplied and (input.jokerEdits or input.applyBlind or converted) then
+      -- Deck tallies (Steel Joker, Stencil, Driver's License) follow the edited build.
+      for _, c in ipairs(G.jokers.cards) do c:update(0) end
     end
     if blind.name == 'The Hook' and not G.GAME.blind.disabled then
       return {status='unsupported', message='The Hook pre-scoring discards are not supported'}
     end
     for _, c in ipairs(G.playing_cards) do
-      local explicit = c.debuff
-      if not input.passiveEffectsApplied then G.GAME.blind:debuff_card(c) end
+      local explicit = c.debuff and not input.applyBlind
+      if input.applyBlind then c.debuff = false end
+      if not input.passiveEffectsApplied or input.applyBlind then G.GAME.blind:debuff_card(c) end
+      if input.applyBlind and c.ability.perma_debuff then c.debuff = true end
       if explicit then c.debuff = true end
       if not input.passiveEffectsApplied then c:update(0) end
     end
@@ -310,7 +345,8 @@ function sandbox.new(source, json)
     for i, c in ipairs(G.jokers.cards) do jokerBase[i] = growth(c) end
     restoreBaseline = checkpoint({G.GAME, G.hand, G.play, G.jokers, G.consumeables, G.deck.config}, immutable)
     loads = loads + 1
-    return {status='ready'}
+    return {status='ready', round={handSize=G.hand.config.card_limit, hands=G.GAME.round_resets.hands,
+      discards=G.GAME.round_resets.discards, jokerSlots=G.jokers.config.card_limit, jokers=#G.jokers.cards}}
   end
 
   local function evaluate(selection, scalar, ordered)
@@ -435,6 +471,64 @@ function sandbox.new(source, json)
     end)
     if not ok then return json.array({'unavailable: ' .. (type(result) == 'table' and result.message or tostring(result))}) end
     return result
+  end
+  -- Best plays of the loaded hand by poker hand. Selections that share a poker hand and
+  -- scoring cards score alike unless the build reads played or held card counts, so `key`
+  -- says what distinguishes them: 'scoring' (with Stones), 'size' (also the count) or 'full'.
+  function runtime.best(minSize, maxSize, key, keep)
+    assert(restoreBaseline, 'Load a position before scoring')
+    assert(minSize >= 1 and maxSize <= 5 and minSize <= maxSize, 'Invalid selection sizes')
+    local seen, families, picked, scored, top = {}, {}, {}, 0, 0
+    local splash = next(env.find_joker('Splash')) ~= nil
+    local function trial()
+      local signature
+      if key == 'full' or splash then signature = table.concat(picked, ',')
+      else
+        local cards = {}
+        for i, index in ipairs(picked) do cards[i] = all[index + 1] end
+        classifying = true
+        local ok, hand, _, _, scoringCards = pcall(G.FUNCS.get_poker_hand_info, cards)
+        classifying = false
+        if not ok then error(hand, 0) end
+        local members = {}
+        for _, c in ipairs(scoringCards) do members[c] = true end
+        for _, c in ipairs(cards) do if c.ability.effect == 'Stone Card' then members[c] = true end end
+        local ids = {}
+        for _, index in ipairs(picked) do if members[all[index + 1]] then ids[#ids + 1] = index end end
+        signature = hand .. ':' .. table.concat(ids, ',') .. (key == 'size' and ('#' .. #picked) or '')
+      end
+      if seen[signature] then return end
+      seen[signature] = true
+      local result = runtime.score(picked, 'play')
+      scored = scored + 1
+      if result.status ~= 'ok' then error(result, 0) end
+      if result.notAllowed then return end
+      if result.score > top then top = result.score end
+      local list = families[result.hand] or {}
+      families[result.hand] = list
+      local at = #list + 1
+      while at > 1 and result.score > list[at - 1].score do at = at - 1 end
+      if at <= keep then
+        table.insert(list, at, {play=clone(picked), score=result.score})
+        if #list > keep then list[keep + 1] = nil end
+      end
+    end
+    local function walk(start, remaining)
+      if remaining == 0 then trial(); return end
+      for i = start, #all - remaining + 1 do
+        picked[#picked + 1] = i - 1
+        walk(i + 1, remaining - 1)
+        picked[#picked] = nil
+      end
+    end
+    for size = math.min(maxSize, #all), minSize, -1 do walk(1, size) end
+    local out = {}
+    for hand, list in pairs(families) do
+      local rows = json.array()
+      for i, row in ipairs(list) do local play = json.array(); for j, v in ipairs(row.play) do play[j] = v end; rows[i] = {play=play, score=row.score} end
+      out[hand] = rows
+    end
+    return {best=top, families=out, scored=scored}
   end
   function runtime.stats()
     return {sourceLoads=1, positionLoads=loads, calculations=calculations, luaMemoryKiB=collectgarbage('count')}

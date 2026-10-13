@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { LiveScoreStateSchema, type ScoreState } from '../sandbox/index.ts';
+import { CardStateSchema, LiveScoreStateSchema, type ScoreState } from '../sandbox/index.ts';
 
 const hiddenCard = z.strictObject({ facing: z.literal('back') });
 const AnalysisStateSchema = LiveScoreStateSchema.extend({
@@ -14,11 +14,32 @@ const EconomySchema = z.object({
 });
 export type Economy = z.infer<typeof EconomySchema>;
 
+const count = z.number().int().nonnegative();
+const OfferSchema = CardStateSchema.extend({ index: count, cost: money, set: z.string() });
+export type Offer = z.infer<typeof OfferSchema>;
+/** Outside a hand: the whole deck as an unordered pool, this Ante's blinds and the rules for later Antes. */
+const BuildInputSchema = z.object({
+  state: LiveScoreStateSchema.extend({ hand: z.array(z.never()).max(0), deck: LiveScoreStateSchema.shape.deck.min(1) }),
+  round: z.object({ hands: count, discards: count }),
+  ante: z.number().int(), winAnte: z.number().int().positive(),
+  blinds: z.record(z.string(), z.object({ key: z.string(), status: z.string().optional(), target: money })),
+  /** Base blind amounts (before each blind's multiplier) from `ante` onwards. */
+  amounts: z.array(money).min(1),
+  /** Absent when the game draws Bosses by a rule the mod does not mirror. */
+  bossPool: z.array(z.object({ key: z.string(), name: z.string(), mult: money })).optional(),
+  offers: z.object({ shop: z.array(OfferSchema), vouchers: z.array(OfferSchema), pack: z.array(OfferSchema) }),
+});
+export type BuildInput = z.infer<typeof BuildInputSchema>;
+
 /** The `analysis` half of `sf.analysis_snapshot`: sandbox input plus the money rules shown in the game. */
 export const AnalysisSnapshotSchema = z.object({
   phase: z.string(),
   scoring: z.union([
     z.object({ status: z.literal('ready'), state: AnalysisStateSchema, selectionLimit: z.number().int().min(0).max(5) }),
+    z.object({ status: z.literal('unavailable'), message: z.string() }),
+  ]).optional(),
+  build: z.union([
+    z.object({ status: z.literal('ready'), input: BuildInputSchema }),
     z.object({ status: z.literal('unavailable'), message: z.string() }),
   ]).optional(),
   economy: EconomySchema.optional(),

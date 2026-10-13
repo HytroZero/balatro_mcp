@@ -47,6 +47,25 @@ check(shop.scoring == nil and shop.phase == 'SHOP', 'only the hand phase exports
 check(shop.economy.dollars == 20 and shop.economy.interestCap == 25 and shop.economy.moneyPerHand == 2 and shop.economy.rentals == 1, 'economy rules are exported')
 check(shop.economy.blindRewards.Small == 0 and shop.economy.blindRewards.Big == 4 and shop.economy.blindRewards.Boss == 5, 'stake reward rules apply per blind')
 check(not json.encode(shop):find('PRIVATE_SEED',1,true), 'analysis excludes the seed')
+check(shop.build and shop.build.status == 'unavailable', 'an incomplete build snapshot is reported, not guessed')
+G.GAME.starting_params={ante_scaling=2}; G.GAME.win_ante=8; G.GAME.banned_keys={bl_mouth=true}
+G.GAME.bosses_used={bl_eye=1,bl_club=0,bl_goad=0,bl_mouth=0,bl_final_bell=0}
+get_blind_amount=function(ante) return 100*ante end
+for key, b in pairs(G.P_BLINDS) do b.key = key end
+G.P_BLINDS.bl_small.mult, G.P_BLINDS.bl_big.mult, G.P_BLINDS.bl_eye.mult = 1, 1.5, 2
+G.P_BLINDS.bl_eye.boss={min=3}; G.P_BLINDS.bl_club={key='bl_club',name='The Club',mult=2,boss={min=1}}; G.P_BLINDS.bl_goad={key='bl_goad',name='The Goad',mult=2,boss={min=6}}
+G.P_BLINDS.bl_mouth={key='bl_mouth',name='The Mouth',mult=2,boss={min=2}}; G.P_BLINDS.bl_final_bell={key='bl_final_bell',name='Cerulean Bell',mult=2,boss={min=10,showdown=true}}
+G.GAME.round_resets.blind_states={Small='Defeated',Big='Upcoming',Boss='Upcoming'}
+G.shop_jokers={cards={{facing='front',config={center={key='j_cavendish'}},ability={set='Joker'},cost=4}}}
+local built = snapshot.analysis('SHOP').build
+check(built.status == 'ready', built.message or 'build snapshot ready')
+local input = built.input
+check(#input.state.hand == 0 and #input.state.deck == 3 and input.state.random == 'minimal', 'the whole deck is one unordered pool')
+check(input.ante == 5 and input.amounts[1] == 1000 and input.amounts[#input.amounts] == 1800, 'base amounts from this Ante with the stake scaling')
+check(input.blinds.Big.target == 1500 and input.blinds.Small.status == 'Defeated', 'blind targets and states')
+check(#input.bossPool == 2 and input.bossPool[1].key == 'bl_club' and input.bossPool[2].key == 'bl_goad' and input.bossPool[2].mult == 2, 'next Boss pool: eligible, not banned, least used')
+check(input.offers.shop[1].key == 'j_cavendish' and input.offers.shop[1].cost == 4 and input.offers.shop[1].index == 0, 'shop offers keep their index and price')
+check(not json.encode(built):find('PRIVATE_SEED',1,true), 'build snapshot excludes the seed')
 G.jokers.cards={}; G.GAME.modifiers=nil; G.GAME.round_resets.blind_choices=nil
 a.config.center.mod={id='custom'}
 check(snapshot.read().status == 'unavailable', 'custom prototypes explicitly unsupported')

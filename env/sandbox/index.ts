@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { projectRoot } from '../../src/config.ts';
 
 const data = z.record(z.string(), z.json());
-const cardState = z.strictObject({
+export const CardStateSchema = z.strictObject({
   key: z.string().min(1),
   enhancement: z.string().optional(),
   edition: z.enum(['foil', 'holo', 'polychrome', 'negative']).optional(),
@@ -15,8 +15,10 @@ const cardState = z.strictObject({
   ability: data.optional(),
   base: data.optional(),
   editionValues: data.optional(),
+  /** A Tarot whose conversion (enhancement, suit or Strength's rank) applies to this card on load. */
+  convert: z.string().regex(/^c_/).optional(),
 });
-const card = z.union([z.string().min(1), cardState]);
+const card = z.union([z.string().min(1), CardStateSchema]);
 export const ScoreStateSchema = z.strictObject({
   hand: z.array(card).min(1).max(52),
   jokers: z.array(card).max(100).optional(),
@@ -29,6 +31,10 @@ export const ScoreStateSchema = z.strictObject({
   backConfig: data.optional(),
   /** Exact live position: passive hooks and per-frame tallies have already run. */
   passiveEffectsApplied: z.boolean().optional(),
+  /** With passiveEffectsApplied: Jokers that join (add_to_deck) or leave (remove_from_deck) the live build. */
+  jokerEdits: z.strictObject({ added: z.array(z.number().int().nonnegative()).optional(), removed: z.array(z.number().int().nonnegative()).optional() }).optional(),
+  /** Recompute playing card debuffs for `blind`, as when that blind is set. */
+  applyBlind: z.boolean().optional(),
   blind: z.union([z.string(), z.strictObject({
     key: z.string(), disabled: z.boolean().optional(),
     only_hand: z.string().optional(), hands: z.record(z.string(), z.boolean()).optional(),
@@ -59,11 +65,11 @@ export type ScoreState = z.infer<typeof ScoreStateSchema>;
 /** Live imports must not receive the offline API's guessed/default position data. */
 export const LiveScoreStateSchema = ScoreStateSchema.extend({
   passiveEffectsApplied: z.literal(true),
-  hand: z.array(cardState.required({ ability: true, base: true })).min(1).max(52),
-  deck: z.array(cardState.required({ ability: true, base: true })).max(520),
-  discard: z.array(cardState.required({ ability: true, base: true })).max(520),
-  jokers: z.array(cardState.required({ ability: true })).max(100),
-  consumables: z.array(cardState.required({ ability: true })).max(100),
+  hand: z.array(CardStateSchema.required({ ability: true, base: true })).min(1).max(52),
+  deck: z.array(CardStateSchema.required({ ability: true, base: true })).max(520),
+  discard: z.array(CardStateSchema.required({ ability: true, base: true })).max(520),
+  jokers: z.array(CardStateSchema.required({ ability: true })).max(100),
+  consumables: z.array(CardStateSchema.required({ ability: true })).max(100),
   back: z.string().min(1), backConfig: data,
   blind: z.strictObject({ key: z.string(), disabled: z.boolean(), only_hand: z.string().optional(),
     hands: z.record(z.string(), z.boolean()).optional() }),
@@ -109,7 +115,13 @@ const ScoreResultSchema = z.discriminatedUnion('status', [
 export type ScoreResult = z.infer<typeof ScoreResultSchema>;
 const failure = z.object({ status: z.enum(['unsupported', 'unavailable', 'error']), message: z.string() });
 export type ScoreFailure = z.infer<typeof failure>;
-export type LoadResult = { status: 'ready' } | ScoreFailure;
+const RoundSchema = z.object({ handSize: z.number().int(), hands: z.number().int(), discards: z.number().int(), jokerSlots: z.number().int(), jokers: z.number().int() });
+/** Round parameters of the loaded position after its Joker edits. */
+export type LoadedRound = z.infer<typeof RoundSchema>;
+export type LoadResult = { status: 'ready'; round?: LoadedRound } | ScoreFailure;
+const BestSchema = z.object({ best: z.number().finite(), scored: z.number().int(),
+  families: z.record(z.string(), z.array(z.object({ play: z.array(z.number().int().nonnegative()), score: z.number().finite() }))) });
+export type BestPlays = z.infer<typeof BestSchema>;
 const PlaysResultSchema = z.union([
   z.tuple([z.string().regex(/^unavailable: .+/s)]),
   z.array(z.string().regex(/^\d+(?: \d+)*: .+ -?\d+(?:\.\d+)?(?:e[+-]?\d+)?(?: not allowed)?(?: minimal)?$/i)).min(1).max(15),
@@ -227,7 +239,7 @@ export class ScoringSandbox {
     const parsed = ScoreStateSchema.parse(state);
     return this.enqueue(async () => {
       this.handLength = undefined;
-      const result = z.union([z.object({ status: z.literal('ready') }), failure]).parse(await this.request('load', { state: parsed }));
+      const result = z.union([z.object({ status: z.literal('ready'), round: RoundSchema.optional() }), failure]).parse(await this.request('load', { state: parsed }));
       if (result.status === 'ready') this.handLength = parsed.hand.length;
       return result;
     });
@@ -323,6 +335,20 @@ export class ScoringSandbox {
       const results = z.array(z.union([z.number().finite(), failure])).parse(await this.request('scores', { plays: this.selections(copy) }));
       if (results.length !== copy.length) throw new Error('Sandbox batch length mismatch');
       return results;
+    });
+  }
+
+  /**
+   * Best plays of the loaded hand per poker hand, `keep` per hand. `key` says which selections
+   * may differ in score: 'scoring' (poker hand and scoring cards), 'size' (also the card count), 'full'.
+   */
+  best(options: { minSize: number; maxSize: number; key: 'scoring' | 'size' | 'full'; keep: number }): Promise<BestPlays> {
+    const { minSize, maxSize, key, keep } = options;
+    return this.enqueue(async () => {
+      if (this.handLength === undefined) throw new Error('Load a position before scoring');
+      const result = z.union([BestSchema, failure]).parse(await this.request('best', { minSize, maxSize, key, keep }));
+      if ('status' in result) throw new Error(result.message);
+      return result;
     });
   }
 

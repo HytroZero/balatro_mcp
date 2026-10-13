@@ -9,7 +9,7 @@ const object = <T extends Record<string, TSchema>>(properties: T) => Type.Object
 /** The action variants a hypothetical line may contain; shapes match ActionSchema. */
 export const AnalysisActionSchema = Type.Union([
   object({ method: Type.Literal('play'), cards: Type.Array(index, { minItems: 1, maxItems: 5, uniqueItems: true }) }),
-  object({ method: Type.Literal('use'), consumable: index }),
+  object({ method: Type.Literal('use'), consumable: index, cards: Type.Optional(Type.Array(index, { minItems: 1, maxItems: 5, uniqueItems: true })) }),
   object({ method: Type.Literal('rearrange'), jokers: indices }),
   object({ method: Type.Literal('rearrange'), hand: indices }),
 ]);
@@ -26,13 +26,20 @@ export interface HandBrief {
 export interface HandResult { brief: HandBrief; /** Exact scores by sorted real indices, for the play audit. */ predictions: Map<string, number>; }
 export interface HandOptions { lines?: Line[]; deadline: number; /** False after a prediction mismatch in this run. */ trusted: boolean; }
 
-const PLANETS: Record<string, string> = {
+export const PLANETS: Record<string, string> = {
   c_pluto: 'High Card', c_mercury: 'Pair', c_uranus: 'Two Pair', c_venus: 'Three of a Kind', c_saturn: 'Straight', c_jupiter: 'Flush',
   c_earth: 'Full House', c_mars: 'Four of a Kind', c_neptune: 'Straight Flush', c_planet_x: 'Five of a Kind', c_ceres: 'Flush House', c_eris: 'Flush Five',
 };
 const PLANET_OF = Object.fromEntries(Object.entries(PLANETS).map(([key, hand]) => [hand, key.slice(2).replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())]));
 const FIELD: Record<string, string> = { mult: 'Mult', x_mult: 'XMult', 'extra.chips': 'chips' };
-const MAX_FAMILIES = 6, ORDER_BUDGET_MS = 1200;
+const MAX_FAMILIES = 6, ORDER_BUDGET_MS = 1200, TAROT_SETS = 100;
+/** Tarots with a deterministic effect on chosen hand cards, by target count. */
+const TAROTS: Record<string, { min?: number; max: number }> = {
+  c_magician: { max: 2 }, c_empress: { max: 2 }, c_hierophant: { max: 2 }, c_lovers: { max: 1 }, c_chariot: { max: 1 }, c_justice: { max: 1 },
+  c_devil: { max: 1 }, c_tower: { max: 1 }, c_strength: { max: 2 }, c_star: { max: 3 }, c_moon: { max: 3 }, c_sun: { max: 3 }, c_world: { max: 3 },
+  c_death: { min: 2, max: 2 },
+};
+const HELD_EFFECTS = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard']);
 
 const cardsOf = (value: unknown): Data[] => (Array.isArray(record(value).cards) ? record(value).cards as unknown[] : []).map(record);
 const num = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
@@ -184,30 +191,87 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
     const scored = await scoreAll(sandbox, at, wanted);
     return { entry: best(scored.entries), pool: scored.entries, error: scored.entries.length ? undefined : scored.failed[0] ?? 'no selection could be scored' };
   };
-  /** The position after using a Planet: its hand one level up and the card gone from the consumables. */
-  const afterPlanet = (state: ScoreState, used: number[]): { state: ScoreState; error?: string } => {
-    const hands = { ...state.hands };
-    for (const slot of used) {
-      const name = PLANETS[String(consumables[slot]?.key)], current = name ? hands[name] : undefined;
-      if (!name || !current || current.level === undefined) return { state, error: `${String(consumables[slot]?.label ?? `consumable ${slot}`)} cannot be applied` };
-      hands[name] = { level: current.level + 1, played: current.played, played_this_round: current.played_this_round };
+  /**
+   * The position after using consumables in order: a Planet levels its hand; a Tarot converts its
+   * targets (real hand indices) with the original conversion code, or Death copies the rightmost
+   * target onto the others. Used cards leave the consumables.
+   */
+  const afterUse = (state: ScoreState, steps: { slot: number; cards?: number[] }[]): { state: ScoreState; error?: string } => {
+    const hands = { ...state.hands }, hand = [...state.hand];
+    for (const { slot, cards } of steps) {
+      const key = String(consumables[slot]?.key), shown = String(consumables[slot]?.label ?? `consumable ${slot}`);
+      const name = PLANETS[key];
+      if (name) {
+        const current = hands[name];
+        if (cards?.length || !current || current.level === undefined) return { state, error: `${shown} cannot be applied` };
+        hands[name] = { level: current.level + 1, played: current.played, played_this_round: current.played_this_round };
+        continue;
+      }
+      const rule = TAROTS[key];
+      if (!rule) return { state, error: `using ${shown} is not analysed yet` };
+      const targets = cards ?? [];
+      if (targets.length < (rule.min ?? 1) || targets.length > rule.max) return { state, error: `${shown} needs ${rule.min ?? 1}-${rule.max} target cards` };
+      if (targets.some(i => !pos.visible.includes(i))) return { state, error: `${shown} targets a missing or face-down card` };
+      const slots = targets.map(i => pos.visible.indexOf(i));
+      if (key === 'c_death') {
+        const right = Math.max(...slots);
+        for (const s of slots) if (s !== right) hand[s] = structuredClone(hand[right]!);
+      } else for (const s of slots) { const card = hand[s]!; hand[s] = typeof card === 'string' ? { key: card, convert: key } : { ...card, convert: key }; }
     }
-    return { state: { ...state, hands, consumables: (state.consumables ?? []).filter((_, i) => !used.includes(i)) } };
+    const used = steps.map(s => s.slot);
+    return { state: { ...state, hands, hand, consumables: (state.consumables ?? []).filter((_, i) => !used.includes(i)) } };
   };
   const constellation = (base.jokers ?? []).some(joker => typeof joker === 'object' && joker.key === 'j_constellation');
   const planetNote = 'Planet rows do not include Constellation\'s own growth';
+  // Selections with the same poker hand and scoring cards score alike unless the build reads
+  // played or held cards, so target searches score one selection per such group.
+  const jokerKeys = (base.jokers ?? []).map(j => typeof j === 'string' ? j : j.key);
+  const searchKey = jokerKeys.some(k => HELD_EFFECTS.has(k)) || base.hand.some(c => typeof c === 'object' && c.enhancement === 'm_steel') ? 'full' as const
+    : jokerKeys.some(k => k === 'j_half' || k === 'j_square') ? 'size' as const : 'scoring' as const;
 
-  // Planets held now: the best play after using each one.
+  // Consumables held now: the best play after using each one, a Tarot on its best targets.
   const use: string[] = [];
+  const tried = new Set<string>();
   for (const [slot, card] of consumables.entries()) {
-    if (!PLANETS[String(card.key)]) continue;
+    const key = String(card.key);
     if (overBudget()) { skipped.push('use'); break; }
-    const edited = afterPlanet(base, [slot]);
-    if (edited.error) continue;
-    const after = await variant(edited.state, pos.visible);
+    if (PLANETS[key]) {
+      const edited = afterUse(base, [{ slot }]);
+      if (edited.error) continue;
+      const after = await variant(edited.state, pos.visible);
+      if (after.entry && after.entry.r.score > top.r.score) {
+        use.push(`consumable ${slot} ${String(card.label ?? key)}, then ${row(after.entry, after.pool)} (best now ${top.r.score})`);
+        if (constellation && !notes.includes(planetNote)) notes.push(planetNote);
+      }
+      continue;
+    }
+    const rule = TAROTS[key];
+    if (!rule || tried.has(key)) continue;
+    tried.add(key);
+    // Every target set of the allowed sizes; forced cards need the full enumeration instead of the grouped search.
+    const sets = selections(pos.visible.length, rule.max).filter(s => s.length >= (rule.min ?? 1))
+      .sort((a, b) => a.length - b.length).map(s => s.map(i => pos.visible[i]!));
+    let found: { targets: number[]; score: number } | undefined, complete = true;
+    for (const targets of sets.slice(0, TAROT_SETS)) {
+      if (overBudget()) { complete = false; break; }
+      const edited = afterUse(base, [{ slot, cards: targets }]);
+      if (edited.error) break;
+      let score: number;
+      if (forcedReal.length) {
+        const after = await variant(edited.state, pos.visible);
+        score = after.entry && !after.entry.r.notAllowed ? after.entry.r.score : -1;
+      } else {
+        if ((await sandbox.load(edited.state)).status !== 'ready') continue;
+        // A new Steel card is a held effect.
+        score = (await sandbox.best({ minSize: 1, maxSize: limit, key: key === 'c_chariot' ? 'full' : searchKey, keep: 1 })).best;
+      }
+      if (score > top.r.score && (!found || score > found.score)) found = { targets, score };
+    }
+    if (!complete || sets.length > TAROT_SETS) notes.push(`${String(card.label ?? key)} targets: searched ${complete ? Math.min(sets.length, TAROT_SETS) : 'part'} of ${sets.length} target sets`);
+    if (!found) continue;
+    const after = await variant(afterUse(base, [{ slot, cards: found.targets }]).state, pos.visible);
     if (after.entry && after.entry.r.score > top.r.score) {
-      use.push(`consumable ${slot} ${String(card.label ?? card.key)}, then ${row(after.entry, after.pool)} (best now ${top.r.score})`);
-      if (constellation && !notes.includes(planetNote)) notes.push(planetNote);
+      use.push(`consumable ${slot} ${String(card.label ?? key)} on ${found.targets.join(' ')}, then ${row(after.entry, after.pool)} (best now ${top.r.score})`);
     }
   }
   if (use.length) brief.use = use;
@@ -254,14 +318,14 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
       const name = `line ${n + 1}`;
       if (overBudget()) { brief.lines.push(`${name}: unavailable; time budget exhausted`); continue; }
       let jokerOrder: number[] | undefined, handOrder: number[] | undefined, play: number[] | undefined, error: string | undefined;
-      const used: number[] = [], told: string[] = [];
+      const used: { slot: number; cards?: number[] }[] = [], told: string[] = [];
       for (const [k, step] of line.entries()) {
         if (play) { error = `step ${k + 1} follows the play`; break; }
         if (step.method === 'use') {
           const card = consumables[step.consumable];
-          if (!card || used.includes(step.consumable)) { error = `consumable ${step.consumable} is not available`; break; }
-          if (!PLANETS[String(card.key)]) { error = `using ${String(card.label ?? card.key)} is not analysed yet`; break; }
-          used.push(step.consumable); told.push(`use ${String(card.label ?? card.key)}`);
+          if (!card || used.some(u => u.slot === step.consumable)) { error = `consumable ${step.consumable} is not available`; break; }
+          used.push({ slot: step.consumable, cards: step.cards });
+          told.push(`use ${String(card.label ?? card.key)}${step.cards ? ` on ${step.cards.join(' ')}` : ''}`);
         } else if (step.method === 'rearrange' && 'jokers' in step) {
           if (!isPermutation(step.jokers, jokers.length)) { error = 'jokers must be a full permutation'; break; }
           jokerOrder = step.jokers; told.push(`jokers [${step.jokers.join(',')}]`);
@@ -275,15 +339,15 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
         }
       }
       if (error) { brief.lines.push(`${name}: unavailable; ${error}`); continue; }
-      const planets = afterPlanet(base, used);
-      if (planets.error) { brief.lines.push(`${name}: unavailable; ${planets.error}`); continue; }
+      const applied = afterUse(base, used);
+      if (applied.error) { brief.lines.push(`${name}: unavailable; ${applied.error}`); continue; }
       // After a hand rearrange, sandbox slots follow the new order while indices stay those of the observation.
       const visible = (handOrder ?? scoring.state.hand.map((_, i) => i)).filter(i => pos.visible.includes(i));
-      const state: ScoreState = { ...planets.state, hand: visible.map(i => base.hand[pos.visible.indexOf(i)]!),
-        jokers: jokerOrder ? jokerOrder.map(i => jokers[i]!) : planets.state.jokers };
+      const state: ScoreState = { ...applied.state, hand: visible.map(i => applied.state.hand[pos.visible.indexOf(i)]!),
+        jokers: jokerOrder ? jokerOrder.map(i => jokers[i]!) : applied.state.jokers };
       const outcome = await variant(state, visible, play);
       if (!outcome.entry) { brief.lines.push(`${name}: unavailable; ${outcome.error ?? 'could not be scored'}`); continue; }
-      if (used.length && constellation && !notes.includes(planetNote)) notes.push(planetNote);
+      if (used.some(u => PLANETS[String(consumables[u.slot]?.key)]) && constellation && !notes.includes(planetNote)) notes.push(planetNote);
       brief.lines.push(`${name}: ${told.join(' > ')}${play ? '' : `${told.length ? ' > ' : ''}best play`} -> ${row(outcome.entry, outcome.pool, jokerOrder ? jokerOrder.map(i => jokerNames[i]!) : jokerNames)}`);
     }
   }

@@ -191,7 +191,7 @@ test('live snapshot export round-trips original scores without applying passive 
       assert.equal(snapshot.state.passiveEffectsApplied,true);
       assert.equal(LiveScoreStateSchema.safeParse(snapshot.state).success,true);
       assert.equal(snapshot.state.game?.pseudorandom,undefined);
-      assert.deepEqual(await sandbox.load(snapshot.state),{status:'ready'});
+      assert.equal((await sandbox.load(snapshot.state)).status,'ready');
       assert.deepEqual(await sandbox.scoreBatch(fixture.plays),fixture.expected);
     }
   } finally { await sandbox.close(); }
