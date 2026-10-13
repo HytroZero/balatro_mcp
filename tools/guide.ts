@@ -136,9 +136,12 @@ It comes from running the game's own hand evaluation on each selection and then
 restoring every touched value; it advances no RNG and reads no face-down card.
 \`random\` marks a score that involved a chance effect; the shown score assumes every
 chance fails (lowest outcome). \`not allowed\` means the Boss rejects that hand (score 0).
-The Hook's random discard before scoring is not simulated. A face-down card in hand or
-Jokers gives \`unavailable: face-down cards\`; \`truncated\` means the time budget ended
-before every selection was scored. Plays are advice; any legal selection may be played.
+Money lost before Jokers score (The Tooth, The Ox) is applied. DNA's copy is ignored,
+also when copied by Blueprint or Brainstorm: scores are as if DNA had no effect.
+Any other card creation gives \`unavailable\` before creating a card. The Hook's
+random discard before scoring is not simulated. \`plays\` is absent while any card
+in hand or Jokers is face-down. \`truncated\` means the time budget ended before
+every selection was scored. Plays are advice; any legal selection may be played.
 
 Line tags, in order: \`Tarot\`/\`Planet\`/\`Spectral\`, \`$N\` (buy price), \`sell $N\` or
 \`eternal\`, \`rental\`, \`perishable N\`, edition, \`debuffed\`, target count such as

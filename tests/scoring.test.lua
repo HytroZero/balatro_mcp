@@ -25,6 +25,7 @@ Card = {juice_up = forbid('Card:juice_up')}; Card.__index = Card
 local Blind = {}; Blind.__index = Blind
 function Blind:debuff_hand(cards, _, name, check)
   if not check then self.triggered = true end
+  if self.name == 'The Ox' and not check and name == G.GAME.current_round.most_played_poker_hand then ease_dollars(-G.GAME.dollars, true) end
   return self.name == 'The Psychic' and #cards < 5 or self.only == name
 end
 
@@ -72,6 +73,7 @@ local function reset()
     for _, j in ipairs(G.jokers.cards) do
       if j.ability.extra then j.ability.mult = j.ability.mult + j.ability.extra.gain; mult = mult + j.ability.mult end
       if j.ability.x and G.GAME.current_round.hands_left == 0 then mult = mult * j.ability.x end
+      if j.ability.bull then hand_chips = hand_chips + j.ability.bull * math.max(0, G.GAME.dollars + (G.GAME.dollar_buffer or 0)) end
       j:juice_up()
     end
     G.E_MANAGER:add_event({})
@@ -113,12 +115,11 @@ reset(); G.hand.cards[3].ability.forced_selection = true
 plays = scoring.plays()
 for _, line in ipairs(plays) do check(line:match('^[%d ]*'):find('2', 1, true), 'every selection contains the forced card: ' .. line) end
 
--- Face-down cards stop scoring before any game code runs.
+-- Face-down cards stop scoring before any game code runs, and plays is omitted.
 reset(); G.hand.cards[2].facing = 'back'; G.FUNCS.evaluate_play = forbid('evaluate_play')
-plays = scoring.plays()
-check(#plays == 1 and plays[1] == 'unavailable: face-down cards', 'face-down hand card')
+check(scoring.plays() == nil, 'face-down hand card')
 reset(); G.jokers.cards[1].facing = 'back'; G.FUNCS.evaluate_play = forbid('evaluate_play')
-check(scoring.plays()[1] == 'unavailable: face-down cards', 'face-down Joker')
+check(scoring.plays() == nil, 'face-down Joker')
 
 -- A failing evaluation is contained and still restored.
 reset(); before = world()
@@ -127,6 +128,126 @@ plays = scoring.plays()
 check(#plays == 1 and plays[1]:find('unavailable:', 1, true) and plays[1]:find('boom', 1, true), 'failure reported')
 check(world() == before, 'failed evaluation leaves no trace')
 check(G.GAME.dollars == 10 and G.jokers.cards[1].ability.mult == 1, 'failed evaluation is undone')
+
+-- Vampire/Midas Mask replace ability and change config in place through set_ability.
+for _, fail in ipairs({false, true}) do
+  for _, target in ipairs({'c_base', 'm_gold'}) do
+    reset()
+    local originalCenter, newCenter = {key='m_mult'}, {key=target}
+    local card = G.hand.cards[1]
+    card.config = {center=originalCenter, center_key='m_mult'}
+    local originalConfig, originalAbility = card.config, card.ability
+    local evaluatePlay, trials = G.FUNCS.evaluate_play, 0
+    before = world()
+    G.FUNCS.evaluate_play = function()
+      assert(card.config.center == originalCenter and card.config.center_key == 'm_mult', 'each trial starts with the real enhancement')
+      card.config.center, card.config.center_key = newCenter, target
+      card.ability = {set='Enhanced', bonus=50}
+      trials = trials + 1
+      if fail then error('set_ability failure') end
+      evaluatePlay()
+    end
+    plays = scoring.plays()
+    check(trials == 15, 'all enhancement trials execute')
+    check(world() == before, 'enhancement restored after ' .. target .. (fail and ' failure' or ' success'))
+    check(card.config == originalConfig and card.config.center == originalCenter and card.ability == originalAbility,
+      'config, shared center and ability identities are preserved')
+    check(fail and plays[1]:find('set_ability failure', 1, true) or not fail and not plays[1]:find('unavailable:', 1, true),
+      'enhancement evaluation has the expected outcome')
+  end
+end
+
+-- Card creation is rejected before touching registries, deck capacity, sprites or RNG.
+for _, entry in ipairs({'copy_card','create_card','create_playing_card','init','add_card'}) do
+  reset()
+  G.playing_card = 52
+  G.playing_cards = {G.hand.cards[1]}
+  G.deck = {config={card_limit=52}}
+  G.I = {CARD={G.hand.cards[1]}}
+  local function create()
+    G.deck.config.card_limit = G.deck.config.card_limit + 1
+    G.playing_cards[#G.playing_cards+1] = {}
+    G.I.CARD[#G.I.CARD+1] = {}
+    error('real constructor must not run')
+  end
+  local owner = entry == 'init' and Card or entry == 'add_card' and SMODS or _G
+  local original = rawget(owner, entry)
+  owner[entry] = create
+  local evaluatePlay, calls = G.FUNCS.evaluate_play, 0
+  G.FUNCS.evaluate_play = function()
+    calls = calls + 1
+    -- A creating effect on single-card selections only; earlier candidates can succeed.
+    if #G.play.cards == 1 then
+      G.playing_card = G.playing_card + 1
+      -- A mod catching the rejection must not turn partial results into advice.
+      pcall(owner[entry])
+    end
+    evaluatePlay()
+  end
+  before = world()
+  local registries = dump({G.playing_cards, G.deck, G.I})
+  plays = scoring.plays()
+  check(#plays == 1 and plays[1]:find('unavailable: card creation', 1, true), 'creation rejects all advice: ' .. entry)
+  check(calls > 1 and calls < 15, 'stop on the first unsupported candidate: ' .. entry)
+  check(G.playing_card == 52 and dump({G.playing_cards, G.deck, G.I}) == registries and world() == before,
+    'creation leaves no changes: ' .. entry)
+  check(owner[entry] == create and G.E_MANAGER == events, 'constructor and event stubs removed: ' .. entry)
+  owner[entry] = original
+end
+
+-- DNA, directly or through a copying Joker, is treated as having no effect.
+for _, keyed in ipairs({false, true}) do
+  reset()
+  local baseline = scoring.plays()
+  local dna = joker('DNA', keyed and {} or {name='DNA'})
+  if keyed then dna.config = {center={key='j_dna'}} end
+  local blueprint = joker('Blueprint', {name='Blueprint'})
+  table.insert(G.jokers.cards, 1, blueprint); table.insert(G.jokers.cards, 2, dna)
+  copy_card = forbid('copy_card')
+  function Card:calculate_joker()
+    if self == blueprint then return dna:calculate_joker() end
+    if self == dna and #G.play.cards == 1 then G.playing_card = (G.playing_card or 0) + 1; copy_card() end
+  end
+  local evaluatePlay = G.FUNCS.evaluate_play
+  G.FUNCS.evaluate_play = function() for _, j in ipairs(G.jokers.cards) do j:calculate_joker() end; evaluatePlay() end
+  before = world()
+  plays = scoring.plays()
+  check(dump(plays) == dump(baseline), 'DNA has no effect on any selection: ' .. table.concat(plays, ' | '))
+  check(world() == before and rawget(Card, 'calculate_joker') ~= nil and G.playing_card == nil, 'DNA scoring is restored')
+  Card.calculate_joker, copy_card = nil, nil
+end
+
+-- The Tooth spends $1 per played card before evaluation.
+for _, useKey in ipairs({false, true}) do
+  reset()
+  if useKey then G.GAME.blind.config = {blind={key='bl_tooth'}} else G.GAME.blind.name = 'The Tooth' end
+  G.jokers.cards[#G.jokers.cards + 1] = joker('Bull', {bull = 2})
+  local evaluatePlay, seen = G.FUNCS.evaluate_play, {}
+  G.FUNCS.evaluate_play = function() seen[#seen + 1] = {#G.play.cards, G.GAME.dollars}; evaluatePlay() end
+  before = world()
+  plays = scoring.plays()
+  local spent = #seen == 15
+  for _, s in ipairs(seen) do spent = spent and s[2] == 10 - s[1] end
+  check(spent, 'evaluation sees the Tooth payment')
+  -- Pair 10+10+11 chips with $7 left: +14 chips, x4 Mult.
+  check(plays[1] == '0 1 3: Pair 220 random', 'Bull reads the reduced balance: ' .. plays[1])
+  check(world() == before and G.GAME.dollars == 10, 'Tooth payment is undone')
+  G.GAME.blind.disabled = true; seen = {}
+  scoring.plays()
+  local kept = #seen == 15
+  for _, s in ipairs(seen) do kept = kept and s[2] == 10 end
+  check(kept, 'disabled Tooth costs nothing')
+end
+
+-- The Ox empties the balance before Jokers score the most played hand.
+reset()
+G.GAME.blind.name = 'The Ox'; G.GAME.current_round.most_played_poker_hand = 'Pair'
+G.jokers.cards[#G.jokers.cards + 1] = joker('Bull', {bull = 2})
+before = world()
+plays = scoring.plays()
+-- Pair: 43 chips x4 with no Bull bonus; High Card keeps $10: (28+20) x4.
+check(plays[1] == '0 2 3: High Card 192 random' and plays[2] == '0 1 2 3: Pair 172 random', 'Ox reset only hits the most played hand: ' .. table.concat(plays, ' | '))
+check(world() == before and G.GAME.dollars == 10, 'Ox reset is undone')
 
 -- The time budget stops enumeration and says so.
 reset()

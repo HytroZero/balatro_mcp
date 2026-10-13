@@ -4,9 +4,12 @@ return function(json, clock, budget)
   local scoring = {}
   local noop = function() end
   local randomUsed = false
-  -- Presentation, profile and money side effects; scoring results do not depend on them.
+  -- Presentation and profile side effects; scoring results do not depend on them.
   local silenced = {'card_eval_status_text','update_hand_text','juice_card','highlight_card','play_sound','delay','play_area_status_text',
-    'attention_text','check_for_unlock','inc_career_stat','check_and_set_high_score','set_hand_usage','ease_dollars'}
+    'attention_text','check_for_unlock','inc_career_stat','check_and_set_high_score','set_hand_usage'}
+  -- Instant money changes (The Ox) land before Bull/Bootstraps read the balance. Queued ones
+  -- would run after scoring; the game tracks money earned while scoring in dollar_buffer.
+  local function easeDollars(mod, instant) if instant then G.GAME.dollars = G.GAME.dollars + (mod or 0) end end
   -- Every random check fails, so random effects contribute their lowest outcome.
   local random = {
     pseudorandom=function(_, min, max) randomUsed = true; if min and max then return min end; return 0.999999 end,
@@ -48,11 +51,15 @@ return function(json, clock, budget)
       for _, card in ipairs(area and area.cards or {}) do
         roots[#roots + 1] = snap(card, 0, seen)
         for _, key in ipairs({'ability','base','edition'}) do if plain(card[key]) then roots[#roots + 1] = snap(card[key], 3, seen) end end
+        -- set_ability changes center/center_key in place. Keep shared prototypes by reference.
+        if plain(card.config) then roots[#roots + 1] = snap(card.config, 0, seen) end
       end
     end
     local values = {}
     remember(values, _G, 'mult'); remember(values, _G, 'hand_chips'); remember(values, _G, 'percent'); remember(values, _G, 'percent_delta')
     remember(values, G, 'play'); remember(values, G, 'hand')
+    -- Card creators may increment the identifier before calling a blocked constructor.
+    remember(values, G, 'playing_card')
     if SMODS then
       for _, key in ipairs(smodsValues) do remember(values, SMODS, key) end
       for _, parameter in pairs(SMODS.Scoring_Parameters or {}) do if type(parameter) == 'table' then remember(values, parameter, 'current') end end
@@ -64,16 +71,49 @@ return function(json, clock, budget)
     end
   end
 
+  local function isDNA(card)
+    local center = type(card.config) == 'table' and card.config.center
+    return card.ability and card.ability.name == 'DNA' or type(center) == 'table' and center.key == 'j_dna'
+  end
+  local function active(blind, name, key)
+    local blindKey = blind.config and blind.config.blind and blind.config.blind.key
+    return not blind.disabled and (blind.name == name or blindKey == key)
+  end
+
   local function install()
     local saved = {}
+    local creationAttempted = false
+    local function rejectCreation()
+      creationAttempted = true
+      error('card creation is not supported during shadow scoring', 0)
+    end
     for _, name in ipairs(silenced) do remember(saved, _G, name); _G[name] = noop end
     for name, fn in pairs(random) do remember(saved, _G, name); _G[name] = fn end
+    remember(saved, _G, 'ease_dollars'); _G.ease_dollars = easeDollars
+    -- Creating a Card also creates sprites, registers objects and consumes math.random.
+    -- Stop before these side effects instead of trying to undo a newly created object.
+    for _, name in ipairs({'copy_card','create_card','create_playing_card'}) do
+      if type(_G[name]) == 'function' then remember(saved, _G, name); _G[name] = rejectCreation end
+    end
+    if type(Card) == 'table' and type(Card.init) == 'function' then
+      saved[#saved + 1] = {Card, 'init', rawget(Card, 'init')}; rawset(Card, 'init', rejectCreation)
+    end
+    if SMODS and type(SMODS.add_card) == 'function' then remember(saved, SMODS, 'add_card'); SMODS.add_card = rejectCreation end
+    -- DNA (also when copied by Blueprint/Brainstorm, which call it) is treated as having no effect.
+    if type(Card) == 'table' and type(Card.calculate_joker) == 'function' then
+      local calculate = Card.calculate_joker
+      saved[#saved + 1] = {Card, 'calculate_joker', rawget(Card, 'calculate_joker')}
+      rawset(Card, 'calculate_joker', function(self, ...)
+        if isDNA(self) then return nil end
+        return calculate(self, ...)
+      end)
+    end
     remember(saved, G, 'E_MANAGER'); G.E_MANAGER = {add_event=noop, clear_queue=noop}
     for _, class in ipairs({Card, Blind, Moveable}) do
       if type(class) == 'table' then saved[#saved + 1] = {class, 'juice_up', rawget(class, 'juice_up')}; rawset(class, 'juice_up', noop) end
     end
     if SMODS then remember(saved, SMODS, 'juice_up_blind'); SMODS.juice_up_blind = noop end
-    return function() reassign(saved) end
+    return function() reassign(saved) end, function() return creationAttempted end
   end
 
   local function trial(cards, rest, liveHand, livePlay)
@@ -85,11 +125,13 @@ return function(json, clock, budget)
     -- The game spends the hand before evaluating it; "final hand" Jokers depend on this.
     local round = G.GAME.current_round
     round.hands_left = (round.hands_left or 1) - 1
+    local blind = G.GAME.blind
+    -- The Tooth's money loss is queued on press_play, ahead of the evaluation.
+    if type(blind) == 'table' and active(blind, 'The Tooth', 'bl_tooth') then G.GAME.dollars = G.GAME.dollars - #cards end
     -- Otherwise evaluate_play clears flags on the cards of the last real hand.
     if SMODS then SMODS.last_hand = nil end
     randomUsed = false
     local name, _, pokerHands = G.FUNCS.get_poker_hand_info(cards)
-    local blind = G.GAME.blind
     local blocked = type(blind) == 'table' and blind.debuff_hand and blind:debuff_hand(cards, pokerHands, name, true) and true or false
     G.FUNCS.evaluate_play()
     local score = SMODS and SMODS.calculate_round_score and SMODS.calculate_round_score() or (hand_chips or 0) * (mult or 0)
@@ -124,7 +166,8 @@ return function(json, clock, budget)
     for i, card in ipairs(hand) do if card.ability and card.ability.forced_selection then forced[#forced + 1] = i end end
     local candidates = selections(#hand, forced, math.min(5, liveHand.config and liveHand.config.highlighted_limit or 5))
     local livePlay = G.play
-    local undo, uninstall = capture(), install()
+    local undo = capture()
+    local uninstall, creationAttempted = install()
     local best, scored, failure, started = {}, 0, nil, clock()
     local ok, err = pcall(function()
       for _, chosen in ipairs(candidates) do
@@ -134,6 +177,8 @@ return function(json, clock, budget)
         for i, card in ipairs(hand) do if not picked[i] then rest[#rest + 1] = card end end
         local done, name, score, blocked, random = pcall(trial, cards, rest, liveHand, livePlay)
         undo()
+        -- Discard every candidate if an unsupported effect ran, even if a mod caught the error.
+        if creationAttempted() then error('card creation is not supported during shadow scoring', 0) end
         if done and type(name) == 'string' then
           scored = scored + 1
           if blocked then score = 0 end
@@ -161,13 +206,13 @@ return function(json, clock, budget)
     return out
   end
 
-  -- Candidate lines for the current hand, or nil when no hand is being played.
+  -- Candidate lines for the current hand, or nil when no hand is being played or a card is face-down.
   function scoring.plays()
     if not (G and G.GAME and G.hand and G.hand.cards and G.FUNCS and G.FUNCS.evaluate_play and G.FUNCS.get_poker_hand_info) then return nil end
     if #G.hand.cards == 0 then return nil end
     for _, area in ipairs({G.hand, G.jokers}) do
       for _, card in ipairs(area and area.cards or {}) do
-        if card.facing == 'back' then return json.array({'unavailable: face-down cards'}) end
+        if card.facing == 'back' then return nil end
       end
     end
     local ok, result = pcall(evaluate, G.hand)

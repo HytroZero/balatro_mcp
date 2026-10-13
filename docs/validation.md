@@ -259,6 +259,43 @@ No implementation tests, game actions, mod staging, installation or restarts wer
 performed for this documentation-only change. Proposed performance budgets and
 scoring capabilities have not been validated by this work.
 
+## Shadow scoring review fixes — 2026-10-13
+
+Card restoration now includes the fields of `card.config`, preserving the original
+shared center reference and center key after Vampire/Midas Mask enhancement changes.
+Card creation is rejected at `copy_card`, `create_card`, `create_playing_card`,
+`Card.init` and `SMODS.add_card` before constructing or registering new objects.
+`G.playing_card` is restored because DNA increments it before calling `copy_card`.
+Any attempted creation discards all advice and returns `unavailable`, including
+when a mod catches the rejection. Active The Tooth returns `unavailable` because
+its pre-scoring money loss is not simulated; disabled The Tooth still permits
+scoring. Ordinary game actions continue to use the original handlers. The guide
+and scoring design document describe these limits.
+
+Executed checks:
+
+- Lua scoring tests — 63 checks passed (42 new), covering successful and failing
+  enhancement replacement, shared-reference preservation, all five creation
+  entry points, swallowed creation errors, constructor restoration, unchanged
+  registries/capacity/identifier, active and disabled The Tooth. Observation
+  (88) and decision (38) checks also passed. These ran through an isolated Python
+  ctypes harness using the installed LuaJIT shared library; no `luajit` command
+  is available on this host.
+- Original 1.0.1o headless integration in the adjacent `strategy_forge` checkout,
+  RED/WHITE seed SCORE1 — Vampire and Midas Mask leave an enhanced card's center
+  and ability unchanged and bridge observations remain ready; DNA leaves deck
+  count, capacity and identifier at 52 and returns only `unavailable`; active
+  The Tooth + Bull returns `unavailable`, while an ordinary two-card play still
+  scores 80 and spends $2. Disabling The Tooth permits scoring again.
+- `npm run check` — passed. `npm test` — 73 passed, 2 platform skips, one failure
+  caused by the existing local `docs/.DS_Store` in the distribution audit.
+  Temporarily moving that file aside made both distribution tests and
+  `npm run release:check` pass; the file was then restored.
+- `npm run stage-mod` and `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+All gameplay checks were offline. The mod was staged, not installed; Balatro was
+not restarted or controlled, and live Steamodded behavior remains unverified.
+
 ## Offline scoring sandbox — 2026-10-13
 
 Added `env/sandbox` with a validated TypeScript `scoreHand` interface, JSON CLI,
@@ -357,3 +394,33 @@ Executed checks:
 All checks were offline; no live mod installation, restart or Steamodded validation
 was performed. Throughput remains dependent on Joker effects and retrigger counts.
 
+## Shadow scoring: face-down omission, The Tooth/Ox money, DNA ignored — 2026-10-13
+
+`plays` is now absent (instead of an `unavailable` line) while any hand or Joker
+card is face-down. Instant `ease_dollars` is applied during trials, so The Ox's
+reset reaches Bull/Bootstraps; queued money changes are still dropped (money earned
+while scoring is visible through `dollar_buffer`). Active The Tooth subtracts the
+played card count before evaluation, matching the order of `press_play` and the
+queued `evaluate_play` in 1.0.1o, and no longer makes `plays` unavailable.
+`Card.calculate_joker` returns nil for DNA during trials, so DNA and copies of DNA
+through Blueprint/Brainstorm have no effect; other card creation still makes every
+candidate unavailable. `tools/guide.ts` and `docs/hand-scoring-design.md` describe
+the new behavior, including that DNA first-hand single-card scores can differ.
+
+Executed checks:
+
+- Lua scoring tests — 71 checks passed: face-down hand/Joker returns nil; DNA by
+  name and by `j_dna` center key, called directly and through a copying Joker,
+  leaves every line equal to the no-DNA baseline and restores `calculate_joker`;
+  The Tooth by name and key charges $1 per played card in each trial (Bull reads
+  the reduced balance) and nothing when disabled; The Ox zeroes money only for the
+  most played hand. Disabling each of the three changes made its check fail.
+  Observation (88) and decision (38) checks passed. Run with a locally built LuaJIT
+  2.1 binary; no `luajit` is on PATH on this host.
+- `npm run check` — passed. `npm test` with `LUAJIT` set — 82 passed, 2
+  Windows-only skips.
+- `npm run stage-mod`, `npm run release:check` and
+  `git -c core.whitespace=cr-at-eol diff --check` — passed.
+
+All checks were offline against mocks. The mod was staged, not installed; Balatro
+was not restarted or controlled, and live Steamodded behavior remains unverified.
