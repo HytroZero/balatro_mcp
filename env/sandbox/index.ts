@@ -50,7 +50,7 @@ export const ScoreStateSchema = z.strictObject({
   game: data.refine(value => !['hands', 'blind', 'selected_back', 'selected_back_key'].some(key => key in value),
     'Use the hands, blind and back fields for engine objects').optional(),
   seed: z.string().min(1).max(64).optional(),
-  random: z.enum(['seeded', 'fixed', 'minimal']).optional(),
+  random: z.enum(['seeded', 'fixed', 'minimal', 'expectation']).optional(),
   trace: z.boolean().optional(),
 });
 const selection = z.array(z.number().int().nonnegative()).min(1).max(5);
@@ -103,7 +103,8 @@ const ScoreResultSchema = z.discriminatedUnion('status', [
     status: z.literal('ok'), version: z.literal('1.0.1o-FULL'), hand: z.string(), displayHand: z.string(),
     chips: z.number().finite(), mult: z.number().finite(), score: z.number().finite(),
     scoringCards: z.array(z.number().int().nonnegative()), notAllowed: z.boolean(), random: z.boolean(),
-    randomPolicy: z.enum(['seeded', 'fixed', 'minimal']), seed: z.string(),
+    randomPolicy: z.enum(['seeded', 'fixed', 'minimal', 'expectation']), seed: z.string().optional(),
+    expectation: z.object({ method: z.literal('effects'), evaluations: z.literal(1), approximations: z.array(z.string()).optional() }).optional(),
     trace: z.array(z.object({ chips: z.number().finite(), mult: z.number().finite() })).optional(),
     /** Joker values the original code grew or reset while scoring this hand (zero-based Joker index). */
     jokerChanges: z.array(z.object({ joker: z.number().int().nonnegative(), field: z.string(), from: z.number().finite(), to: z.number().finite() })).optional(),
@@ -119,7 +120,7 @@ const RoundSchema = z.object({ handSize: z.number().int(), hands: z.number().int
 /** Round parameters of the loaded position after its Joker edits. */
 export type LoadedRound = z.infer<typeof RoundSchema>;
 export type LoadResult = { status: 'ready'; round?: LoadedRound } | ScoreFailure;
-const BestSchema = z.object({ best: z.number().finite(), scored: z.number().int(),
+const BestSchema = z.object({ best: z.number().finite(), scored: z.number().int(), approximations: z.array(z.string()).optional(),
   families: z.record(z.string(), z.array(z.object({ play: z.array(z.number().int().nonnegative()), score: z.number().finite() }))) });
 export type BestPlays = z.infer<typeof BestSchema>;
 const PlaysResultSchema = z.union([

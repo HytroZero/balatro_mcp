@@ -103,7 +103,7 @@ Lua 内的搜索可直接用 `runtime.lua` 的 `new(source, json)`、`load(state
 | `game` | 覆盖原版 `G.GAME` 普通数据，例如钱、回合计数、弃牌次数、概率、已用 Voucher、随机流 |
 | `jokerSlots` / `handSize` | 安装 Joker 前的槽位/手牌上限，默认取基础值及牌背修正 |
 | `seed` | 默认 `SANDBOX`；若 `game.pseudorandom.seed` 已有值则沿用，可同时传入随机流状态 |
-| `random` | `seeded`（默认）使用原版伪随机；`fixed` 使用固定结果；`minimal` 排除随机奖励并启用 score-only |
+| `random` | `seeded`（默认）使用原版伪随机；`fixed` 使用固定结果；`minimal` 排除随机奖励；`expectation` 计算随机计分的期望。后两者启用 score-only |
 | `trace` | 返回 `update_hand_text` 在记分过程中的筹码/倍率快照 |
 
 牌也可写成对象：`{key, enhancement, edition, seal, debuff, facing, ability, sell_cost}`。
@@ -144,6 +144,28 @@ The Tooth 出牌前扣款和 The Ox 的即时清零会影响 Bull/Bootstraps，�
 `minimal` 在最终牌背修正后停止，不执行销毁和 after-hand 结算；DNA 与消耗牌创建
 在原版效果派发边界被屏蔽，不伪造卡牌。成长、重触发、持牌效果和本手相关的钱仍参与计分。
 普通 `seeded` / `fixed` 接口的行为不变，包括直接造牌时的 `unsupported`。
+
+`expectation` 每个选择只执行一次原版计分，把随机效果直接替换成公开概率下的均值：
+
+- Misprint 使用配置上下限的平均值，默认增加 11.5 倍率。
+- Lucky 的加倍率用“奖励 × 触发概率”；随机金钱同样折算为平均金额。
+- Bloodstone 的随机乘倍率用“1 + 概率 ×（触发倍率 − 1）”。例如 1/4 概率的 X2 折算为 X1.25。
+- Space Joker 按平均升级次数推进，例如 1/4 概率升一级折算为升 0.25 级。
+- Lucky Cat 按 Lucky 两种奖励至少触发一次的概率增加平均成长，重复触发分别折算。
+
+概率加成和 Blueprint 等复制沿用原版的钩子；触发概率截在 0–1 之间。
+没有分支枚举、积分或采样兜底，`expectation: {method: 'effects', evaluations: 1}`。
+期望分保留最后取整之前的小数；没有随机效果的选择仍返回原版取整后的确定分。
+
+按用户指定策略，Space Joker 的筹码/倍率联动、Lucky Cat 与 Lucky 倍率的相关性、
+Bootstraps 读平均金钱后的档位判断、Plasma 的均值平衡等继续按效果均值推进，
+并在 `expectation.approximations` 写出具体原因。这些是**联动近似**，不声称最终得分
+等于对所有真实结果逐项加权的数学期望。平均成长不会作为确定 Joker 成长事实返回。
+
+这个模式忽略传入种子与 RNG 流，计分不使用真实随机序列，**结果不含 `seed` 字段**。
+它沿用 score-only 的结算边界：不提交下一手状态，不计算计分后的造牌、销毁或长期收益。
+未知计分随机调用返回缺少期望规则的 `unsupported`，由调用方询问用户规则；
+不会回退到种子试算、随机采样或 minimal。
 
 这是当前一手的记分查询。动画、存档/解锁、延迟事件、计分后的造牌/销毁和下一手状态
 不作为输出；它不能用于推进整局游戏。Steamodded 和其他 mod 的规则尚未接入。

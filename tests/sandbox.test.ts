@@ -26,7 +26,8 @@ test('sandbox validates selection and request shape before launching Lua', async
     assert.equal(ScoreInputSchema.safeParse({ ...base, play }).success, false);
   }
   assert.equal(ScoreInputSchema.safeParse({ ...base, game: { blind: {} } }).success, false);
-  assert.equal(ScoreInputSchema.safeParse({ ...base, random: 'expectation' }).success, false);
+  assert.equal(ScoreInputSchema.safeParse({ ...base, random: 'expectation' }).success, true);
+  assert.equal(ScoreInputSchema.safeParse({ ...base, random: 'unknown' }).success, false);
   assert.equal(ScoreInputSchema.safeParse({ ...base, unexpected: true }).success, false);
   await assert.rejects(scoreHand(base, { timeoutMs: 0 }), /timeoutMs/);
   const controller = new AbortController(); controller.abort();
@@ -307,5 +308,86 @@ test('ordered batches score a listed card order and results report Joker growth'
     assert.deepEqual(pair!.jokerChanges, [{ joker: 0, field: 'mult', from: 6, to: 0 }]);
     assert.deepEqual(high!.jokerChanges, [{ joker: 0, field: 'mult', from: 6, to: 7 }]);
     assert.deepEqual(again, pair, 'growth is reported per trial and restored between trials');
+  } finally { await sandbox.close(); }
+});
+
+test('expected effects use direct means, fractional scores, and explicit nonlinear interaction approximations', { skip }, async () => {
+  const mean = (input: ScoreInput) => ok({ ...input, random: 'expectation' });
+  const close = (actual: number, expected: number) => assert.ok(Math.abs(actual - expected) < 1e-8, `${actual} != ${expected}`);
+  const lucky: ScoreInput = { hand: [{ key: 'S_A', enhancement: 'm_lucky' }], play: [0] };
+  assert.equal((await mean(lucky)).score, 80);
+  close((await mean({ ...lucky, jokers: ['j_oops'] })).score, 144);
+  close((await mean({ ...lucky, game: { probabilities: { normal: 100 } } })).score, 336);
+  close((await mean({ ...lucky, game: { probabilities: { normal: 0 } } })).score, 16);
+  // Effect means retain fractional scores; they do not average separately floored outcomes.
+  close((await mean({ hand: ['H_K'], play: [0], jokers: ['j_bloodstone'] })).score, 15 * 1.25);
+  close((await mean({ ...lucky, back: 'b_plasma' })).score, 100);
+  close((await mean({ hand: ['S_A'], play: [0], jokers: ['j_space'] })).score, 18.5 * 1.25);
+  close((await mean({ hand: ['S_A'], play: [0], jokers: ['j_misprint'] })).score, 200);
+  close((await mean({ hand: ['S_K'], play: [0], jokers: ['j_misprint'] })).score, 187.5);
+  // A 1/4 chance of X2 becomes X(1 + 1/4) in one scoring pass.
+  close((await mean({ hand: ['H_A'], play: [0], jokers: [{ key: 'j_bloodstone', ability: { extra: { odds: 4, Xmult: 2 } } }] })).score, 20);
+  // Cat grows by the mean probability that either Lucky roll fires; the score correlation is explicitly approximated.
+  const cat = await mean({ ...lucky, jokers: ['j_lucky_cat'] });
+  close(cat.score, 80 * (1 + 0.25 * (1 - 0.8 * (14 / 15))));
+  assert.equal(cat.jokerChanges, undefined, 'stochastic growth is not reported as guaranteed');
+  assert.match(cat.expectation!.approximations!.join(' '), /Lucky Cat/);
+  const plasma = await mean({ ...lucky, back: 'b_plasma' });
+  assert.match(plasma.expectation!.approximations!.join(' '), /Plasma/);
+  const space = await mean({ hand: ['S_A'], play: [0], jokers: ['j_space'] });
+  assert.match(space.expectation!.approximations!.join(' '), /Space Joker/);
+  const money = await mean({ hand: ['H_K'], play: [0], jokers: ['j_business', 'j_bootstraps'], game: { dollars: 3 } });
+  assert.match(money.expectation!.approximations!.join(' '), /Bootstraps/);
+  const retriggered = await mean({ hand: [{ key: 'H_K', seal: 'Red' }], play: [0], jokers: ['j_bloodstone'] });
+  // 25 chips, each independent Bloodstone roll replaced by X1.25.
+  close(retriggered.score, 25 * 1.25 ** 2);
+  const copied = await mean({ hand: ['H_A'], play: [0], jokers: ['j_blueprint', 'j_bloodstone'] });
+  close(copied.score, 16 * 1.25 ** 2);
+  // Bootstraps reads mean money; threshold interactions are explicitly approximate.
+  close((await mean({ hand: ['H_K'], play: [0], jokers: ['j_business', 'j_bootstraps'], game: { dollars: 3 } })).score, 15);
+  close((await mean({ hand: ['S_A', 'H_K'], play: [0], jokers: ['j_reserved_parking', 'j_bootstraps'], game: { dollars: 4 } })).score, 16);
+});
+
+test('expected scoring ignores seeds and streams, stays independent, and agrees across search APIs', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  const state = { hand: [{ key: 'S_A', enhancement: 'm_lucky' }, 'H_K'], random: 'expectation' as const };
+  try {
+    await sandbox.load({ ...state, seed: 'PRIVATE_FIRST', game: { pseudorandom: { seed: 'PRIVATE_STREAM', lucky_mult: 0.001 } } });
+    const first = await sandbox.score([0]);
+    assert.equal(first.status, 'ok');
+    if (first.status !== 'ok') return;
+    assert.equal(first.expectation?.method, 'effects');
+    assert.equal(first.seed, undefined);
+    assert.doesNotMatch(JSON.stringify(first), /seed|PRIVATE/);
+    const batch = await sandbox.scoreBatch([[0], [1], [0]]);
+    assert.deepEqual(batch[0], first); assert.deepEqual(batch[2], first);
+    assert.deepEqual(await sandbox.scores([[0], [1]]), batch.slice(0, 2).map(r => r.status === 'ok' ? r.score : r));
+    const best = await sandbox.best({ minSize: 1, maxSize: 1, key: 'full', keep: 1 });
+    assert.ok(Math.abs(best.best - 80) < 1e-8);
+    await sandbox.load({ ...state, seed: 'PRIVATE_SECOND', game: { pseudorandom: { seed: 'OTHER_STREAM', lucky_mult: 0.999 } } });
+    assert.deepEqual(await sandbox.score([0]), first);
+    await sandbox.load({ hand: [{ key: 'S_2', enhancement: 'm_stone' }, { key: 'H_2', enhancement: 'm_stone' }], random: 'expectation' });
+    const stones = await sandbox.score([0, 1]);
+    assert.equal(stones.status === 'ok' && stones.hand, 'High Card');
+    assert.equal(stones.status === 'ok' && stones.random, false);
+    assert.equal(stones.status === 'ok' && stones.score, 105);
+  } finally { await sandbox.close(); }
+});
+
+test('multiple random effects score once with exact effect means and restore the position', { skip }, async () => {
+  const sandbox = new ScoringSandbox({ lua, sourceDir: source });
+  try {
+    await sandbox.load({ hand: ['S_A'], jokers: ['j_misprint', 'j_misprint'], random: 'expectation' });
+    const before = await sandbox.stats();
+    const first = await sandbox.score([0]), again = await sandbox.score([0]);
+    assert.equal((await sandbox.stats()).calculations - before.calculations, 2, 'one calculation per selection');
+    assert.deepEqual(again, first);
+    assert.equal(first.status, 'ok');
+    if (first.status !== 'ok') return;
+    assert.deepEqual(first.expectation, { method: 'effects', evaluations: 1 });
+    assert.equal(first.score, 384);
+    assert.doesNotMatch(JSON.stringify(first), /seed/);
+    await sandbox.load({ ...baseState, random: 'expectation' });
+    assert.equal((await sandbox.score([0, 1])).status === 'ok', true);
   } finally { await sandbox.close(); }
 });

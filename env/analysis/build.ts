@@ -12,7 +12,7 @@ type Mode = 'plain' | 'sized' | 'held';
 
 // Experiment constants. They never depend on the run's seed, RNG state or draw order.
 const SAMPLES = 32, KEEP = 4, REPS = 1000, SEED = 0x5eed_b417, BOSS_ROWS = 6, CACHE_ENTRIES = 256;
-const HELD = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard']);
+const HELD = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard', 'j_reserved_parking']);
 const SIZED = new Set(['j_half', 'j_square']);
 /** Jokers that change which selections form a poker hand or score. */
 const SHAPE = new Set(['j_four_fingers', 'j_shortcut', 'j_smeared', 'j_splash', 'j_pareidolia']);
@@ -40,7 +40,7 @@ const VOUCHERS: Record<string, Partial<Edit>> = {
 interface Edit { jokers: Spec[]; added: number[]; removed: number[]; hands?: ScoreState['hands']; extraHands: number; extraDiscards: number; extraHandSize: number }
 /** The blind a round is sampled against. */
 interface Context { key: string; target: number; hands?: number; discards?: number; handSize: number }
-interface Samples { mode: Mode; pool: number; hands: number; bests: number[]; plays: number[][][]; tops: Card[][] }
+interface Samples { mode: Mode; pool: number; hands: number; bests: number[]; plays: number[][][]; tops: Card[][]; approximations: string[] }
 /** Samples by build, edit and blind, kept per connection. */
 export type SampleCache = Map<string, Samples>;
 export interface BuildOptions { deadline: number; economy?: Economy; boss: boolean; cache?: SampleCache }
@@ -98,6 +98,7 @@ const labelOf = (area: unknown, index: number, fallback: string): string => {
 const noEdit = (input: BuildInput): Edit => ({ jokers: [...input.state.jokers], added: [], removed: [], extraHands: 0, extraDiscards: 0, extraHandSize: 0 });
 
 class Sampler {
+  readonly approximations = new Set<string>();
   private sandbox: ScoringSandbox;
   private input: BuildInput;
   private orders: number[][];
@@ -118,7 +119,7 @@ class Sampler {
       ...base, hand: order.slice(0, pool).map(i => deck[i]!), deck: order.slice(pool).map(i => deck[i]!), discard: [],
       jokers: edit.jokers, jokerEdits: { added: edit.added, removed: edit.removed }, hands: edit.hands ?? base.hands,
       handSize: base.handSize + ctx.handSize + edit.extraHandSize,
-      blind: { key: ctx.key, disabled: ctx.key === 'bl_hook' }, applyBlind: true, random: 'minimal',
+      blind: { key: ctx.key, disabled: ctx.key === 'bl_hook' }, applyBlind: true, random: 'expectation',
       game: { ...game, chips: 0, round_resets: { ...resets, discards: Number(resets.discards ?? 0) + edit.extraDiscards },
         current_round: { ...round, hands_played: 0, discards_used: 0, hands_left: Math.max(1, ctx.hands ?? Number(resets.hands ?? 1)),
           discards_left: ctx.discards ?? Number(resets.discards ?? 0) + edit.extraDiscards } },
@@ -135,8 +136,9 @@ class Sampler {
     // Samples are a pure function of the public build, the edit and the blind, so they can be reused.
     const id = createHash('sha256').update(JSON.stringify([this.input.state, edit, ctx, paired ? 'paired' : 'full'])).digest('base64');
     const cached = this.cache.get(id);
-    if (cached) return cached;
+    if (cached) { cached.approximations.forEach(reason => this.approximations.add(reason)); return cached; }
     const result = await this.compute(edit, ctx, paired);
+    result.approximations.forEach(reason => this.approximations.add(reason));
     if (this.cache.size >= CACHE_ENTRIES) this.cache.delete(this.cache.keys().next().value!);
     this.cache.set(id, result);
     return result;
@@ -153,12 +155,17 @@ class Sampler {
     const pool = Math.min(deck.length, Math.max(1, round.handSize) + (mode === 'held' ? 0 : Math.min(5, 2 * discards)));
     const hands = (ctx.hands ?? round.hands) + edit.extraHands;
     const touched = [...edit.added, ...edit.removed].some(i => SHAPE.has(keyOf(edit.jokers[i]!)));
-    const result: Samples = { mode, pool, hands, bests: [], plays: [], tops: [] };
+    const result: Samples = { mode, pool, hands, bests: [], plays: [], tops: [], approximations: [] };
+    const addReasons = (reasons: string[] = []): void => {
+      for (const reason of reasons) if (!result.approximations.includes(reason)) result.approximations.push(reason);
+    };
     if (paired && paired.mode === mode && paired.pool === pool && !touched) {
       for (const [i, order] of this.orders.entries()) {
         await this.load(this.state(edit, ctx, order, pool));
         const plays = paired.plays[i]!;
-        const scores = plays.length ? (await this.sandbox.scores(plays)).filter((s): s is number => typeof s === 'number') : [];
+        const scored = plays.length ? await this.sandbox.scoreBatch(plays) : [];
+        const scores: number[] = [];
+        for (const row of scored) if (row.status === 'ok') { scores.push(row.score); addReasons(row.expectation?.approximations); }
         result.bests.push(Math.max(0, ...scores)); result.plays.push(plays); result.tops.push(paired.tops[i]!);
       }
       return result;
@@ -168,6 +175,7 @@ class Sampler {
     for (const order of this.orders) {
       await this.load(this.state(edit, ctx, order, pool));
       const best = await this.sandbox.best({ ...options, keep: KEEP });
+      addReasons(best.approximations);
       const rows = Object.values(best.families).flat();
       const top = rows.reduce<typeof rows[number] | undefined>((a, b) => !a || b.score > a.score ? b : a, undefined);
       result.bests.push(best.best); result.plays.push(rows.map(r => r.play));
@@ -205,7 +213,7 @@ export async function buildBrief(sandbox: ScoringSandbox, input: BuildInput, obs
     const name = role === 'Boss' ? ` ${String(record(blindsShown[role]).displayName ?? record(blindsShown[role]).name ?? blind.key)}` : '';
     const rule = role === 'Boss' && BOSS_NOTES[blind.key] ? `; ${BOSS_NOTES[blind.key]}` : '';
     pace.push(`${role}${name} ${int(blind.target)}: ${samples.hands} hand${samples.hands === 1 ? '' : 's'}, need ${int(Math.ceil(blind.target / samples.hands))}/hand; ` +
-      `median ${int(quantile(samples.bests, 0.5))}, p75 ${int(quantile(samples.bests, 0.75))}; clear ${rate(clearRate(samples.bests, samples.hands, blind.target))}${rule}`);
+      `median ${int(quantile(samples.bests, 0.5))}, p75 ${int(quantile(samples.bests, 0.75))}; clear ${rate(clearRate(samples.bests, samples.hands, blind.target))}${rule}${samples.approximations.length ? '; interaction approximation' : ''}`);
     focus = { role, ctx, samples };
   }
   if (pace.length) out.pace = pace;
@@ -266,6 +274,7 @@ export async function buildBrief(sandbox: ScoringSandbox, input: BuildInput, obs
       else { if (where !== 'consumable') unpriced.push(name); continue; }
       if (over()) { skipped.push('offers'); break; }
       const after = await sampler.run(edit, focus.ctx, focus.samples);
+      if (after.approximations.length) facts.push('interaction approximation');
       const cleared = clearRate(after.bests, after.hands, focus.ctx.target);
       if (cost > 0 && dollars !== undefined && cost > dollars) facts.push(`costs ${usd(cost)}, have ${usd(dollars)}`);
       if (cost > 0 && options.economy && dollars !== undefined && cost <= dollars) {
@@ -320,8 +329,10 @@ export async function buildBrief(sandbox: ScoringSandbox, input: BuildInput, obs
     }
   }
 
+  if (sampler.approximations.size) notes.push('interaction approximation: ' + [...sampler.approximations].sort().join('; '));
   notes.push(`sampled: ${SAMPLES} fixed shuffles of the public deck; each hand picks from hand size + up to 5 drawn cards (2 per discard, none with held-card effects); ` +
-    'hands independent, Joker growth frozen, random bonuses never trigger; compare changes, not levels');
+    'hands independent, Joker growth frozen; each selection is scored once with random effects replaced by public-probability means; ' +
+    'clear is a proxy from expected hand scores, not a chance-aware win probability; compare changes, not levels');
   if (skipped.length) { out.partial = true; notes.push(`time budget exhausted before: ${[...new Set(skipped)].join(', ')}`); }
   return out;
 }

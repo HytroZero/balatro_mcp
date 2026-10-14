@@ -160,7 +160,7 @@ scoring code in a separate process. The value holds \`rev\`, \`phase\`, \`focus:
 | key | content |
 | --- | --- |
 | \`need\` | \`"500 to clear; hands 1, discards 0"\` |
-| \`plays\` | \`"<hand indices>: <poker hand> <score> <exact or conditional>; <facts>"\`: the best play of each poker hand, then plays that differ in what they keep |
+| \`plays\` | \`"<hand indices>: <poker hand> <score> <exact, conditional or expected>; <facts>"\`: the best play of each poker hand, then plays that differ in what they keep |
 | \`use\` | a held Planet, or a held Tarot on its best target cards, that raises the best play when used first |
 | \`order\` | a full \`rearrange\` permutation of Jokers or hand that raises the best play |
 | \`lines\` | one row per line you passed, in order |
@@ -172,8 +172,19 @@ Facts on a row: \`clears\` or \`short N\`; \`holds Blue Seal (card 3) -> Jupiter
 \`Ride the Bus Mult 6 -> 0\`; \`up to N more cards can ride along at the same score\`
 (extra cards that change nothing, useful for cycling the hand). \`exact\` is the
 deterministic score of the visible state. \`conditional\` rests on an assumption
-named in \`notes\`: random bonuses counted as not triggering, face-down cards held
-unscored, or The Hook's discards ignored. Only an \`exact\` row says \`clears\`; a
+named in \`notes\`: face-down cards held unscored, The Hook's discards ignored,
+or exact labels suspended after an audit mismatch. \`expected\` replaces each
+random effect with its public-probability mean in one evaluation: Misprint adds
+11.5 by default; a chance p of Xk becomes X(1+p*(k-1)); chance-based upgrades,
+growth and money use their mean amounts. Fractional scores are retained before
+final rounding. Nonlinear or correlated combinations (Space Joker, Lucky Cat,
+Bootstraps thresholds, Plasma) carry \`interaction approximation\` with reasons
+in notes; their final score is not an exact outcome-distribution expectation.
+Unknown random effects return unavailable with a missing-rule reason; ask the
+user for that rule before analysing the effect. No branch enumeration or
+numerical sampling fallback is used. Expected scores
+are not guaranteed scores or single-play predictions. No run seed or RNG stream is used
+and no seed is returned. Only an \`exact\` row says \`clears\`; a
 \`conditional\` one says \`reaches the target\`.
 
 \`lines\` prices your own idea without executing it: up to 4 lines of up to 3 steps,
@@ -187,20 +198,24 @@ An \`order\` row is a first step: execute the \`rearrange\`, read the new state,
 decide. After a hand rearrange the row gives the positions to play in the new order.
 
 \`audit\` compares each \`exact\` prediction with the score of the play made at the
-same revision, at no extra game cost. After a mismatch every row of that run is
+same revision, at no extra game cost. Expected scores are never
+compared with one random play. After a mismatch deterministic rows of that run are
 \`conditional\` and \`audit\` names the hand that differed.
 
 In \`SHOP\`, \`PACK\` and \`BLIND_SELECT\` it returns \`focus:"build"\`. It samples the
 whole public deck (32 fixed shuffles, never the run's seed or draw order); each
 hand picks its best play from hand size plus up to 5 drawn cards. Hands are
-independent, Joker growth is frozen and random bonuses never trigger, so trust
-changes between options more than absolute levels.
+independent and Joker growth is frozen; each selection is ranked by its expected
+effect-mean score, including chance effects. Interaction approximations are
+identified in notes and affected pace/offer rows. The clear figure bootstraps these expected hand
+scores: it is a pace proxy, not a chance-aware win probability. Trust changes
+between options more than absolute levels.
 
 | key | content |
 | --- | --- |
-| \`pace\` | each blind still to play this Ante: target, hands, need per hand, median and p75 best hand, clear estimate, the Boss rule and whether it is modelled |
+| \`pace\` | each blind still to play this Ante: target, hands, need per hand, median and p75 best expected hand, clear proxy, the Boss rule and whether it is modelled |
 | \`jokers\` | each Joker's share of the score (drop when it leaves), stickers, or \`no direct score\` |
-| \`offers\` | each priceable shop Joker or Planet, opened pack card, hand/discard/hand-size voucher and held Planet: per-hand change, clear estimate of the last open blind before and after, the Joker it replaces when slots are full, interest change |
+| \`offers\` | each priceable shop Joker or Planet, opened pack card, hand/discard/hand-size voucher and held Planet: per-hand change, clear proxy of the last open blind before and after, the Joker it replaces when slots are full, interest change |
 | \`horizon\` | the next Ante's targets, growth needed per hand and how far the typical Boss clear stays at 0.50 or more |
 | \`economy\` | \`"$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round"\` |
 | \`rewards\` | base reward of each blind still to play |

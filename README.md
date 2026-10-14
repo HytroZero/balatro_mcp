@@ -11,7 +11,7 @@ are no API keys or model settings to configure here.
 
 ## Highlights
 
-- 🏆 **Codex with GPT 6.1 SOL (High reasoning) beat Blue Deck on Blue Stake**,
+- 🏆 **GPT 6.1 Sol (High reasoning) + Codex + this MCP beat Blue Deck on GOLD Stake**,
   playing a full run end to end through this MCP server on Windows.
 - Two gameplay skills ship with the server. See
   [Included skills](#included-skills).

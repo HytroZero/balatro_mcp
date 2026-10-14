@@ -39,11 +39,12 @@ const TAROTS: Record<string, { min?: number; max: number }> = {
   c_devil: { max: 1 }, c_tower: { max: 1 }, c_strength: { max: 2 }, c_star: { max: 3 }, c_moon: { max: 3 }, c_sun: { max: 3 }, c_world: { max: 3 },
   c_death: { min: 2, max: 2 },
 };
-const HELD_EFFECTS = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard']);
+const HELD_EFFECTS = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard', 'j_reserved_parking']);
 
 const cardsOf = (value: unknown): Data[] => (Array.isArray(record(value).cards) ? record(value).cards as unknown[] : []).map(record);
 const num = (value: unknown): number | null => typeof value === 'number' && Number.isFinite(value) ? value : null;
 export const playKey = (cards: number[]): string => [...cards].sort((a, b) => a - b).join(' ');
+const scoreText = (value: number): string => Number(value.toFixed(3)).toString();
 
 /** Every subset of `count` cards with 1..limit members that contains all forced cards. */
 export function selections(count: number, limit: number, forced: number[] = []): number[][] {
@@ -119,11 +120,18 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
   if (failed.length) notes.push(`${sels.length - entries.length} of ${sels.length} selections could not be scored: ${failed[0]}`);
 
   const weakened = pos.hidden > 0 || hook || !options.trusted;
-  const label = (r: Scored): 'exact' | 'conditional' => weakened || r.random ? 'conditional' : 'exact';
+  let expectedSeen = false;
+  const approximationNotes = new Set<string>();
+  const label = (r: Scored): string => {
+    if (!r.random) return weakened ? 'conditional' : 'exact';
+    expectedSeen = true;
+    const approximations = r.expectation?.approximations ?? [];
+    approximations.forEach(reason => approximationNotes.add(reason));
+    return (weakened ? 'conditional ' : '') + 'expected' + (approximations.length ? ' (interaction approximation)' : '');
+  };
   if (pos.hidden) notes.push(`conditional: ${pos.hidden} face-down card${pos.hidden === 1 ? ' is' : 's are'} held unscored; any held effect of ${pos.hidden === 1 ? 'it' : 'them'} is not counted`);
   if (hook) notes.push('conditional: The Hook discards 2 random held cards before scoring; held-card effects may differ');
   if (!options.trusted) notes.push('conditional: exact labels are suspended after a prediction mismatch in this run');
-  if (entries.some(e => e.r.random)) notes.push('conditional rows count random bonuses (Lucky, Bloodstone, Misprint and similar) as not triggering');
   if (!weakened) for (const e of entries) if (!e.r.random) predictions.set(playKey(e.real), e.r.score);
 
   // Changes every selection causes (Green Joker's +1 per hand) do not distinguish plays.
@@ -148,21 +156,22 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
   const facts = (e: Entry, pool: Entry[], names: string[]): string[] => {
     const out: string[] = [];
     if (e.r.notAllowed) out.push('not allowed by the Boss');
-    else if (need !== null) out.push(clears(e) ? (label(e.r) === 'exact' ? 'clears' : 'reaches the target') : `short ${need - e.r.score}`);
+    else if (need !== null) out.push(clears(e) ? (label(e.r) === 'exact' ? 'clears' : e.r.random ? 'mean reaches the target; not a guaranteed clear' : 'reaches the target')
+      : `${e.r.random ? 'mean ' : ''}short ${scoreText(need - e.r.score)}`);
     if (clears(e)) {
       const blue = blueHeld(e), gold = goldHeld(e);
-      if (blue.length) out.push(`holds Blue Seal (card ${blue.join(', ')}) -> ${PLANET_OF[e.r.hand] ?? 'Planet'} at round end${slotFree ? '' : ' if a consumable slot is free'}`);
+      if (blue.length) out.push(`holds Blue Seal (card ${blue.join(', ')}) -> ${PLANET_OF[e.r.hand] ?? 'Planet'} at round end${slotFree ? '' : ' if a consumable slot is free'}${e.r.random ? ' if this ends the round' : ''}`);
       else if (anyBlue) out.push('plays the Blue Seal');
-      if (gold.length) out.push(`holds ${gold.length} Gold ($3 each at round end)`);
+      if (gold.length) out.push(`holds ${gold.length} Gold ($3 each at round end${e.r.random ? ' if this ends the round' : ''})`);
     }
     for (const c of changes(e, names)) out.push(`${jokerName(names, c)} ${FIELD[c.field] ?? c.field} ${c.from} -> ${c.to}`);
     const riders = Math.max(0, ...pool.filter(o => o.r.score === e.r.score && o.r.hand === e.r.hand && o.sel.length > e.sel.length && e.sel.every(i => o.sel.includes(i)))
       .map(o => o.sel.length - e.sel.length));
-    if (riders > 0 && !e.r.notAllowed) out.push(`up to ${riders} more card${riders === 1 ? '' : 's'} can ride along at the same score`);
+    if (riders > 0 && !e.r.notAllowed) out.push(`up to ${riders} more card${riders === 1 ? '' : 's'} can ride along at the same ${e.r.random ? 'mean ' : ''}score`);
     return out;
   };
   const row = (e: Entry, pool: Entry[] = entries, names = jokerNames): string =>
-    `${e.real.join(' ')}: ${e.r.hand} ${e.r.score} ${label(e.r)}${facts(e, pool, names).map(f => '; ' + f).join('')}`;
+    `${e.real.join(' ')}: ${e.r.hand} ${scoreText(e.r.score)} ${label(e.r)}${facts(e, pool, names).map(f => '; ' + f).join('')}`;
 
   // One best play per poker hand, then plays that differ in what they keep.
   const families = new Map<string, Entry>();
@@ -240,7 +249,7 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
       if (edited.error) continue;
       const after = await variant(edited.state, pos.visible);
       if (after.entry && after.entry.r.score > top.r.score) {
-        use.push(`consumable ${slot} ${String(card.label ?? key)}, then ${row(after.entry, after.pool)} (best now ${top.r.score})`);
+        use.push(`consumable ${slot} ${String(card.label ?? key)}, then ${row(after.entry, after.pool)} (best now ${scoreText(top.r.score)})`);
         if (constellation && !notes.includes(planetNote)) notes.push(planetNote);
       }
       continue;
@@ -271,7 +280,7 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
     if (!found) continue;
     const after = await variant(afterUse(base, [{ slot, cards: found.targets }]).state, pos.visible);
     if (after.entry && after.entry.r.score > top.r.score) {
-      use.push(`consumable ${slot} ${String(card.label ?? key)} on ${found.targets.join(' ')}, then ${row(after.entry, after.pool)} (best now ${top.r.score})`);
+      use.push(`consumable ${slot} ${String(card.label ?? key)} on ${found.targets.join(' ')}, then ${row(after.entry, after.pool)} (best now ${scoreText(top.r.score)})`);
     }
   }
   if (use.length) brief.use = use;
@@ -295,7 +304,7 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
     else if (jokers.length > 5) notes.push('Joker order search covered single swaps only');
     if (found) {
       const after = await variant({ ...base, jokers: found.perm.map(i => jokers[i]!) }, pos.visible);
-      if (after.entry) order.push(`rearrange jokers [${found.perm.join(',')}], then ${row(after.entry, after.pool, found.perm.map(i => jokerNames[i]!))} (best now ${top.r.score})`);
+      if (after.entry) order.push(`rearrange jokers [${found.perm.join(',')}], then ${row(after.entry, after.pool, found.perm.map(i => jokerNames[i]!))} (best now ${scoreText(top.r.score)})`);
     }
   }
   // Hand order: the top plays with their cards in every order.
@@ -306,7 +315,7 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
       // The same cards rearranged inside their own hand slots.
       const slotsOf = [...e.real].sort((a, b) => a - b), hand = scoring.state.hand.map((_, i) => i);
       reordered.real.forEach((card, i) => { hand[slotsOf[i]!] = card; });
-      order.push(`rearrange hand [${hand.join(',')}], then play positions ${slotsOf.join(' ')}: ${reordered.r.hand} ${reordered.r.score} ${label(reordered.r)} (${e.r.score} in the current order)`);
+      order.push(`rearrange hand [${hand.join(',')}], then play positions ${slotsOf.join(' ')}: ${reordered.r.hand} ${scoreText(reordered.r.score)} ${label(reordered.r)} (${scoreText(e.r.score)} in the current order)`);
     }
   } else if (!skipped.includes('use')) skipped.push('order');
   if (order.length) brief.order = order;
@@ -352,6 +361,8 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
     }
   }
   if (skipped.length) { brief.status = 'partial'; notes.push(`time budget exhausted before: ${skipped.join(', ')}`); }
+  if (expectedSeen) notes.push('expected scores substitute each random effect with its public-probability mean in one evaluation, retaining fractional scores before final rounding; they are not guaranteed scores and are excluded from exact play audits');
+  if (approximationNotes.size) notes.push('interaction approximation: ' + [...approximationNotes].sort().join('; '));
   if (notes.length) brief.notes = notes;
   return { brief, predictions };
 }

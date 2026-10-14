@@ -85,6 +85,51 @@ test('hand brief scores every play, shows what each keeps and prices a held Plan
   } finally { await analyzer.close(); }
 });
 
+test('hand means include chance effects, never promise a clear or audit them, and do not expose seeds', { skip }, async () => {
+  const [lucky, convert, large, correlated] = fixtures([
+    { hand: [{ key: 'S_A', enhancement: 'm_lucky' }, 'H_K'], seed: 'PRIVATE_GAME_FIRST' },
+    { hand: ['S_A'], consumables: ['c_magician'] },
+    { hand: ['S_A'], jokers: ['j_misprint', 'j_misprint'] },
+    { hand: [{ key: 'S_A', enhancement: 'm_lucky' }], jokers: ['j_lucky_cat'] },
+  ]);
+  const analyzer = new Analyzer({ lua, sourceDir: source });
+  try {
+    const result = await analyzer.analyze(read(lucky!, shown({ target: 50 })), { deadline: far(), trusted: true });
+    assert.equal(result.brief.focus, 'hand');
+    if (result.brief.focus !== 'hand') return;
+    assert.match(result.brief.plays![0]!, /^0: High Card 80 expected; mean reaches the target; not a guaranteed clear/);
+    assert.equal(result.predictions.has('0'), false);
+    assert.equal(result.predictions.get('1'), 15, 'deterministic alternatives retain exact auditing');
+    assert.match(result.brief.notes!.join(' '), /public-probability mean/);
+    assert.doesNotMatch(JSON.stringify(result.brief), /seed|PRIVATE_GAME_FIRST|SANDBOX/);
+    const changed = structuredClone(lucky!);
+    const state = record(record(changed.scoring).state);
+    state.seed = 'PRIVATE_GAME_SECOND';
+    record(state.game).pseudorandom = { seed: 'PRIVATE_STREAM', lucky_mult: 0.999 };
+    assert.deepEqual((await analyzer.analyze(read(changed, shown({ target: 50 })), { deadline: far(), trusted: true })).brief, result.brief);
+    const weakened = await analyzer.analyze(read(lucky!, shown({ target: 50 })), { deadline: far(), trusted: false });
+    if (weakened.brief.focus !== 'hand') assert.fail('hand required');
+    assert.match(weakened.brief.plays![0]!, /conditional expected/);
+    assert.equal(weakened.predictions.size, 0);
+    const used = await analyzer.analyze(read(convert!, shown({ target: 50, consumables: [{ key: 'c_magician', label: 'The Magician' }] })),
+      { lines: [[{ method: 'use', consumable: 0, cards: [0] }, { method: 'play', cards: [0] }]], deadline: far(), trusted: true });
+    if (used.brief.focus !== 'hand') assert.fail('hand required');
+    assert.match(used.brief.use![0]!, /High Card 80 expected/);
+    assert.match(used.brief.lines![0]!, /High Card 80 expected/);
+    assert.match(used.brief.notes!.join(' '), /expected scores/);
+    const estimate = await analyzer.analyze(read(large!, shown({ target: 100 })), { deadline: far(), trusted: true });
+    if (estimate.brief.focus !== 'hand') assert.fail('hand required');
+    assert.match(estimate.brief.plays![0]!, /High Card 384 expected/);
+    assert.doesNotMatch(estimate.brief.notes!.join(' '), /256|integration|estimated/);
+    assert.equal(estimate.predictions.size, 0);
+    const approximate = await analyzer.analyze(read(correlated!, shown({ target: 50 })), { deadline: far(), trusted: true });
+    if (approximate.brief.focus !== 'hand') assert.fail('hand required');
+    assert.match(approximate.brief.plays![0]!, /expected \(interaction approximation\)/);
+    assert.match(approximate.brief.notes!.join(' '), /Lucky Cat.*correlation/);
+    assert.equal(approximate.predictions.size, 0);
+  } finally { await analyzer.close(); }
+});
+
 test('hand brief finds Joker and hand orders, prices caller lines and reports Joker growth', { skip }, async () => {
   const [ordered, glass, bus] = fixtures([
     { hand: ['S_K', 'H_K', 'D_3'], jokers: ['j_cavendish', 'j_joker'], consumables: ['c_mercury', 'c_fool'] },
@@ -215,6 +260,32 @@ const shopShown = (jokers = ['Joker', 'Greedy Joker']): Data => ({ state: 'SHOP'
   jokers: { cards: jokers.map((label, index) => ({ index, label })) },
   shop: { cards: ['Cavendish', 'Mercury', 'The Chariot'].map((label, index) => ({ index, label })) },
   vouchers: { cards: ['Grabber', 'Overstock'].map((label, index) => ({ index, label })) }, consumables: { cards: [{ index: 0, label: 'Jupiter' }] } });
+
+test('build offers price chance rewards by their mean and label the clear proxy without exposing seeds', { skip }, async () => {
+  const [shop, nonlinear] = fixtures([
+    shopPosition({ hand: ['H_A'], deck: [], jokers: [], consumables: [], shop: ['j_bloodstone'], vouchers: [], seed: 'PRIVATE_BUILD' }),
+    shopPosition({ hand: ['H_A'], deck: [], jokers: [], consumables: [], shop: ['j_space'], vouchers: [] }),
+  ]);
+  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const shown: Data = { ...shopShown([]), shop: { cards: [{ index: 0, label: 'Bloodstone' }] }, vouchers: { cards: [] }, consumables: { cards: [] } };
+  try {
+    const { brief } = await analyzer.analyze(read(shop!, shown), { deadline: far(), trusted: true });
+    if (brief.focus !== 'build') assert.fail('build required');
+    assert.match(brief.offers![0]!, /Bloodstone.*\+25%\/hand/);
+    assert.match(brief.notes.join(' '), /clear is a proxy from expected hand scores/);
+    assert.doesNotMatch(JSON.stringify(brief), /seed|PRIVATE_BUILD|SANDBOX/);
+    const changed = structuredClone(shop!);
+    const state = record(record(record(changed.build).input).state);
+    state.seed = 'DIFFERENT_PRIVATE_BUILD';
+    record(state.game).pseudorandom = { seed: 'PRIVATE_STREAM', bloodstone: 0.25 };
+    assert.deepEqual((await analyzer.analyze(read(changed, shown), { deadline: far(), trusted: true })).brief, brief);
+    const changedOffer = { ...shown, shop: { cards: [{ index: 0, label: 'Space Joker' }] } };
+    const approximate = await analyzer.analyze(read(nonlinear!, changedOffer), { deadline: far(), trusted: true });
+    if (approximate.brief.focus !== 'build') assert.fail('build required');
+    assert.match(approximate.brief.offers![0]!, /Space Joker.*interaction approximation/);
+    assert.match(approximate.brief.notes.join(' '), /Space Joker uses a mean level/);
+  } finally { await analyzer.close(); }
+});
 
 test('build brief samples pace, Joker shares, offers and the next Ante from the public deck', { skip }, async () => {
   const [shop, full] = fixtures([shopPosition(), shopPosition({ jokers: ['j_joker', 'j_greedy_joker', 'j_jolly', 'j_zany', 'j_mad'], shop: ['j_cavendish'], vouchers: [], consumables: [] })]);

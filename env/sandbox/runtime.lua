@@ -80,6 +80,7 @@ function sandbox.new(source, json)
     return {mult=c.ability.mult, x_mult=c.ability.x_mult, ['extra.chips']=extra.chips}
   end
   local scoreOnly, evaluating, classifying = false, false, false
+  local pendingLevel, meanReasons, meanGrowth
   local scoringFinished = {}
   local trace, randomUsed, minimalUsed, denied, name, display, scoring
   local traceChips, traceMult = 0, 0
@@ -111,6 +112,51 @@ function sandbox.new(source, json)
   env.copy_card, env.create_card, env.create_playing_card = rejectCreation, rejectCreation, rejectCreation
   env.Card.init = rejectCreation
 
+  local function probability(odds)
+    assert(type(odds) == 'number' and odds > 0, 'Expected-effect rule needs positive public odds')
+    randomUsed = true
+    return math.max(0, math.min(1, G.GAME.probabilities.normal / odds))
+  end
+  local function approximate(reason) meanReasons[reason] = true end
+  local function hasJoker(name)
+    for _, c in ipairs(G.jokers.cards) do if c.ability.name == name and not c.debuff then return true end end
+    return false
+  end
+  local function meanMoney(probability)
+    if probability > 0 and probability < 1 and hasJoker('Bootstraps') then
+      approximate('Bootstraps uses mean money before its $5 thresholds')
+    end
+  end
+
+  local getChipMult, getDollars = env.Card.get_chip_mult, env.Card.get_p_dollars
+  env.Card.get_chip_mult = function(self)
+    if input.random == 'expectation' and evaluating and not self.debuff and self.ability.effect == 'Lucky Card' then
+      local p = probability(5)
+      self.expected_lucky_trigger = p
+      self.lucky_trigger = p == 1 or nil
+      return self.ability.mult * p
+    end
+    if input.random == 'expectation' and evaluating then self.expected_lucky_trigger = nil end
+    return getChipMult(self)
+  end
+  env.Card.get_p_dollars = function(self)
+    if input.random == 'expectation' and evaluating and not self.debuff and self.ability.effect == 'Lucky Card' and self.ability.p_dollars > 0 then
+      local p, dollars, triggered = probability(15), self.ability.p_dollars, self.lucky_trigger
+      meanMoney(p)
+      self.expected_lucky_trigger = 1 - (1 - (self.expected_lucky_trigger or 0)) * (1 - p)
+      self.ability.p_dollars = dollars * p
+      local result = getDollars(self)
+      self.ability.p_dollars, self.lucky_trigger = dollars, triggered or p == 1 or nil
+      return result
+    end
+    return getDollars(self)
+  end
+  local levelUp = env.level_up_hand
+  env.level_up_hand = function(card, hand, instant, amount)
+    if pendingLevel then amount, pendingLevel = (amount or 1) * pendingLevel, nil end
+    return levelUp(card, hand, instant, amount)
+  end
+
   -- Skip lifecycle-only contexts at the original dispatch boundary, including
   -- calls reached recursively through Blueprint/Brainstorm. Never invent cards.
   local calculateJoker = env.Card.calculate_joker
@@ -121,10 +167,42 @@ function sandbox.new(source, json)
       if context.individual and self.ability.name == '8 Ball' then return end
       if context.joker_main and (self.ability.name == 'Vagabond' or self.ability.name == 'Superposition' or self.ability.name == 'Seance') then return end
     end
-    return calculateJoker(self, context)
+    local expected = input.random == 'expectation' and evaluating and not self.debuff
+    if expected and self.ability.name == 'Lucky Cat' and context.individual and context.cardarea == G.play and not context.blueprint then
+      local p = context.other_card.expected_lucky_trigger
+      if p and p > 0 then
+        randomUsed = true
+        self.ability.x_mult = self.ability.x_mult + self.ability.extra * p
+        meanGrowth[self] = true
+        if p < 1 then approximate('Lucky Cat grows by mean Lucky triggers; correlation with Lucky Mult is approximated') end
+        return -- The growth has been applied; original Lucky Cat must not grow again.
+      end
+    end
+    local buffer = expected and (G.GAME.dollar_buffer or 0) or 0
+    local result = calculateJoker(self, context)
+    if expected and result then
+      local name, extra = self.ability.name, self.ability.extra
+      if name == 'Bloodstone' and result.x_mult then
+        local p = probability(extra.odds)
+        result.x_mult = 1 + p * (result.x_mult - 1)
+      elseif name == 'Space Joker' and result.level_up then
+        local p = probability(extra)
+        pendingLevel = p
+        if p > 0 and p < 1 then approximate('Space Joker uses a mean level before multiplying chips and Mult') end
+      elseif (name == 'Business Card' or name == 'Reserved Parking') and result.dollars then
+        local p = probability(type(extra) == 'table' and extra.odds or extra)
+        meanMoney(p)
+        result.dollars = result.dollars * p
+        G.GAME.dollar_buffer = buffer + ((G.GAME.dollar_buffer or 0) - buffer) * p
+      end
+    end
+    return result
   end
   local triggerBack = env.Back.trigger_effect
   env.Back.trigger_effect = function(self, context)
+    if input.random == 'expectation' and evaluating and randomUsed and self.name == 'Plasma Deck' and context.context == 'final_scoring_step' then
+      approximate('Plasma balances mean chips and Mult; its nonlinear balance and flooring are approximated')
+    end
     local chips, mult = triggerBack(self, context)
     if scoreOnly and context and context.context == 'final_scoring_step' then
       -- Original scoring is complete here (including Plasma). Everything below
@@ -146,6 +224,13 @@ function sandbox.new(source, json)
   local chanceBonuses = {lucky_mult=true, lucky_money=true, space=true, bloodstone=true, business=true, parking=true}
   env.pseudorandom = function(seed, min, max)
     randomUsed = true
+    if input.random == 'expectation' and evaluating then
+      if seed == 'misprint' and min ~= nil and max ~= nil then return (min + max) / 2 end
+      -- Effect adapters below replace the payout or multiplier by its mean.
+      -- Let the original branch run so its usual dispatch/order is preserved.
+      if chanceBonuses[seed] then return 0 end
+      error({status='unsupported', message='Expected-effect rule needed for this scoring randomness'}, 0)
+    end
     if input.random == 'fixed' then return min and max and min or 0.999999 end
     if input.random == 'minimal' and evaluating then
       if seed == 'misprint' and min ~= nil and max ~= nil then minimalUsed = true; return min end
@@ -161,8 +246,11 @@ function sandbox.new(source, json)
   end
   env.pseudorandom_element = function(t, seed)
     randomUsed = true
+    if input.random == 'expectation' and evaluating then
+      error({status='unsupported', message='Expected-effect rule needed for random scoring selection'}, 0)
+    end
     if input.random == 'minimal' and evaluating then
-      error({status='unsupported', message='Unsupported minimal random scoring selection'}, 0)
+      error({status='unsupported', message='Unsupported random scoring selection for this policy'}, 0)
     end
     if input.random ~= 'fixed' then return originals.pseudorandom_element(t, seed) end
     local keys = {}; for k in pairs(t) do keys[#keys + 1] = k end
@@ -172,14 +260,17 @@ function sandbox.new(source, json)
   local mathRandom = env.math.random
   env.math.random = function(...)
     randomUsed = true
+    if input and input.random == 'expectation' and evaluating then
+      error({status='unsupported', message='Expected-effect rule needed for math.random during scoring'}, 0)
+    end
     if input and input.random == 'minimal' and evaluating then
-      error({status='unsupported', message='Unsupported minimal math.random during scoring'}, 0)
+      error({status='unsupported', message='Unsupported math.random during scoring for this policy'}, 0)
     end
     return mathRandom(...)
   end
   local getId = env.Card.get_id
   env.Card.get_id = function(self)
-    if input and input.random == 'minimal' and (evaluating or classifying) and self.ability.effect == 'Stone Card' and not self.vampired then
+    if input and (input.random == 'minimal' or input.random == 'expectation') and (evaluating or classifying) and self.ability.effect == 'Stone Card' and not self.vampired then
       -- Original get_id samples a negative number only to keep rankless Stones
       -- distinct. A unique negative identity preserves that poker-hand rule.
       return -self.playing_card
@@ -197,14 +288,15 @@ function sandbox.new(source, json)
     restoreBaseline = nil -- A failed load invalidates the previous position.
     input = clone(snapshot)
     if onlyScore == true then input.random = 'minimal' end
-    scoreOnly = onlyScore == true or input.random == 'minimal'
+    scoreOnly = onlyScore == true or input.random == 'minimal' or input.random == 'expectation'
     evaluating = false
     trace, randomUsed, denied = input.trace and json.array() or nil, false, false
     traceChips, traceMult = 0, 0
     G.GAME = G:init_game_object()
     env.hand_chips, env.mult, env.percent, env.percent_delta = nil, nil, nil, nil
     merge(G.GAME, input.game)
-    G.GAME.pseudorandom.seed = input.seed or G.GAME.pseudorandom.seed or 'SANDBOX'
+    if input.random == 'expectation' then G.GAME.pseudorandom = {} end
+    G.GAME.pseudorandom.seed = input.random == 'expectation' and 'SANDBOX' or input.seed or G.GAME.pseudorandom.seed or 'SANDBOX'
     G.GAME.pseudorandom.hashed_seed = env.pseudohash(G.GAME.pseudorandom.seed)
     seedHash = env.pseudohash(G.GAME.pseudorandom.seed)
     env.math.randomseed(seedHash)
@@ -354,6 +446,7 @@ function sandbox.new(source, json)
     assert(type(selection) == 'table' and #selection >= 1 and #selection <= 5, 'Select 1-5 cards')
     trace, randomUsed, denied = input.trace and not scalar and json.array() or nil, false, false
     minimalUsed = false
+    pendingLevel, meanReasons, meanGrowth = nil, {}, {}
     traceChips, traceMult = 0, 0
     env.hand_chips, env.mult, env.percent, env.percent_delta = nil, nil, nil, nil
     env.math.randomseed(seedHash)
@@ -388,8 +481,16 @@ function sandbox.new(source, json)
     if not ok and result ~= scoringFinished then error(result, 0) end
     local total = env.hand_chips * env.mult
     assert(total == total and total ~= math.huge and total ~= -math.huge, 'Non-finite score')
-    if scalar == true then return math.floor(total) end
-    if scalar == 'play' then return {status='ok', hand=name, score=math.floor(total), notAllowed=denied, minimal=minimalUsed} end
+    local expected = input.random == 'expectation' and randomUsed
+    local score = expected and tonumber(string.format('%.15g', total)) or math.floor(total)
+    local expectation
+    if expected then
+      local reasons = json.array(); for reason in pairs(meanReasons) do reasons[#reasons + 1] = reason end
+      table.sort(reasons)
+      expectation = {method='effects', evaluations=1, approximations=#reasons > 0 and reasons or nil}
+    end
+    if scalar == true then return score end
+    if scalar == 'play' then return {status='ok', hand=name, score=score, notAllowed=denied, minimal=minimalUsed, random=randomUsed, expectation=expectation} end
     local indices = json.array()
     for _, c in ipairs(scoring) do for i, original in ipairs(all) do if original == c then indices[#indices + 1] = i - 1 end end end
     local changes = json.array()
@@ -397,24 +498,29 @@ function sandbox.new(source, json)
       local now = growth(c)
       for _, field in ipairs({'mult', 'x_mult', 'extra.chips'}) do
         local from, to = jokerBase[i] and jokerBase[i][field], now[field]
-        if type(from) == 'number' and type(to) == 'number' and from ~= to then
+        if type(from) == 'number' and type(to) == 'number' and from ~= to and not (expected and meanGrowth[c]) then
           changes[#changes + 1] = {joker=i - 1, field=field, from=from, to=to}
         end
       end
     end
     return {status='ok', version=G.VERSION, hand=name, displayHand=display, chips=env.hand_chips, mult=env.mult,
-      score=math.floor(total), scoringCards=indices, notAllowed=denied, random=randomUsed,
-      randomPolicy=input.random or 'seeded', seed=G.GAME.pseudorandom.seed, trace=input.trace and trace or nil,
+      score=score, scoringCards=indices, notAllowed=denied, random=randomUsed, expectation=expectation,
+      randomPolicy=input.random or 'seeded', seed=input.random ~= 'expectation' and G.GAME.pseudorandom.seed or nil, trace=input.random ~= 'expectation' and input.trace and trace or nil,
       jokerChanges=#changes > 0 and changes or nil}
   end
 
-  function runtime.score(selection, scalar, ordered)
+  local function trial(selection, scalar, ordered)
     calculations = calculations + 1
     local ok, result = pcall(evaluate, selection, scalar, ordered)
     evaluating = false
+    pendingLevel = nil
     if restoreBaseline then restoreBaseline(); G.playing_card = baselineId end
     if not ok then return type(result) == 'table' and result or {status='error', message=tostring(result)} end
     return result
+  end
+
+  function runtime.score(selection, scalar, ordered)
+    return trial(selection, scalar, ordered)
   end
 
   function runtime.plays(snapshot, selectionLimit)
@@ -479,6 +585,7 @@ function sandbox.new(source, json)
     assert(restoreBaseline, 'Load a position before scoring')
     assert(minSize >= 1 and maxSize <= 5 and minSize <= maxSize, 'Invalid selection sizes')
     local seen, families, picked, scored, top = {}, {}, {}, 0, 0
+    local approximations = {}
     local splash = next(env.find_joker('Splash')) ~= nil
     local function trial()
       local signature
@@ -502,6 +609,7 @@ function sandbox.new(source, json)
       local result = runtime.score(picked, 'play')
       scored = scored + 1
       if result.status ~= 'ok' then error(result, 0) end
+      for _, reason in ipairs(result.expectation and result.expectation.approximations or {}) do approximations[reason] = true end
       if result.notAllowed then return end
       if result.score > top then top = result.score end
       local list = families[result.hand] or {}
@@ -528,7 +636,9 @@ function sandbox.new(source, json)
       for i, row in ipairs(list) do local play = json.array(); for j, v in ipairs(row.play) do play[j] = v end; rows[i] = {play=play, score=row.score} end
       out[hand] = rows
     end
-    return {best=top, families=out, scored=scored}
+    local reasons = json.array(); for reason in pairs(approximations) do reasons[#reasons + 1] = reason end
+    table.sort(reasons)
+    return {best=top, families=out, scored=scored, approximations=#reasons > 0 and reasons or nil}
   end
   function runtime.stats()
     return {sourceLoads=1, positionLoads=loads, calculations=calculations, luaMemoryKiB=collectgarbage('count')}

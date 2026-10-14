@@ -820,3 +820,95 @@ All verification was offline against the vendored 1.0.1o source. The staged mod
 was not installed and no live shop was analysed. The Steamodded dump was read
 to confirm that `round_resets.ante` drives blind targets and that Boss counts sit
 under `bosses_used.boss`; neither was exercised in the running game.
+
+## Expected random scoring for game_analyze — 2026-10-14
+
+Changed every game_analyze scoring path (hand, consumables, order, caller lines
+and build comparisons) from minimal to expectation. The sandbox replays the
+original scoring code over independent public chance outcomes, weighting final
+rounded scores rather than substituting average multipliers. Lucky, Bloodstone,
+Space Joker, Misprint, Business Card and Reserved Parking include public odds,
+probability boosts, retriggers, copied effects and same-hand dependencies. Small
+trees are enumerated; after 256 tree evaluations, an incomplete tree is discarded
+and 256 deterministic Halton integration points estimate its mean. Large-tree
+rows are explicitly labelled estimated expectation. Expected rows never claim a
+guaranteed clear and never enter exact play audits. Build clear figures are
+documented as proxies from expected hand scores, not chance-aware probabilities.
+
+The expectation policy ignores supplied seeds and RNG streams and omits the seed
+from its result, including deterministic alternatives. Model briefs still expose
+only derived public numbers. Nonidentical branch growth is not reported as a
+guaranteed Joker change; estimated means omit growth facts entirely. Unknown
+scoring randomness remains unsupported. Existing offline seeded, fixed and
+minimal APIs and score-only lifecycle boundaries remain available.
+
+Executed checks:
+
+- `npm run check` passed.
+- `npm test` passed: 118 tests, 116 passed, 2 skipped (Windows-only installers).
+  New checks cover analytical means, final flooring, nonlinear Plasma scoring,
+  probability boosts including certainty and zero probability, Lucky Cat
+  correlation, retriggers, Blueprint, random money crossing Bootstraps' threshold,
+  search API agreement, restoration, explicit quadrature labels, expected hand
+  and consumable lines, build offer changes, audit exclusion, and invariance under
+  different supplied seeds and RNG streams with no seed in results.
+- `luajit tests/observation.test.lua` (88), `tests/decision.test.lua` (38) and
+  `tests/score-snapshot.test.lua` (35) passed.
+- `npm run stage-mod`, `npm run release:check` and `git diff --check` passed.
+- One offline 8-card hand with 5 Lucky cards, a held Steel card, Bloodstone and
+  Lucky Cat: all 218 selections scored in about 459 ms, no failures; one
+  selection needed the explicitly labelled quadrature fallback.
+
+All verification was offline. No live game action or analysis was run, no staged
+mod was installed, and the running MCP process was not restarted. Server restart
+is required to load the new analysis code and scoring worker. Mod sources did
+not change.
+
+## Direct random-effect means without repeated scoring — 2026-10-14
+
+Replaced the preceding branch enumeration and integration implementation with
+the user's requested direct effect means. Each selection now runs the original
+score pipeline once. Misprint uses its configured midpoint (11.5 by default),
+chance-based additive effects use probability times payout, and a chance p of
+Xk becomes X(1+p*(k-1)). Public probability boosts and original copy/retrigger
+dispatch still apply. Fractional scores are retained before final rounding.
+There is no enumeration, integration, or numerical sampling fallback for random
+scoring effects; the 32 public-deck shuffles for build composition remain.
+
+The user explicitly chose mean propagation with an interaction-approximation
+label for nonlinear or correlated cases. Space Joker applies a mean fractional
+level; Lucky Cat grows by the probability of at least one Lucky reward per
+activation; money effects update mean dollar buffers. Space Joker, Lucky Cat
+correlation, Bootstraps thresholds and Plasma balance identify their specific
+approximations in metadata and model notes. Affected hand, pace and offer rows
+are labelled. These final scores are not claimed to equal the exact expectation
+of every original rounded outcome. Mean Joker growth is not reported as a
+guaranteed growth fact. Reserved Parking uses the held-effect search path, since
+its mean money can affect Bootstraps. Paired build comparisons retain and cache
+approximation reasons.
+
+Unknown random effects report a missing-rule error; the guide and protocol tell
+the model to ask the user for a rule. Seeds and RNG streams remain ignored and
+absent from expectation results. Exact-play audits still exclude expected rows.
+
+Executed checks:
+
+- `npm run check` passed.
+- `npm test` passed: 118 tests, 116 passed, 2 skipped (Windows-only installers).
+  Updated checks cover configured Misprint means and fractional scores, the
+  user's 1/4 chance of X2 -> X1.25 example, probability boosts, independent
+  multiplier retriggers/copies, mean money and fractional levels, explicit
+  nonlinear labels on hand and paired shop offers, seed invariance, restoration,
+  and exactly one engine calculation per scored selection.
+- `luajit tests/observation.test.lua` (88), `tests/decision.test.lua` (38) and
+  `tests/score-snapshot.test.lua` (35) passed.
+- `npm run stage-mod`, `npm run release:check` and `git diff --check` passed.
+- In three offline repeats, all 218 selections of an 8-card hand took about
+  23–26 ms without random effects, 15–21 ms with one Lucky card, and 31–37 ms
+  with five same-rank Lucky cards, held Steel, Bloodstone and Lucky Cat.
+  Every run executed exactly 218 calculations with no failures. The corresponding
+  minimal runs took about 21–25, 25–28 and 33–37 ms respectively; these are small
+  local timing probes rather than general latency guarantees.
+
+All checks and timing probes were offline. No live game action, installation or
+MCP restart was performed; restart the MCP server to load the updated worker.

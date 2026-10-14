@@ -59,5 +59,5 @@ export function position(state: AnalysisState): Position {
   state.hand.forEach((card, index) => { if ('key' in card) { visible.push(index); hand.push(card); } });
   const hidden = state.hand.length - hand.length;
   const placeholders: ScoreState['hand'] = Array.from({ length: hidden }, () => ({ key: 'S_2' }));
-  return { state: { ...state, hand, discard: [...state.discard, ...placeholders], random: 'minimal' }, visible, hidden };
+  return { state: { ...state, hand, discard: [...state.discard, ...placeholders], random: 'expectation' }, visible, hidden };
 }
