@@ -331,3 +331,18 @@ test('readiness and terminal results are explicit only when abnormal', () => {
         assert.equal('pack' in unknown.state, false);
     }
 });
+
+test('final Boss loss renders consistently even when the original won flag is true', () => {
+    const before = observation({ ante_num: 8, round: { chips: 204468 } });
+    const after = at(before, 'i:8', { state: 'GAME_OVER', won: true, ante_num: 8,
+        blind: { name: 'Crimson Heart', chips: 400000 }, round: { chips: 214390 } },
+        { terminal: true, outcome: 'lost', availableMethods: ['start'] });
+    for (const result of [compactObservation(after), compactActionObservation(after, { method: 'play', cards: [1, 3, 4, 5, 6] }, before)]) {
+        assert.equal(result.phase, 'GAME_OVER');
+        assert.equal(result.outcome, 'lost');
+        assert.equal(result.state?.runResult, 'Lost at Ante 8 Crimson Heart: 214390/400000');
+        assert.deepEqual(result.actions, ['start']);
+    }
+    const action = compactActionObservation(after, { method: 'play', cards: [1, 3, 4, 5, 6] }, before);
+    assert.match(action.result!, /\(\+9922\)\. Run lost\.$/);
+});

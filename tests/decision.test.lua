@@ -109,6 +109,47 @@ check(not health.ready and health.notReadyReason == 'Close the open game dialog'
 local capabilities={};for _,name in ipairs(health.capabilities)do capabilities[name]=true end
 check(capabilities.decision_state and not capabilities.scoring_snapshot,'health advertises decision fields without scoring snapshots')
 
+-- Original end_round sets won=true at the final Boss even when the run loses.
+G.STATES.GAME_OVER=4; G.STATES.ROUND_EVAL=5
+G.OVERLAY_MENU=nil
+G.GAME.round_resets.ante=8
+G.GAME.blind={name='Crimson Heart',chips=400000}
+G.GAME.chips=204468
+G.GAME.current_round.hands_left=1
+G.GAME.won=false
+local ongoing=bridge.dispatch('sf.observe',{})
+check(ongoing.outcome=='ongoing' and not ongoing.terminal,'a normal hand remains ongoing')
+local prepare=game.prepare
+game.prepare=function(action)
+  check(action.method=='play','regression dispatches the final play')
+  return function()
+    G.GAME.chips=214390
+    G.GAME.current_round.hands_left=0
+    G.GAME.won=true
+    G.STATE=G.STATES.GAME_OVER
+  end
+end
+local operation=bridge.dispatch('sf.act',{instanceId='test-instance',actionId='final-boss-loss',
+  revision=ongoing.revision,action={method='play',cards=json.array({1,3,4,5,6})}})
+game.prepare=prepare
+check(operation.status=='pending','the final play waits for completion')
+bridge.update(); bridge.update()
+operation=bridge.dispatch('sf.operation',{instanceId='test-instance',actionId='final-boss-loss'})
+check(operation.status=='completed' and operation.applied==true,'the final play completes once')
+check(operation.observation.terminal and operation.observation.outcome=='lost','completed action reports final Boss defeat despite won=true')
+check(operation.observation.state.round.chips==214390 and operation.observation.state.blind.chips==400000,'final score stays below the target')
+before=copy(G.GAME)
+local lost=bridge.dispatch('sf.observe',{})
+check(lost.outcome=='lost' and lost.terminal,'fresh observation also reports the loss')
+check(lost.revision==operation.observation.revision,'action result and fresh observation agree at the same revision')
+check(equal(G.GAME,before),'outcome resolution does not rewrite the original won flag')
+same(lost.availableMethods,json.array({'start'}),'only start remains available after losing')
+G.GAME.won=false
+check(bridge.dispatch('sf.observe',{}).outcome=='lost','ordinary game-over losses still report lost')
+G.STATE=G.STATES.ROUND_EVAL; G.GAME.chips=410000; G.GAME.won=true
+local won=bridge.dispatch('sf.observe',{})
+check(won.outcome=='won' and won.terminal,'successful final Boss settlement still reports won')
+
 -- Graceful localization failure must not make observations unusable.
 localize = function() error('Unsupported modded localization') end
 check(not decision.blind('bl_eye',{}).rulesKnown,'unavailable rule text is explicit')

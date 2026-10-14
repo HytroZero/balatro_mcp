@@ -1055,3 +1055,31 @@ Executed checks:
 All checks were offline. No live game action, mod installation or MCP restart
 was performed. The build is ready; restart the MCP process to load the shortened
 initialization/tool descriptions and the new analysis resource.
+
+## Final Boss defeat outcome precedence — 2026-10-14
+
+The original 1.0.1o end_round sets G.GAME.won at the winning Ante's Boss
+before branching on game_over. A failed final Boss can therefore have both
+won=true and phase GAME_OVER. The bridge now resolves GAME_OVER as lost before
+checking won, without changing the original run state or scoring logic.
+
+The Lua regression covers a completed final play and a fresh observation at
+214390/400000, ordinary game-over loss, and successful winning settlement.
+The compact regression verifies outcome, runResult and the action's Run lost
+text for the same score, including the +9922 delta. The Lua regression failed
+at the loss assertion before the bridge fix and passed afterward.
+
+Executed checks on Windows:
+
+- npm run check passed.
+- npm test passed: 119 tests, 117 passed, 2 skipped (macOS-only cases).
+- LuaJIT decision, observation and score-snapshot suites passed: 50, 88 and
+  35 checks respectively.
+- npm run stage-mod passed; the corrected mod is staged for installation.
+- npm run release:check and git diff --check passed.
+
+Live read-only game_health and game_observe confirmed the existing run still
+reports the faulty won outcome at GAME_OVER with 214390/400000 under the old
+loaded mod. The corrected behavior was verified offline; no gameplay action,
+mod installation or game restart was performed. Install the staged mod and
+restart Balatro to load the correction.

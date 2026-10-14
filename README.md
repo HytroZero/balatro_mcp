@@ -11,12 +11,13 @@ are no API keys or model settings to configure here.
 
 ## Highlights
 
-- 🏆 **GPT 6.1 Sol (High reasoning) + Codex + this MCP beat Blue Deck on GOLD Stake**,
-  playing a full run end to end through this MCP server on Windows.
-- Two gameplay skills ship with the server. See
-  [Included skills](#included-skills).
-- Observations are compact, indexed text with incremental deltas, so long runs
-  fit in an agent's context.
+- 🏆 **GPT 6.1 Sol High + Codex + this MCP won
+  Blue Deck runs on Gold Stake 
+  with a random seed and no human intervention or decision-making.**
+  Seed: `S7M5CNQW`.
+- **A powerful `game_analyze` system** compares plays score, Joker order, and economy choices, significantly improving the model's decisions and gameplay performance.
+- Observations are compact, indexed text with incremental deltas, so long runs fit in an agent's context.
+- Two gameplay skills ship with the server. See [Included skills](#included-skills).
 
 ## What can it do?
 
@@ -29,55 +30,10 @@ Ask for advice or hand over a whole run:
 
 > Look at my current hand and Jokers. What would you play, and why?
 
-> Start a Red Deck run on White Stake. Read the rules and available strategy
-> skills first, then play through the run.
+> Start a Red Deck run on White Stake. Finish ante 1, 2.
 
 > Review this run and explain the useful lessons.
 
-## Included skills
-
-The server publishes its gameplay skills as MCP resources and as `skill:<name>`
-prompts, so any MCP client can load them on demand. `balatro://skills` lists each
-skill and its files as `skill://<name>/<path>` URIs that do not depend on where
-the server is installed, and `balatro://objects/<name>` looks up one Joker,
-consumable, Voucher, Tag or Boss.
-For normal gameplay, read `balatro://protocol`, `balatro://guide` and the relevant
-skill once. Read `balatro://analysis` before first using `game_analyze`; look up
-specific mechanics through objects and linked chapters. `balatro://context`
-remains an explicit full-reference alternative; do not load it alongside its parts.
-
-### `balatro-gold-stake-coach`
-
-A strategy coach for complete runs aimed at Gold Stake. It covers blind
-selection and skipping, hand and discard choices, shops and cash flow, packs and
-consumables, Joker ordering, and Boss Blind preparation, with the goal of a
-reliable Ante 8 win rather than a high endless score. It works from observed
-game values instead of numbers remembered from older guides, and it ends each
-run with an evidence-based review.
-
-- Entry point: [`skills/balatro-gold-stake-coach/SKILL.md`](skills/balatro-gold-stake-coach/SKILL.md)
-- References: decision tables, plus notes on mechanics and their sources
-
-### `balatro-wiki-rules`
-
-A versioned rules knowledge base built from a [Balatro Wiki](https://balatrowiki.org/)
-snapshot (2026-10-02, game version 1.0.1o-FULL). It has 12 chapters, from the
-run lifecycle and the scoring sequence to Boss Blinds, the shop economy, RNG,
-and validation. The object catalog covers 366 objects, including all 150 Jokers,
-and any of them can be found by name, through MCP as `balatro://objects/Blueprint`
-or from a shell with the lookup script:
-
-```sh
-python skills/balatro-wiki-rules/scripts/lookup.py Blueprint
-```
-
-Agents use it to resolve mechanics questions during play. It also serves as the
-reference when implementing or testing a simulator.
-
-- Entry point: [`skills/balatro-wiki-rules/SKILL.md`](skills/balatro-wiki-rules/SKILL.md)
-- Sources and license: [`references/sources.md`](skills/balatro-wiki-rules/references/sources.md)
-
-See [`skills/README.md`](skills/README.md) to add your own skill.
 
 ## Quick start
 
@@ -210,6 +166,51 @@ error message.
 
 For server options, run `node dist/src/index.js --help`. A manual client
 configuration template is in [`mcp.example.json`](mcp.example.json).
+
+## Included skills
+
+The server publishes its gameplay skills as MCP resources and as `skill:<name>`
+prompts, so any MCP client can load them on demand. `balatro://skills` lists each
+skill and its files as `skill://<name>/<path>` URIs that do not depend on where
+the server is installed, and `balatro://objects/<name>` looks up one Joker,
+consumable, Voucher, Tag or Boss.
+For normal gameplay, read `balatro://protocol`, `balatro://guide` and the relevant
+skill once. Read `balatro://analysis` before first using `game_analyze`; look up
+specific mechanics through objects and linked chapters. `balatro://context`
+remains an explicit full-reference alternative; do not load it alongside its parts.
+
+### `balatro-gold-stake-coach`
+
+A strategy coach for complete runs aimed at Gold Stake. It covers blind
+selection and skipping, hand and discard choices, shops and cash flow, packs and
+consumables, Joker ordering, and Boss Blind preparation, with the goal of a
+reliable Ante 8 win rather than a high endless score. It works from observed
+game values instead of numbers remembered from older guides, and it ends each
+run with an evidence-based review.
+
+- Entry point: [`skills/balatro-gold-stake-coach/SKILL.md`](skills/balatro-gold-stake-coach/SKILL.md)
+- References: decision tables, plus notes on mechanics and their sources
+
+### `balatro-wiki-rules`
+
+A versioned rules knowledge base built from a [Balatro Wiki](https://balatrowiki.org/)
+snapshot (2026-10-02, game version 1.0.1o-FULL). It has 12 chapters, from the
+run lifecycle and the scoring sequence to Boss Blinds, the shop economy, RNG,
+and validation. The object catalog covers 366 objects, including all 150 Jokers,
+and any of them can be found by name, through MCP as `balatro://objects/Blueprint`
+or from a shell with the lookup script:
+
+```sh
+python skills/balatro-wiki-rules/scripts/lookup.py Blueprint
+```
+
+Agents use it to resolve mechanics questions during play. It also serves as the
+reference when implementing or testing a simulator.
+
+- Entry point: [`skills/balatro-wiki-rules/SKILL.md`](skills/balatro-wiki-rules/SKILL.md)
+- Sources and license: [`references/sources.md`](skills/balatro-wiki-rules/references/sources.md)
+
+See [`skills/README.md`](skills/README.md) to add your own skill.
 
 ## Contributing
 

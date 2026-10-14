@@ -18,7 +18,9 @@ return function(json, game, clock, instance, timeout, analysis)
     if G.GAME ~= previousRun then previousRun = G.GAME; runSerial = runSerial + 1 end
     local state, ready, reason, text = read()
     if text ~= fingerprint then serial = serial + 1; fingerprint = text end
-    local outcome = state.won and 'won' or game.phase() == 'GAME_OVER' and 'lost' or 'ongoing'
+    -- Original end_round can set won=true even on a losing final Boss.
+    -- The game-over phase takes precedence over that flag.
+    local outcome = state.state == 'GAME_OVER' and 'lost' or state.won and 'won' or 'ongoing'
     return {contract=1,backend='balatro_mcp_mod',revision=instance .. ':' .. serial,runId=instance .. ':run:' .. runSerial,
       gameVersion=(G.VERSION or ''):gsub('%-FULL$', ''),terminal=outcome ~= 'ongoing',outcome=outcome,ready=ready,state=state,
       availableMethods=ready and game.methods() or json.array(),legality='backend-authoritative',notReadyReason=reason}
