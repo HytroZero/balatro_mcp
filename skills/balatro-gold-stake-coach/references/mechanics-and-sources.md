@@ -4,7 +4,7 @@ Prepared on **2026-10-09** for **PC Balatro 1.0.1o-FULL** as exposed by the Bala
 
 ## Authority and availability
 
-During play, use current observations, the tool schemas, and the supplied game context (`balatro://rules`). They determine action indices, prices, current hand values, debuffs, and available effects. A guide cannot override backend legality or expose hidden information.
+During play, use current observations, the tool schemas, and the object/chapter references (or `balatro://rules` for broad review). They determine action indices, prices, current hand values, debuffs, and available effects. A guide cannot override backend legality or expose hidden information.
 
 The gameplay agent has no shell, file-writing, or repository-reading tool. It reads skill files, including this one, as `skill://` MCP resources limited to the discovered gameplay skill directories. The source paths below are maintenance references outside those directories, not instructions to fetch them during a run.
 
@@ -13,24 +13,11 @@ The gameplay agent has no shell, file-writing, or repository-reading tool. It re
 | [Action contract](../../../env/contract.ts), [game tools](../../../tools/index.ts) and [MCP server](../../../src/server.ts) | Tool loadout, exact action shapes, indices, and result envelopes. |
 | [Compact state](../../../env/compact.ts) | Full snapshots, changed-key results, hand values, and grouped deck preview. |
 | [Game bindings](../../../play/mod/game.lua) | Visible state, full rearrangement permutations, targets, forced selection, and hidden-card filtering. |
-| [Supplied game context](../../../model/context/balatro.md) | Source-backed rules already provided to the model. |
+| [Supplied game context](../../../model/context/balatro.md) | Full source-backed rules for optional broad review. |
 
 For mechanics, compare against the original 1.0.1o game Lua, which this package does not include: `game.lua` (Deck/Stake definitions, hand-level increments, Joker effects, sticker compatibility), `card.lua` (Blue Seal round-end generation, Mime, Rental charges, Perishable timers, consumables), `blind.lua` (Boss restrictions, debuffs, disabling), `functions/state_events.lua` (scoring phases, final hand type, round-end sequencing, settlement), and `functions/misc_functions.lua` (Purple/Gold Ante targets).
 
-The [prompt loader](../../../model/prompt.ts) combines `model/context/balatro.md` and `skills/core.md`; the server publishes them as `balatro://rules`, `balatro://protocol`, and, with the skill catalog, `balatro://context`. [Skill discovery](../../../src/context.ts) runs Pi's loader on the gameplay skill tree only; ambient coding skills remain excluded.
-
-## Mechanics that affect this policy
-
-- Gold includes lower-stake penalties: no direct Small Blind reward, faster target scaling, fewer discards, and eligible Joker stickers. It does not remove all Small Blind income or automatically forbid playing it.
-- Base Gold targets for Antes 1–8 are `300, 1000, 3200, 9000, 25000, 60000, 110000, 200000`. Blind and Deck factors can change them; current observed targets govern.
-- Eternal prevents sale/destruction. Perishable and Eternal are mutually exclusive in ordinary sticker generation; Rental can stack with either. Creation and copying channels have their own rules.
-- Perishable normally starts with five completed rounds of lifetime. Use its observed remaining tally; at zero its abilities are debuffed. The round-end timer step precedes some settlement payouts, so five rounds of lifetime does not guarantee five payments from a settlement-income Joker.
-- Rental normally costs $1 to buy and charges $3 each completed round, even while debuffed. The charge can create debt and reduces the balance available for interest.
-- Blue Seals held at round-end create the Planet for the last hand played that round, subject to consumable space and pending reservations. Mime and Red Seals can repeat eligible held effects. A Blue Seal can support any suitable hand type.
-- Mercury raises Pair by one level. Its ordinary increment is +15 base Chips and +1 base Mult, but the agent must use observed `hands` values for decisions instead of deriving them from level.
-- Playing, scoring, holding, and actively discarding are different events. Extra unscored cards in a play do not become discarded cards.
-- Joker order matters within the relevant activation phase. Card effects, held effects, independent Joker effects, Observatory, and Plasma are distinct steps; a blanket “all +Mult before all XMult” rule is insufficient.
-- The displayed consumable capacity, Joker capacity, prices, sticker tally, and debuff status take precedence over ordinary defaults.
+The [prompt loader](../../../model/prompt.ts) combines `model/context/balatro.md` and `skills/core.md`; the server publishes them as `balatro://rules`, `balatro://protocol`, and, with the skill catalog, `balatro://context`. [Skill discovery](../../../src/context.ts) scans only the gameplay skill tree; ambient coding skills remain excluded. Normal gameplay reads the smaller protocol, field guide and relevant skill; analysis output is documented separately at `balatro://analysis`.
 
 ## Historical patch evidence
 

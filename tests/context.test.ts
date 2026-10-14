@@ -53,8 +53,9 @@ test('bootstrap stays small while full reference context preserves rules and an 
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'model/context/balatro.md'), 'utf8')).trim()));
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'skills/core.md'), 'utf8')).trim()));
   assert.ok(context.fullContext.includes(context.catalog));
-  assert.ok(context.instructions.length < 2000);
-  for (const uri of ['balatro://guide','balatro://rules','balatro://protocol','balatro://skills','balatro://context']) assert.ok(context.instructions.includes(uri));
+  assert.ok(context.instructions.length <= 800);
+  for (const uri of ['balatro://guide','balatro://protocol','balatro://skills','balatro://analysis']) assert.ok(context.instructions.includes(uri));
+  for (const uri of ['balatro://rules','balatro://context']) assert.equal(context.instructions.includes(uri), false, `${uri} is not a normal gameplay prerequisite`);
   for (const skill of context.skills) {
     const body = stripFrontmatter(await readFile(skill.filePath, 'utf8')).trim();
     assert.equal(context.instructions.includes(body), false);

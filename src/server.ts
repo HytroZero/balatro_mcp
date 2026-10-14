@@ -6,6 +6,7 @@ import { ForgeBridgeBackend } from '../play/client.ts';
 import { Trace } from '../model/trace.ts';
 import { registerGameTools } from '../tools/index.ts';
 import { toolGuide } from '../tools/guide.ts';
+import { analysisGuide } from '../tools/analysis-guide.ts';
 import type { Options } from './config.ts';
 import { loadGameplayContext, registerGameplayResources } from './context.ts';
 import { nextId } from './ids.ts';
@@ -37,7 +38,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
   const tools = registerGameTools(server, backend, trace, sequential, options.timeoutMs);
   if (backend instanceof ForgeBridgeBackend) {
     server.registerTool('game_health', {
-      title: 'Game bridge health', description: 'Read mod identity, game version, Lua runtime, capabilities and readiness/notReadyReason. decision_state capability indicates extended decision fields. Does not start a run. Returns {ok,value} or {ok:false,code,applied,message}.',
+      title: 'Game bridge health', description: 'Read bridge identity, version, capabilities and readiness. Does not start a run.',
       inputSchema: z.object({}).strict(), outputSchema: envelopeSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async (_params,context) => sequential(async () => {
@@ -47,7 +48,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
       } catch (error) { return failure(error); }
     }));
     server.registerTool('game_operation', {
-      title: 'Inspect game operation', description: 'Read a pending/completed/failed action after an uncertain outcome. Omit actionId to inspect this connection\'s last action. Inspection never repeats an action or clears a mutation lock. Returns {ok,value} or a structured error.',
+      title: 'Inspect game operation', description: 'Inspect a pending/completed/failed action; omit actionId for this connection\'s last action. Never replays an action or clears its mutation lock. Recovery: balatro://protocol.',
       inputSchema: z.object({ actionId: z.string().min(1).optional() }).strict(), outputSchema: envelopeSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async ({ actionId },context) => sequential(async () => {
@@ -66,8 +67,12 @@ export async function createBalatroServer(options: Options, backend: Backend = n
   }
   server.registerResource('gameplay-guide', 'balatro://guide', {
     title: 'Tool and state guide', mimeType: 'text/markdown',
-    description: 'The field contract of this server: every state key, how to merge game_action results, worked examples, and recovery after timeouts and uncertain outcomes. Starts with installation notes for people.',
+    description: 'Read once before gameplay: state fields, delta merging, indices and card-order semantics.',
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: toolGuide }] }));
+  server.registerResource('analysis-guide', 'balatro://analysis', {
+    title: 'Analysis output reference', mimeType: 'text/markdown',
+    description: 'Read once before game_analyze: score labels, hypothetical lines, order, audit and sampled build limitations.',
+  }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: analysisGuide }] }));
   registerGameplayResources(server, context);
   return { server, async close() { await pending; await server.close(); await tools.close(); await backend.close(); await trace.flush().catch(() => {}); } };
 }

@@ -545,8 +545,6 @@ Oops doubles supported listed probability numerators, compounding across copies;
 
 Original RNG uses keyed state, seed/Ante and call order. Seed parity also requires Deck, Stake, profile, version, mods and action history. Manual input uppercases up to eight alphanumerics, 0->O. A reproducible fixture/other simulator is not original RNG parity.
 
-Inspect phase, Blind/target/score, hands/discards, money, ordered Joker states, visible cards, room, prices/packs/Vouchers and Tags. Balance survival, future Boss, scaling/economy/capacity. Full deck composition may be known; hidden draw order/face-down identities are not. Registered schemas/capabilities define executable operations; the game rules alone do not grant tools. Use fresh references and completed observations, honoring queued transitions and target legality. Only observed outcomes establish current-run results.
-
 ## 15. Sources and attribution
 
 Target-build authority: original `env/balatro/`, unchanged per `env/balatro-source.json`. Static source review, not live-game validation. Source roles: game.lua (objects/constants), back.lua (Decks), blind.lua (Bosses), card.lua (abilities/prices/copy/timers), tag.lua/challenges.lua; functions/state_events.lua (scoring/rounds/settlement), common_events.lua (pools/Editions/creation), misc_functions.lua (hands/targets/RNG), button_callbacks.lua (actions), localization/en-us.lua (display names). Paths relative to project root.

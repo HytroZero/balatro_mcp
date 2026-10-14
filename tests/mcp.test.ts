@@ -7,6 +7,8 @@ import { resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { record, type Data } from '../env/contract.ts';
+import { toolGuide } from '../tools/guide.ts';
+import { analysisGuide } from '../tools/analysis-guide.ts';
 
 const health = { status: 'ok', bridge: 'balatro_mcp_mod', protocol: 1, instanceId: 'mcp-test', gameVersion: '1.0.1o-FULL',
   luaRuntime: 'LuaJIT 2.0.5', preservesTiming: true, ready: true, capabilities: ['observe', 'deck_observe', 'act', 'operation'] };
@@ -88,9 +90,10 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
   try {
     const { tools } = await h.client.listTools();
     const instructions = h.client.getInstructions()!;
-    assert.ok(instructions.length < 2000);
+    assert.ok(instructions.length <= 800);
     assert.match(instructions, /balatro:\/\/skills/);
-    assert.match(instructions, /balatro:\/\/rules/);
+    assert.match(instructions, /balatro:\/\/protocol/);
+    assert.match(instructions, /balatro:\/\/analysis/);
     assert.doesNotMatch(instructions, /## Phase policy/);
     assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'game_analyze', 'game_health', 'game_operation'].sort());
     for (const tool of tools) { assert.ok(tool.outputSchema); assert.ok(tool.annotations); assert.equal(tool.inputSchema.type, 'object'); }
@@ -103,7 +106,9 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.deepEqual(record(analyze.inputSchema).required, ['revision']);
     assert.match(JSON.stringify(analyze.inputSchema), /"maxItems":4/);
     const resources = await h.client.listResources(); assert.equal(resources.resources[0]?.uri, 'balatro://guide');
-    const guide = await h.client.readResource({ uri: 'balatro://guide' }); assert.match(String(record(guide.contents[0]).text), /uncertain_outcome/);
+    assert.ok(resources.resources.some(resource => resource.uri === 'balatro://analysis'));
+    const guide = await h.client.readResource({ uri: 'balatro://guide' }); assert.equal(record(guide.contents[0]).text, toolGuide);
+    const analysis = await h.client.readResource({ uri: 'balatro://analysis' }); assert.equal(record(analysis.contents[0]).text, analysisGuide);
     const fullContext = await h.client.readResource({ uri:'balatro://context' });
     assert.ok(String(record(fullContext.contents[0]).text).includes((await readFile(resolve('model/context/balatro.md'),'utf8')).trim()));
     assert.doesNotMatch(instructions + String(record(fullContext.contents[0]).text) + String(record(guide.contents[0]).text), /memory_query|memory_record/);

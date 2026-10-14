@@ -27,242 +27,55 @@ function phaseViewTable(): string {
     ...phaseViewRows.map(row => `| ${row.keys.map(key => '`' + key + '`').join(', ')} | ${phasesOf(row.keys).join(', ')} | ${row.content} |`)].join('\n');
 }
 
-/** Served as balatro://guide: the field contract of this server. Phase views come from phaseViews. */
-export const toolGuide = `# Balatro MCP tool workflow
+/** Served as balatro://guide: the field contract; phase views come from the projection. */
+export const toolGuide = `# Balatro state and action guide
 
-Connect to the original Steam desktop Balatro 1.0.1o game (Windows or macOS) with the bundled balatro_mcp_mod mod,
-Steamodded/Lovely and LuaSocket. Start with \`game_health\`, inspect \`ready\` and
-\`notReadyReason\`, then call \`game_observe\`. Close dialogs or wait for animations
-when the game is unready. The MCP server does not launch the game or run a model.
-On macOS, run \`npm run install:macos\` with the game closed, then
-\`npm run launch:macos\` in a separate terminal for Lovely injection. The installer
-and launcher support Apple Silicon/Intel and custom Steam library locations.
+This is the field contract. Execution and recovery are in \`balatro://protocol\`; scoring output is in \`balatro://analysis\`.
 
-Initialization instructions contain only a short operating contract. Read
-\`balatro://rules\` for mechanics and \`balatro://protocol\` for the full decision
-protocol when needed. Read \`balatro://skills\` for each gameplay skill, its
-\`skill://<name>/<path>\` files with titles and sizes, and discovery diagnostics.
-Read those URIs with MCP resources/read; a relative link in a skill file resolves
-against that file's URI, as on a web page. Read \`balatro://objects/<name>\`
-(optionally \`?kind=joker\`) for one named object's rules row and metadata instead
-of a whole catalog file. Use \`skill:<name>\` MCP prompts for explicit skill
-expansion. There are no file tools; skill files are read only through these resources.
-\`balatro://context\` combines \`balatro://rules\`, \`balatro://protocol\` and the skill
-catalog in one document. Skill text cannot authorize gameplay by itself.
+## Envelopes and indices
 
-## Tools and results
+Success is \`{ok:true,value}\`; failure is \`{ok:false,code,applied,message}\` with MCP \`isError:true\`. Preserve \`applied\` (\`true\`, \`false\` or \`"unknown"\`) for recovery.
 
-\`game_observe\` and \`game_start\` return a full v3 snapshot: \`{v:3, full:true, rev,
-phase, actions, state}\`. \`game_action\` returns \`{rev, phase, actions, result, state?}\`
-with only the state keys that changed; it falls back to a full snapshot when no
-matching baseline exists. \`deck_observe\` returns grouped remaining-deck composition
-without draw order or action indices. If its rev differs, observe again before acting.
-\`game_start\` starts only from the menu or a finished run; deck/stake names are uppercase.
-In every booster pack, \`actions\` lists \`pack\` for choosing a card and \`skip\`
-for leaving the pack when available. Use \`{"method":"skip"}\` to skip any
-Arcana, Celestial, Spectral, Standard or Buffoon pack, including Jumbo and Mega
-sizes and packs opened by Tags. \`{"method":"pack","card":0}\` chooses a card;
-the former \`pack\` action with a \`skip\` flag is no longer accepted. Outside
-packs, \`skip\` still skips a Small or Big Blind.
+\`game_observe\` and \`game_start\` return \`{v:3,full:true,rev,phase,actions,state}\`. \`game_action\` normally returns \`{rev,phase,actions,result,state?}\` with changed keys only. \`notReady\` means no decision boundary and empty \`actions\`; \`outcome\` is \`won\` or \`lost\`. Handle these flags per the protocol, including \`uncertain_outcome\`.
 
-Pass the latest \`rev\` as \`revision\`. It is the bridge counter; the server restores
-the full bridge revision it issued to this connection, and an unissued counter fails
-with \`stale_state\` without dispatching. Full \`<instance>:<counter>\` revisions are
-internal to the bridge and are rejected by \`game_action\`. Indices are zero-based within each area.
-\`actions\` lists phase candidates with limits (\`play 1-5\`, \`reroll $5\`); actions the
-game reports unavailable are omitted. \`use\`, \`sell\` and \`rearrange\` apply whenever
-their area is non-empty. The game validates price, slots, targets and forced cards.
+Pass the latest issued short \`rev\` as \`revision\`; internal instance-prefixed revisions are not action inputs. Indices are zero-based within each area. Item lines begin with the action index; take it from the latest state.
 
-Results use \`{ok:true,value:...}\` or
-\`{ok:false,code,applied,message}\` with MCP \`isError:true\` for failure.
-\`applied\` is \`true\`, \`false\`, or \`"unknown"\`. Preserve it when deciding recovery.
-\`notReady\` appears only while the game is not at a decision boundary (then
-\`actions\` is empty); \`outcome\` appears only when the run is won or lost.
+\`actions\` lists candidates and limits, not eligibility. \`use\`, \`sell\` and \`rearrange\` may be omitted from that list; compare the area's contents with the item's requirements. Use \`{"method":"skip"}\` to leave any booster pack, and \`{"method":"pack","card":i,"targets":[...]}\` to choose an item when targets are required. Outside packs, \`skip\` skips Small/Big.
 
-### Merging an action result
+\`rearrange\` requires a full permutation of one area. Ordering a \`play\` or Tarot target list does not reorder cards physically. After rearranging, use the returned state's indices.
 
-1. \`full:true\` replaces everything.
-2. Otherwise keys present in \`state\` update and absent keys keep their value.
-3. An array replaces the whole value. An object merges one level per member; a
-   null member is deleted. An object such as \`{"2":"…"}\` on \`consumables\` or
-   \`hand\` replaces only those elements; it is sent only while membership and
-   order are unchanged. When \`jokers\` is present, it is always the complete
-   ordered array, including unchanged Jokers; an empty array clears the area.
-4. When the phase changes, drop views the new phase does not use (below).
-5. Entering \`BLIND_SELECT\` from another phase resends \`blind\` and \`blinds\` whole
-   (members that disappeared are null), even when they did not change, so the
-   skip Tag and Boss are always in the result that offers the choice.
+## Delta merge
 
-\`result\` is one English sentence of facts from this action; it is not state.
-Missing/mismatched baselines, start/new run, source or readiness changes and
-terminal results return full snapshots. Failed actions invalidate the delta
-baseline. Internal health and preflight reads do not establish a baseline.
-After context compaction or an external game change, call game_observe.
+1. \`full:true\` replaces the entire snapshot.
+2. Otherwise absent state keys keep their values; arrays replace their entire value.
+3. Objects merge one level per member; \`null\` deletes a member. A patch such as \`{"2":"…"}\` on \`hand\` or \`consumables\` replaces only those elements, while membership/order remain unchanged.
+4. \`jokers\` always replaces the complete ordered array when present; \`[]\` clears it.
+5. On a phase change, drop views not used by the new phase (table below). Entering \`BLIND_SELECT\` resends \`blind\` and \`blinds\`, with vanished members null.
 
-IDs use counters rather than hashes or UUIDs. Actions, calls and trace files share
-a readable process-start timestamp/PID prefix, followed by their kind and counter.
-Bridge revisions retain their instance prefix internally, so old values expire across a
-bridge restart. Successful results omit actionId; game_operation inspects the last
-action without one.
+\`result\` is an action summary, not state. Missing baselines, start, source/readiness changes and terminal results may return full snapshots. Failed actions invalidate the delta baseline.
 
 ## State fields
 
-\`state\` is flat. \`"?"\` means unknown everywhere.
+\`state\` is flat; \`"?"\` means unknown.
 
-Run keys (present while a run exists):
+- \`setup\`: deck/stake; seed is appended only after the run ends.
+- \`ante\` owns the displayed \`blinds\`; \`roundNo\` counts played rounds.
+- \`money\`, optional nonzero \`credit\`, \`handSize\`, \`jokerSlots\` and \`consumableSlots\` are current resources/capacities.
+- \`hands\` maps poker hands to \`"<chips>x<mult>[ LvN][ played N]"\`. Lv1/zero plays are omitted; \`played\` here is cumulative for the run.
+- \`jokers\` and \`consumables\` are ordered item lines; \`vouchers\` and \`tags\` describe owned effects.
+- \`blind\` is the current/next role (Small/Big/Boss). \`blinds\` maps roles to target, defeated status, skip Tag and Boss restrictions, including dynamic Eye/Mouth history.
 
-- \`setup\`: \`"RED deck, WHITE stake"\`; \`, seed X\` is appended only after
-  the run ends (won or lost). Operation inspection also hides ongoing seeds.
-  \`ante\` is the Ante that owns
-  \`blinds\`; after a Boss it changes when cash-out creates the next blinds.
-  \`roundNo\`, \`money\`, \`credit\` (only when non-zero), \`handSize\`, \`jokerSlots\`,
-  \`consumableSlots\`.
-- \`hands\`: poker hand → \`"<chips>x<mult>[ LvN][ played N]"\`, observed values ordered
-  by hand rank; Lv1 and zero plays are omitted. \`played\` is cumulative for the run.
-- \`jokers\`, \`consumables\`: ordered lines \`"<i>: <Name> [tags]: <effect>"\`.
-- \`vouchers\`, \`tags\`: \`"<Name>: <effect>"\` lines for redeemed vouchers and held tags.
-- \`blind\`: current or next role (Small/Big/Boss). \`blinds\`: role → line such as
-  \`"1350; skip: Juggle Tag (+3 hand size next round)"\`,
-  \`"The Needle 900: Play only 1 hand"\`, \`"900 [defeated]"\`. Boss lines include
-  dynamic state: The Eye \`(used: Pair, Flush)\`, The Mouth \`(locked: Pair)\`.
-
-Phase views (dropped when the phase no longer uses them):
+Phase views exist only in these phases:
 
 ${phaseViewTable()}
 
-Line tags, in order: \`Tarot\`/\`Planet\`/\`Spectral\`, \`$N\` (buy price), \`sell $N\` or
-\`eternal\`, \`rental\`, \`perishable N\`, edition, \`debuffed\`, target count such as
-\`2 targets\` or \`1-2 targets\`. Playing cards read \`"<i>: AD [bonus, foil, red seal,
-+5 chips, debuffed]"\`; \`Stone\` has no rank or suit; a face-down card is \`"<i>: ?"\`
-with only \`forced\`/\`selected\`. Effects use read-only bindings to observed values;
-an unresolved variable appears as \`?\`. No line precomputes affordability or slot
-eligibility: compare price with money and the area length with its slots.
+An item reads \`"<i>: <Name> [tags]: <effect>"\`. Tags identify type, purchase/sell price, Eternal/Rental/Perishable timer, edition, debuff and target range. Compare price to money and contents to capacity; lines do not precompute eligibility.
 
-The decision observer reads existing state and English localization only. It
-never creates Tags, invokes game actions, initializes random choices or reveals
-hidden card identities. The Lua HTTP wire protocol remains version 1; v3 is the
-model projection. Stage and install the updated mod, then restart Balatro to load
-it. Staging does not reload the game. \`game_health\` reports \`notReadyReason\`.
+A playing card reads \`"0: AD [bonus, foil, red seal, +5 chips]"\`. Stone has no rank/suit. Face-down cards read \`"0: ?"\` with only forced/selected tags. Unresolved effect values are \`?\`.
 
-## game_analyze
+## Remaining deck and references
 
-\`game_analyze({"revision":"<rev>"})\` is read-only: it returns numbers for the
-current decision and never acts, issues a revision or changes the delta baseline.
-Its rows are candidates to compare, not an allowlist and not a recommendation.
-It needs LuaJIT and the locally prepared original scoring source on the server
-machine (\`npm run sandbox:prepare\`); without them it returns \`status:"unavailable"\`
-with the reason in \`notes\`, and the other tools keep working.
+\`deck_observe\` returns \`remainingCards\`, \`previewCards\`, \`uncertainCards\` and grouped \`"<count>x <card> [attributes]"\` lines. These have no draw order or action indices. The preview can include face-down held cards, without identifying them; do not treat uncertain membership as an exact draw distribution. Actions do not refresh this preview. If its \`rev\` differs, observe before acting.
 
-While selecting a hand it scores every legal selection with the original game's
-scoring code in a separate process. The value holds \`rev\`, \`phase\`, \`focus:"hand"\`,
-\`status\` (\`complete\`, \`partial\` or \`unavailable\`) and:
-
-| key | content |
-| --- | --- |
-| \`need\` | \`"500 to clear; hands 1, discards 0"\` |
-| \`plays\` | \`"<hand indices>: <poker hand> <score> <exact, conditional or expected>; <facts>"\`: the best play of each poker hand, then plays that differ in what they keep |
-| \`use\` | a held Planet, or a held Tarot on its best target cards, that raises the best play when used first |
-| \`order\` | a full \`rearrange\` permutation of Jokers or hand that raises the best play |
-| \`lines\` | one row per line you passed, in order |
-| \`notes\` | assumptions behind \`conditional\` rows, and anything skipped |
-| \`audit\` | how earlier predictions matched the plays actually made this run |
-
-Facts on a row: \`clears\` or \`short N\`; \`holds Blue Seal (card 3) -> Jupiter at round end\`;
-\`plays the Blue Seal\`; a Joker value the play grows or resets, such as
-\`Ride the Bus Mult 6 -> 0\`; \`up to N more cards can ride along at the same score\`
-(extra cards that change nothing, useful for cycling the hand). \`exact\` is the
-deterministic score of the visible state. \`conditional\` rests on an assumption
-named in \`notes\`: face-down cards held unscored, The Hook's discards ignored,
-or exact labels suspended after an audit mismatch. \`expected\` replaces each
-random effect with its public-probability mean in one evaluation: Misprint adds
-11.5 by default; a chance p of Xk becomes X(1+p*(k-1)); chance-based upgrades,
-growth and money use their mean amounts. Fractional scores are retained before
-final rounding. Nonlinear or correlated combinations (Space Joker, Lucky Cat,
-Bootstraps thresholds, Plasma) carry \`interaction approximation\` with reasons
-in notes; their final score is not an exact outcome-distribution expectation.
-Unknown random effects return unavailable with a missing-rule reason; ask the
-user for that rule before analysing the effect. No branch enumeration or
-numerical sampling fallback is used. Expected scores
-are not guaranteed scores or single-play predictions. No run seed or RNG stream is used
-and no seed is returned. Only an \`exact\` row says \`clears\`; a
-\`conditional\` one says \`reaches the target\`.
-
-\`lines\` prices your own idea without executing it: up to 4 lines of up to 3 steps,
-each step \`{"method":"use","consumable":i}\` (a Planet), \`{"method":"use","consumable":i,"cards":[...]}\` (a Tarot and its targets),
-\`{"method":"rearrange","jokers":[...]}\`, \`{"method":"rearrange","hand":[...]}\` or a
-final \`{"method":"play","cards":[...]}\`. Every index in a line refers to the current
-observation, also after a rearrange inside the line. A line without \`play\` reports
-the best play after its steps. Execute the real actions one at a time afterwards.
-
-An \`order\` row is a first step: execute the \`rearrange\`, read the new state, then
-decide. After a hand rearrange the row gives the positions to play in the new order.
-
-\`audit\` compares each \`exact\` prediction with the score of the play made at the
-same revision, at no extra game cost. Expected scores are never
-compared with one random play. After a mismatch deterministic rows of that run are
-\`conditional\` and \`audit\` names the hand that differed.
-
-In \`SHOP\`, \`PACK\` and \`BLIND_SELECT\` it returns \`focus:"build"\`. It samples the
-whole public deck (32 fixed shuffles, never the run's seed or draw order); each
-hand picks its best play from hand size plus up to 5 drawn cards. Hands are
-independent and Joker growth is frozen; each selection is ranked by its expected
-effect-mean score, including chance effects. Interaction approximations are
-identified in notes and affected pace/offer rows. The clear figure bootstraps these expected hand
-scores: it is a pace proxy, not a chance-aware win probability. Trust changes
-between options more than absolute levels.
-
-| key | content |
-| --- | --- |
-| \`pace\` | each blind still to play this Ante: target, hands, need per hand, median and p75 best expected hand, clear proxy, the Boss rule and whether it is modelled |
-| \`jokers\` | each Joker's share of the score (drop when it leaves), stickers, or \`no direct score\` |
-| \`offers\` | each priceable shop Joker or Planet, opened pack card, hand/discard/hand-size voucher and held Planet: per-hand change, clear proxy of the last open blind before and after, the Joker it replaces when slots are full, interest change |
-| \`horizon\` | the next Ante's targets, growth needed per hand and how far the typical Boss clear stays at 0.50 or more |
-| \`economy\` | \`"$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round"\` |
-| \`rewards\` | base reward of each blind still to play |
-| \`skip\` | when a Small or Big Blind is offered: what its Tag gives and what skipping forgoes |
-
-\`notes\` lists offers that are not priced (Tarot targets in the deck, Spectrals,
-added playing cards, other vouchers). \`game_analyze({"revision":"<rev>","focus":"boss"})\`
-adds \`bosses\`: every Boss the next Ante can bring by the game's own rule, weakest
-first, with its clear estimate next to the plain blind's and the reason where one
-is computable. It takes several seconds.
-
-While selecting a hand, \`use\` also prices each held Tarot that changes chosen
-cards (enhancements, suits, Strength, Death) on its best target cards, and a line
-step may be \`{"method":"use","consumable":i,"cards":[...]}\`.
-
-## Examples
-
-1. Attach to a run: \`game_health({})\`, \`game_observe({})\`, then
-   \`deck_observe({})\` if composition matters.
-2. Start from the menu: \`game_start({"deck":"RED","stake":"WHITE","seed":"MCPTEST"})\`.
-3. With the returned rev, select a blind:
-   \`game_action({"revision":"<rev>","action":{"method":"select"}})\`.
-4. In a hand: \`game_action({"revision":"<rev>","action":{"method":"play","cards":[0,1,2,3,4]}})\`.
-5. Before a hard hand: \`game_analyze({"revision":"<rev>"})\`, or with your own idea
-   \`game_analyze({"revision":"<rev>","lines":[[{"method":"use","consumable":0},{"method":"play","cards":[0,1,2,3,4]}]]})\`.
-
-## Recovery and persistence
-
-After \`uncertain_outcome\`, stop mutations. Never automatically resubmit the action.
-Call \`game_operation({})\` to inspect this process's last action, or supply an
-\`actionId\`. Inspection is read-only and never clears a lock. \`game_observe\` can
-release the client lock only after validating a correlated completed operation.
-A compatible mod restart invalidates old revisions and action IDs. Failed Lua
-operations can require restarting the bridge. A timeout/cancellation can occur
-after dispatch; do not infer that the action was unapplied. Before dispatch,
-cancellation returns \`cancelled\` with \`applied:false\`, and budget expiry returns
-\`timeout\` with \`applied:false\`. After dispatch, either becomes \`uncertain_outcome\`
-with the known application status and a retained operation ID; inspection remains available.
-
-Calls within one MCP process execute sequentially. Use one controlling process per
-game and data directory. Simultaneous clients/manual gameplay can invalidate state.
-The default client tool budget is 30 seconds, starting when its queued handler
-begins execution. All preflight observations, dispatch and completion polls share
-that one monotonic deadline; \`game_start\`'s initial observation uses the same budget.
-Cancellation while queued is checked before execution. The mod's separate deadline
-is 20 seconds. Increase both for long scoring animations; configure the mod's
-\`BALATRO_MCP_MOD_ACTION_TIMEOUT\` (seconds) before launching the game.
-
-MCP call traces go to \`data/traces\`.
+Read skill files through their \`skill://\` URIs. Relative references resolve against the containing file's URI as on a web page. Use \`balatro://objects/<name>\` for one mechanic; follow its chapter link for broader context.
 `;

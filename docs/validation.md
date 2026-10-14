@@ -963,3 +963,95 @@ Executed checks on Windows:
 
 All verification was offline. No live game action, installation or MCP restart
 was performed.
+
+
+## Align gameplay resources and tool instructions — 2026-10-14
+
+Aligned bootstrap instructions, the decision protocol, the tool guide and
+analysis description, and the Gold Stake Coach entrypoint and decision tables.
+Transient animation/event/phase waits permit bounded host-controlled read-only
+recovery (1, 2, 4 second waits; at most three observations within 15 seconds).
+Terminal outcomes take precedence; dialogs, unknown blockers, backend failures
+and unresolved mutations retain their stopping/recovery requirements. No
+automatic mutation retries were added.
+
+Analysis is now driven by consequential uncertainty rather than every phase,
+purchase or pack. Relevant state changes invalidate old exact predictions.
+Scoring labels do not establish execution legality: proposed Tarot targets and
+caller lines must respect forced selections and other action constraints.
+Cerulean Bell's discard and card-targeted use requirements are explicit.
+Partial/order-budget-limited results may omit better arrangements.
+
+Updated the seven-tool inventory, removed the obsolete absence-of-preview claim,
+and aligned Joker deltas with the complete-array replacement contract. The guide
+and protocol are the referenced field and execution contracts. Both existing
+pre-action explanation requirements were checked against Git HEAD and preserved
+verbatim, as requested. Changes are resource/prompt text and documentation;
+scoring, mutation validation and bridge algorithms are unchanged.
+
+Executed checks:
+
+- npm run check passed.
+- npm test passed: 118 tests, 116 passed, 2 skipped (Windows-only installers).
+  Existing coverage includes MCP initialization/resource reads, skill expansion,
+  generated guide fields, Joker delta replacement and the offline scoring bridge.
+- Gold Stake Coach quick_validate.py passed under conda's torchx environment.
+- Bootstrap instructions are 1,849 characters, below the existing 2,000-character
+  test limit.
+- npm run release:check passed (117 exported source files).
+- git diff --check passed.
+
+All verification was offline. No live game action, mod installation or MCP
+restart was performed. npm test rebuilt dist; restart the MCP process to load
+the updated initialization instructions, guide and tool descriptions.
+
+
+## Deduplicate gameplay prompts and load analysis on demand — 2026-10-14
+
+Moved execution/recovery/legality/analysis-cadence instructions into the protocol,
+field and delta definitions into the guide, and score labels, caller lines,
+audits and sampling limitations into the new balatro://analysis resource.
+Coach and its decision tables now contain strategy rather than tool inventories,
+state formats, duplicated mechanics or Boss encyclopedias. Installation and
+maintenance guidance remains in the existing human-facing documentation.
+
+The pre-action explanation paragraph from the previous Coach was preserved
+verbatim in the protocol; its frequency and requirements were not reduced.
+The full balatro://context/rules compatibility resources remain available, but
+normal bootstrap guidance uses small resources and object/chapter lookup.
+No scoring, bridge, mutation-validation or gameplay algorithm changed.
+
+Measured character counts against the aligned prompts immediately before this
+simplification (not token counts, and not total host context):
+
+| Content | Before | After |
+| --- | ---: | ---: |
+| Bootstrap instructions | 1849 | 715 |
+| Protocol | 5436 | 2334 |
+| Field guide | 18057 | 4745 |
+| Coach entrypoint | 19036 | 3243 |
+| Decision comparisons | 9679 | 3136 |
+| Five game-tool descriptions in tools/index.ts | 5666 | 929 |
+
+The initial protocol + guide + Coach reads total 10322 characters instead of
+42529, a 75.7% reduction. The separate analysis reference is 4745 characters
+and is loaded before first analysis. Actual context depends on host tool-schema
+presentation and which optional references are read.
+
+Executed checks:
+
+- npm run check and npm run build passed.
+- Targeted context/guide/MCP tests passed: 17/17, including listing and reading
+  the new resource through built stdio, full-reference compatibility and field
+  coverage. Bootstrap budget is now 800 characters; game-tool descriptions have
+  a 350-character budget instead of repeating the complete field guide.
+- npm test passed: 118 tests, 116 passed, 2 skipped (Windows-only installers).
+- Gold Stake Coach quick_validate.py passed under conda's torchx environment.
+- Compared the explanation paragraph to the pre-simplification text and verified
+  its verbatim presence in the protocol and removal from duplicate locations.
+- npm run release:check passed (118 exported source files).
+- git diff --check passed.
+
+All checks were offline. No live game action, mod installation or MCP restart
+was performed. The build is ready; restart the MCP process to load the shortened
+initialization/tool descriptions and the new analysis resource.

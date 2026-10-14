@@ -1,79 +1,35 @@
-# Gold Stake Decision Tables
+# Gold Stake Decision Comparisons
 
-Use these tables to compare actions against an observed state. The entrypoint contains the execution contract; these tables add strategic detail. Recommendations are conditional heuristics, not measured win-rate claims.
+Use only for a difficult strategic tradeoff. Execution and analysis policy are in `balatro://protocol`; exact mechanics belong to `balatro://objects/<name>` and the linked chapter.
 
-## Shop priorities
+## Shop and engine choices
 
-| Observed condition | Preferred comparison | Cost or exception |
+| Situation | Compare | Main cost |
 | --- | --- | --- |
-| Next required blind is unsafe | Buy immediate Chips, Mult, XMult, a usable Planet, or an effective consumable | Keep enough cash for any necessary follow-up; speculative growth may not rescue the next round. |
-| Damage barely clears on favorable draws | Improve draw consistency, reliable output, or usable hand count | Do not budget random procs as guaranteed damage. |
-| Scoring is safe and cash is below an interest breakpoint | Save, or buy an economy engine with a plausible payback window | Green Deck has no interest; immediate core upgrades may outweigh the breakpoint. |
-| Additive Mult scales well but late targets outpace output | Compare compatible XMult and retriggers | Card Sharp needs a repeated hand within the round; The Eye and The Needle counter it. |
-| Chips are strong but Mult is weak | Compare additive Mult, hand levels, and XMult | An XMult source needs enough existing Mult to multiply. |
-| Hand levels already provide useful Chips and Mult | Spend on the missing contribution or consistency | A dedicated Chips Joker is not automatically necessary. |
-| A visible Blue Seal is offered in a Standard pack | Compare held access, remaining rounds, cost, and dilution with other choices | Do not assume another seal appears in an unopened pack or future shop. |
-| An Eternal Joker is offered | Evaluate permanent slot value and Boss compatibility | An Eternal Rental retains its carrying cost; Verdant Leaf may require another sellable Joker. |
-| A Perishable Joker is offered | Buy temporary survival with a replacement horizon | Read its actual timer; debuff does not free its slot or stop Rental charges. |
-| A Rental Joker is offered | Estimate immediate benefit minus $3 per completed round | Selling before the fee can reduce cost when legal and when the lost effect is acceptable. |
-| Shop has no affordable improvement | Compare one purposeful reroll with keeping the reserve and leaving | Rerolling replaces ordinary stock, not every Voucher and pack. Reassess before rerolling again. |
-| Joker/consumable capacity is full | Compare legal sale, immediate use, or leaving the item | Evaluate displaced value and special capacity effects; do not blindly sell a core. |
+| Next blind is unsafe | Immediate score, consistency, useful hand count or a consumable | A speculative engine may not survive until it grows. |
+| Damage relies on favorable draws | Deck control, access frequency and stronger ordinary hands | A larger peak score may not improve the weak draws. |
+| Score is safe | Income, growth and keeping cash | Include lost interest and the number of rounds left. |
+| Chips and additive Mult are established | Compatible XMult or retriggers | Verify that its condition is repeatable under the revealed Boss. |
+| Strong hand levels already provide a base | The missing multiplier, consistency or held effect | Another Chips source can have lower marginal value. |
+| A seal or enhanced card is offered | Access, remaining rounds and copying opportunities | Deck dilution can reduce access to existing key cards. |
+| Permanent capacity is scarce | Long-term contribution and Boss compatibility | A cheap Eternal can block a needed later upgrade. |
+| Temporary support is offered | Immediate rescue versus useful lifetime and carrying cost | An expired effect can still occupy a slot or charge rent. |
+| No useful offer is affordable | A purposeful reroll versus the reserve | Reassess new stock; do not reroll without a defined need. |
 
-Assess each serious purchase over three horizons: the next required blind, this Ante's revealed Boss, and the Ante 8 showdown. Use current prices and available information. Future stock is unknown.
+Compare prices and observed output over the next blind, the revealed Boss and the showdown. Future shop stock is unknown.
 
-## Pair and held-value checklist
+## Small hands or larger hands
 
-Before using Pair as the current play:
+Small hands can preserve several valuable held cards and provide repeatable growth. Larger hands can supply a stronger base and score several enhanced cards. Compare the complete result, not poker-hand rank alone.
 
-1. Compute the remaining target from observed blind Chips and accumulated round Chips. Compare a conservative hand estimate with the remaining hands.
-2. Identify which cards score and which remain held. Include forced selection and any card-count requirement.
-3. Verify that extra played cards do not change Pair into a higher hand. Pair plus three unrelated cards satisfies The Psychic only if five cards are legal and the intended classification survives.
-4. Check what keeping a Blue Seal, Gold card, or Steel card contributes. A Blue Seal requires remaining held through round-end and consumable capacity for its Planet.
-5. If seeking Mercury, make the final played hand Pair. A previous Pair does not determine the seal reward when the final hand is different.
-6. Check growth conditions: Green Joker loses Mult on discards; Ride the Bus resets on scoring a face card; Square Joker needs exactly four played cards; Supernova depends on that hand's play count.
-7. Resolve relevant card order, independent Joker order, and copier targets. Issue a full `rearrange` permutation when order must change, then use its returned indices and rev.
-8. If held-value preservation threatens survival, use the necessary card or finish with another hand type.
+A seal-driven plan needs both access and enough present damage. Finish with the hand whose future upgrade is useful only when doing so does not threaten the current clear. Growth that costs an extra hand also costs potential income and can trigger adverse effects.
 
-A high-level Pair engine can be strong without a Chips Joker. Conversely, Blue Seals alone do not supply enough damage for every Boss. Recompute after upgrades, debuffs, replacements, and new targets.
+Preserving a valuable card is optional when survival needs it. Conversely, adding a higher-ranked unscored card may change which card scores as High Card; do not assume every extra card is free cycling.
 
-## Choose a scoring engine
+## Restrictive Boss tradeoffs
 
-| Current support | Candidate plan | What to verify |
-| --- | --- | --- |
-| Repeatable small hands, scaling Mult, held rewards | Pair or High Card with safe growth | Current damage, Boss restrictions, and enough future scaling. |
-| A different hand has strong observed levels | Continue that hand and use Blue Seals to grow it | Access frequency and switching cost; Pair is optional. |
-| Straight support and useful deck control | Continue Straight | Discard budget, actual remaining ranks, and Boss constraints. |
-| Checkered Deck or strong suit synergy | Flush or a related supported hand | Suit debuffs, deck improvements, and late damage. |
-| Photograph, Hanging Chad, or other scoring-card synergy | Align the relevant scoring card and retriggers | Photograph targets the first scoring face card; Hanging Chad targets the first scoring card. The Plant can remove the face-card plan. |
-| Steel, Baron, Mime, or other held-card synergy | Retain valuable cards and play a small compatible hand | Held-card debuffs, hand size, draw reliability, and The Hook's risk. |
-| Plasma Deck | Improve the contribution with greatest effect after balancing | Final score uses balanced Chips and Mult; ordinary XMult priorities can change. |
-| No established engine | Use the strongest legal current hand and buy flexible survival | Avoid paying for a speculative combo with no immediate bridge. |
+Read the actual Boss object instead of a full Boss checklist. Identify which part of the engine is restricted: hand type, number of plays/cards, card effects, Joker effects or draw information. Compare a compatible line with any available countermeasure and its opportunity cost.
 
-## Boss preparation
+Do not assume a future reroll, saleable counter or rescue draw will appear. A small-blind clear is weak evidence for a showdown with a much larger target or a restriction that removes the core effect.
 
-| Boss | Failure to prevent | Preparation and execution |
-| --- | --- | --- |
-| The Eye | Spending hands on repeated types that cannot score | Track round-local hand history. Plan distinct types or a strong first-hand finish. |
-| The Needle | Needing two scoring hands | Seek a single-hand finish with current tools, or an available Boss countermeasure. |
-| The Mouth | First hand locks an unreliable type | Choose a type repeatable from actual deck support; retain that commitment. |
-| The Psychic | Selecting fewer than five cards or unintentionally changing the hand | Add suitable cards while checking scoring, forced selections, and held-value loss. |
-| The Plant / suit debuffs | Counting disabled card effects | Recalculate surviving contributions and alternatives before entering. |
-| The Pillar | Relying on key cards already played this Ante | Conserve useful cards earlier when worthwhile; otherwise prepare damage independent of their effects. |
-| The Arm | Using the pre-reduction base hand values | Include the reduction in the estimate and consume returned observed values. |
-| The Ox | Unexpectedly losing cash needed for the next shop | Read the specified type; compare the cash loss with survival and available alternatives. |
-| Violet Vessel | Testing only a normal Boss target | Budget against the actual target and conservative output. |
-| Crimson Heart | Treating a core Joker as always active | Inspect the active debuff each hand; retain damage redundancy when practical. |
-| Verdant Leaf | Entering without a viable sale when debuffed damage cannot win | Retain a sellable Joker and evaluate its loss. Sale is unnecessary if the debuffed engine already wins. |
-| Amber Acorn | Applying the pre-shuffle identity map or assumed order | Treat face-down positions as unknown; use visible effects without fabricating identities. |
-| Cerulean Bell | Leaving the forced card out of a required selection | Include it, then check legal card count and final hand classification. |
-| The Hook | Assuming valuable held cards survive every play | Account for two random discards; avoid extra hands solely to farm held rewards. |
-| The Flint | Overstating the base Chips and Mult | Apply the Boss reduction before evaluating the rest of the scoring sequence. |
-| The Wall | Assuming an ordinary Boss target | Use observed target and remaining resources. |
-
-## Estimate without a score-preview tool
-
-Start with observed hand Chips and Mult. Identify the actual scoring subset, then apply known scoring-card contributions, held-card effects, independent Joker effects, and other relevant modifiers in game order. Plasma balances the final values. Add existing round Chips separately from this hand's score.
-
-For a deterministic, ordinary example, base `40 Chips, 4 Mult`, then independent `+4 Mult`, then `X2 Mult` produces `40 * (4 + 4) * 2 = 640`. Reversing those independent effects produces `40 * (4 * 2 + 4) = 480`. This example omits card contributions and is not a prediction for a real hand.
-
-Use a lower-bound or range when Lucky, Glass survival, random Joker targets, or hidden cards affect the calculation. Future hand counts are projections, not guarantees. After playing, compare the observed result with the estimate and revise the model rather than repeating an unsupported number.
+If `game_analyze` is unavailable, estimate conservatively from visible hand values and known scoring order. Use ranges for uncertain effects and compare actual results afterward; never invent an exact score.

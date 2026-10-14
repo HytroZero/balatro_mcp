@@ -4,12 +4,11 @@ import type { McpServer } from '@modelcontextprotocol/server';
 import { FullObservationSchema, phaseViews } from '../env/compact.ts';
 import type { Backend } from '../env/contract.ts';
 import type { Trace } from '../model/trace.ts';
-import { phaseViewRows, phaseViewSentence, toolGuide } from '../tools/guide.ts';
+import { phaseViewRows, toolGuide } from '../tools/guide.ts';
 import { registerGameTools } from '../tools/index.ts';
 
-// The projection is the source of truth; the guide and tool descriptions restate it in prose.
+// The guide owns field definitions; tool descriptions route to the appropriate resource.
 const stateKeys = Object.keys(FullObservationSchema.properties.state.properties);
-const runKeys = stateKeys.filter(key => !(key in phaseViews));
 
 async function descriptions(): Promise<Record<string, string>> {
   const found: Record<string, string> = {};
@@ -22,10 +21,11 @@ test('phase view rows cover every phase view exactly once', () => {
   assert.deepEqual(phaseViewRows.flatMap(row => row.keys).sort(), Object.keys(phaseViews).sort());
 });
 
-test('game_observe description names every run key and the generated phase views', async () => {
-  const text = (await descriptions()).game_observe!;
-  for (const key of runKeys) assert.match(text, new RegExp(`\\b${key}\\b`), `run key ${key} is missing from the game_observe description`);
-  assert.ok(text.includes(`Phase views exist only in their phases: ${phaseViewSentence()}.`));
+test('tool descriptions stay within the concise budget and route to field/analysis contracts', async () => {
+  const text = await descriptions();
+  for (const [name, description] of Object.entries(text)) assert.ok(description.length <= 350, `${name} duplicates reference material`);
+  assert.ok(text.game_observe!.includes('balatro://guide'));
+  assert.ok(text.game_analyze!.includes('balatro://analysis'));
 });
 
 test('balatro://guide documents every state key with phases taken from phaseViews', () => {

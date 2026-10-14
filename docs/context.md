@@ -1,22 +1,31 @@
 # 游戏规则与技能上下文
 
-MCP 初始化的 `instructions` 只包含简短操作约定：用户意图边界、先观察、revision、
-增量状态、隐藏信息边界、取消与未知结果恢复、终局停止，以及按需资源入口。
-测试限制其长度低于 2,000 个字符，避免宿主将长说明附到每个工具时重复整套规则。
+初始化 `instructions` 是不超过 800 字符的入口，只保留授权/隐藏信息边界、
+关键停止约束和资源读取顺序。详细规则各有一个归属位置，工具描述只说明用途和输入输出。
 
-`balatro://context` 按需提供原 agent 的完整参考上下文：
+普通打牌首次读取 `balatro://protocol`、`balatro://guide` 和相关技能；
+使用 `game_analyze` 前读取 `balatro://analysis`。已在上下文中的资源无需重复读取。
+具体机制优先查 `balatro://objects/<name>` 及返回的章节链接。
+
+| 内容 | 完整定义的位置 |
+| --- | --- |
+| 执行、恢复、合法性、分析调用时机、动作前解释 | `skills/core.md` → `balatro://protocol` |
+| 状态字段、增量合并、索引和排列语义 | `tools/guide.ts` → `balatro://guide` |
+| 分析输出、评分标签、lines、审计和抽样局限 | `tools/analysis-guide.ts` → `balatro://analysis` |
+| 金注策略和取舍 | Coach 技能及按需决策参考 |
+| 具体游戏规则和对象机制 | 对象/章节；广泛查阅才读取 `balatro://rules` |
+
+`balatro://context` 保留为显式全量参考入口，内容仍是：
 
 1. `model/prompt.ts` 中的角色与用户意图边界。
 2. `model/context/balatro.md` 全文。
 3. `skills/core.md` 全文。
-4. `<available_skills>` 索引，位置为 `skill://` URI。
-5. 通过 MCP 读取技能的说明，以及宿主会话控制的说明。
+4. `<available_skills>` 索引。
+5. 通过 MCP 读取技能的绑定说明。
 
-前三项使用项目文件全文，没有压缩或截断。它们不再放入初始化说明。
-`skills/core.md` 和 `balatro-gold-stake-coach` 的执行部分已按本服务器的工具与
-观测 v3 改写，不再是 Strategy Forge 原文；因此上下文中不再需要新旧字段名对照。
-工具描述及参数 schema 通过
-`tools/list` 提供，与原 agent 的工具声明分开传递方式对应。
+它不在常规 bootstrap 加载路径中；选择全量入口后不要重复读取其包含的规则和协议。
+它不包含 guide、analysis 或技能正文，这些仍按需要读取。
+工具 schema 通过 `tools/list` 提供，不在技能中重复列举。
 
 ## 技能发现与索引
 
@@ -47,6 +56,8 @@ Wiki 技能中的来源、署名和许可说明均已保留。
 | `balatro://context` | 完整规则、协议、技能索引与绑定说明 |
 | `balatro://rules` | `model/context/balatro.md` 全文 |
 | `balatro://protocol` | `skills/core.md` 全文 |
+| `balatro://guide` | 字段、增量合并、索引和排列语义 |
+| `balatro://analysis` | 分析输出和计算局限，首次分析前读取 |
 | `balatro://skills` | 每个技能的 URI、可否由模型调用、全部文件（标题与字节数）、发现诊断 |
 | `skill://<name>/<path>` | 技能正文或引用文件全文 |
 | `balatro://objects/<name>` | 单个对象的规则表行、目录元数据、章节 URI 与 Wiki 链接 |
@@ -81,8 +92,8 @@ frontmatter；显式 prompt 去除 frontmatter，附上引用基准和可选用�
 ## 客户端与刷新
 
 服务端发送简短 `instructions`，具体如何纳入模型上下文由 MCP 客户端决定。
-需要客户端支持初始化说明和资源读取；不自动采用说明的客户端可以读取
-`balatro://context` 后纳入对话。
+需要客户端支持初始化说明和资源读取；不自动采用说明的客户端也应按上面的
+小资源顺序读取。全量 context 供显式广泛查阅或兼容用途，不是默认补救入口。
 
 发现结果与索引在服务启动时建立。修改技能后重启服务刷新。
 正文、文件清单和引用在请求时读取。
@@ -93,7 +104,7 @@ frontmatter；显式 prompt 去除 frontmatter，附上引用基准和可选用�
 以及简短初始化、完整参考资源、超过旧长度上限
 的内容、索引不含本机路径、忽略文件、重名诊断、仅手动调用技能、环境技能隔离、文件清单、
 相对链接解析、路径补全、正文及引用按需读取、显式展开、带空格路径、资源边界及对象检索。真实 stdio 测试确认初始化不再重复完整上下文，
-工具为 6 个，文件工具和 memory 工具不可调用。
+工具为 7 个（包含只读 `game_analyze`），文件工具和 memory 工具不可调用。
 
 构建和类型检查由项目测试命令验证。Lua 决策状态回归可在项目根目录执行
 `luajit tests/decision.test.lua`（亦兼容 Lua 5.1）；覆盖动态 Boss、历史完整性、

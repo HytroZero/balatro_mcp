@@ -41,9 +41,10 @@ prompts, so any MCP client can load them on demand. `balatro://skills` lists eac
 skill and its files as `skill://<name>/<path>` URIs that do not depend on where
 the server is installed, and `balatro://objects/<name>` looks up one Joker,
 consumable, Voucher, Tag or Boss.
-`skills/core.md` is the decision protocol, published as `balatro://protocol` and
-as part of `balatro://context`. The two skills below are additional
-contributions that agents load when a decision calls for them.
+For normal gameplay, read `balatro://protocol`, `balatro://guide` and the relevant
+skill once. Read `balatro://analysis` before first using `game_analyze`; look up
+specific mechanics through objects and linked chapters. `balatro://context`
+remains an explicit full-reference alternative; do not load it alongside its parts.
 
 ### `balatro-gold-stake-coach`
 
@@ -197,7 +198,8 @@ error message.
 
 - [Windows setup and troubleshooting](docs/windows.md)
 - [macOS setup and troubleshooting](docs/macos.md)
-- [Tools and gameplay workflow](tools/guide.ts) (served as `balatro://guide`)
+- [State and action field contract](tools/guide.ts) (`balatro://guide`)
+- [Analysis output reference](tools/analysis-guide.ts) (`balatro://analysis`)
 - [Observation field design and staged implementation](docs/game-observation-design.md)
 - [`game_analyze` design and staged implementation](docs/game-analyze-design.md)
 - [Game rules and strategy context](docs/context.md)
