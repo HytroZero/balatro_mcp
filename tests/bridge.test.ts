@@ -268,15 +268,22 @@ test('one overall action budget includes all preflight RPCs', async () => {
   } finally { await mock.close(); }
 });
 
-test('a caller deadline is shared across observation and action instead of resetting', async () => {
+test('a caller deadline is shared across observation and action instead of resetting', async t => {
+  // Advance logical time per response, leaving ample real time for HTTP on busy CI runners.
+  let now = 0;
+  t.mock.method(performance,'now',() => now);
   const mock = await server((req,res) => {
-    setTimeout(() => result(res,req,req.method === 'sf.health' ? health : observation()),40);
+    now += 4000;
+    result(res,req,req.method === 'sf.health' ? health : req.method === 'sf.observe' ? observation()
+      : {actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:observation('instance-a:2')});
   });
   try {
-    const client = new ForgeBridgeBackend(mock.endpoint,1000), context = {deadline:performance.now() + 100};
+    const client = new ForgeBridgeBackend(mock.endpoint,10000), context = {deadline:performance.now() + 10000};
     const before = await client.observe(context);
+    assert.equal(now,8000);
     await assert.rejects(client.act(action,before.revision,context), e => e instanceof BackendError && e.code === 'timeout' && e.applied === false);
-    assert.equal(mock.requests.some(req => req.method === 'sf.act'),false);
+    assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe','sf.observe']);
+    assert.equal(client.lastActionId,undefined);
   } finally { await mock.close(); }
 });
 

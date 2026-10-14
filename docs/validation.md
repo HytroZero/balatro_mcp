@@ -912,3 +912,27 @@ Executed checks:
 
 All checks and timing probes were offline. No live game action, installation or
 MCP restart was performed; restart the MCP server to load the updated worker.
+
+## Deterministic shared-deadline regression test — 2026-10-14
+
+GitHub Actions run 38497832780 failed only in the Windows test job. The shared
+caller-deadline test allowed 100 ms for an observation requiring two HTTP
+responses delayed by 40 ms each. Runner overhead exhausted the deadline during
+observation, before the action assertion could exercise the shared budget.
+
+The test now mocks `performance.now()` and advances logical time by 4 seconds
+per immediate HTTP response against a 10-second deadline. Initial observation
+uses 8 seconds; action preflight crosses the same deadline at 12 seconds. It
+asserts a timeout with `applied=false`, the exact three read requests and no
+action identifier. An accidental action dispatch receives a valid success
+response so it cannot pass the test as a timeout. Production code is unchanged.
+
+Executed checks on Windows with Node 24.13.0:
+
+- The targeted shared-deadline test passed.
+- `npm run check` passed.
+- `npm test` passed: 118 tests, 116 passed, 2 skipped (macOS-only cases).
+- `npm run release:check` and `git diff --check` passed.
+
+Verification was offline; the GitHub Actions run has not been rerun with this
+local change. No live game action, installation or MCP restart was performed.
