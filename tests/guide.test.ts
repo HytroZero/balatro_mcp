@@ -18,9 +18,8 @@ async function descriptions(): Promise<Record<string, string>> {
   return found;
 }
 
-test('phase view rows cover every phase view exactly once and never mix phases', () => {
+test('phase view rows cover every phase view exactly once', () => {
   assert.deepEqual(phaseViewRows.flatMap(row => row.keys).sort(), Object.keys(phaseViews).sort());
-  assert.doesNotThrow(phaseViewSentence);
 });
 
 test('game_observe description names every run key and the generated phase views', async () => {

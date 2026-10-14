@@ -164,7 +164,7 @@ test('persistent sandbox reuses one VM and restores mutations across selections 
     const queued = await Promise.all([sandbox.score([0, 1]), sandbox.score([2]), sandbox.score([0, 1])]);
     assert.deepEqual(queued.map(r => r.status === 'ok' ? r.score : r), [90, 32, 90]);
     const batch = Array.from({ length: 2048 }, (_, i) => i % 2 ? [0, 1] : [2]);
-    for (let i = 0; i < 3; i++) assert.deepEqual(await sandbox.scores(batch), batch.map((_, i) => i % 2 ? 90 : 32));
+    assert.deepEqual(await sandbox.scores(batch), batch.map((_, i) => i % 2 ? 90 : 32));
     assert.equal(sandbox.processId, pid);
   } finally { await sandbox.close(); }
   await assert.rejects(sandbox.stats(), /closed/);

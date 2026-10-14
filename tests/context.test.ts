@@ -50,12 +50,10 @@ test('bootstrap stays small while full reference context preserves rules and an 
   assert.deepEqual(context.diagnostics, []);
   for (const skill of context.skills) assert.ok(context.catalog.includes(`<location>${skillUri(skill.name)}</location>`));
   assert.equal(context.fullContext.includes(projectRoot), false);
-  assert.deepEqual(context.skills.map(skill => skill.name).sort(), ['balatro-gold-stake-coach', 'balatro-wiki-rules']);
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'model/context/balatro.md'), 'utf8')).trim()));
   assert.ok(context.fullContext.includes((await readFile(resolve(projectRoot, 'skills/core.md'), 'utf8')).trim()));
   assert.ok(context.fullContext.includes(context.catalog));
   assert.ok(context.instructions.length < 2000);
-  assert.ok(context.instructions.length < context.fullContext.length * 0.05);
   for (const uri of ['balatro://guide','balatro://rules','balatro://protocol','balatro://skills','balatro://context']) assert.ok(context.instructions.includes(uri));
   for (const skill of context.skills) {
     const body = stripFrontmatter(await readFile(skill.filePath, 'utf8')).trim();
@@ -78,7 +76,6 @@ test('gameplay discovery reports invalid skills and keeps explicit-only skills w
     assert.equal(context.catalog.includes(f.root), false);
     assert.doesNotMatch(context.catalog, /manual|ambient|duplicate|BODY_SENTINEL/);
     assert.ok(context.diagnostics.some(item => item.message === 'description is required'));
-    assert.ok(Buffer.byteLength(context.fullContext) > 50000);
     assert.ok(Buffer.byteLength(context.instructions) < 2000);
     assert.match(context.fullContext, /CORE_PROTOCOL_SENTINEL/);
     assert.doesNotMatch(context.instructions, /GAME_RULES_SENTINEL|CORE_PROTOCOL_SENTINEL/);

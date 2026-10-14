@@ -936,3 +936,30 @@ Executed checks on Windows with Node 24.13.0:
 
 Verification was offline; the GitHub Actions run has not been rerun with this
 local change. No live game action, installation or MCP restart was performed.
+
+## Remove redundant test assertions — 2026-10-14
+
+Removed assertions for the installed mod's display name and author, the exact
+current gameplay skill list, arbitrary context-size ratios and fixture byte
+counts, repeated calls to removed tools already excluded by the complete tool
+list, and a redundant guide-generation no-throw assertion. Kept the 2,000-character
+bootstrap limit, controlled discovery fixtures, guide coverage, mod identity,
+entrypoint and coexistence checks. Reduced the repeated 2,048-selection sandbox
+batch from three runs to one; restoration and process reuse assertions remain.
+
+The overall-action preflight deadline test now advances a controlled clock and
+asserts both health and observation requests occurred before timeout. Moved the
+game_start budget regression from a child-process timing test to the registered
+tool handler with the real HTTP backend and a controlled clock. It verifies the
+initial observation and action preflight share the deadline and no action is
+dispatched. Removed the unused delay mechanism from the stdio test harness.
+Production code is unchanged.
+
+Executed checks on Windows:
+
+- `npm run check` passed.
+- `npm test` passed: 118 tests, 116 passed, 2 skipped (macOS-only cases).
+- `npm run release:check` and `git diff --check` passed.
+
+All verification was offline. No live game action, installation or MCP restart
+was performed.

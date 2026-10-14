@@ -1,8 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { createServer, type ServerResponse } from 'node:http';
+import type { McpServer } from '@modelcontextprotocol/server';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { BackendError, type Data } from '../env/contract.ts';
+import type { Trace } from '../model/trace.ts';
+import { registerGameTools } from '../tools/index.ts';
 
 const scoringSnapshot = {status:'ready',selectionLimit:5,state:{
   hand:[{key:'S_A',ability:{set:'Default'},base:{value:'Ace',suit:'Spades'}}],deck:[],discard:[],passiveEffectsApplied:true,
@@ -255,15 +258,18 @@ test('cancellation during either preflight RPC never dispatches sf.act', async (
   }
 });
 
-test('one overall action budget includes all preflight RPCs', async () => {
+test('one overall action budget includes all preflight RPCs', async t => {
+  let now = 0;
+  t.mock.method(performance,'now',() => now);
   const mock = await server((req,res) => {
     if (req.method === 'sf.act') return result(res,req,{actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:observation('instance-a:2')});
-    setTimeout(() => result(res,req,req.method === 'sf.health' ? health : observation()),80);
+    now += 6000;
+    result(res,req,req.method === 'sf.health' ? health : observation());
   });
   try {
-    const client = new ForgeBridgeBackend(mock.endpoint,120);
+    const client = new ForgeBridgeBackend(mock.endpoint,10000);
     await assert.rejects(client.act(action,'instance-a:1'), e => e instanceof BackendError && e.code === 'timeout' && e.applied === false);
-    assert.equal(mock.requests.some(req => req.method === 'sf.act'),false);
+    assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe']);
     assert.equal(client.lastActionId,undefined);
   } finally { await mock.close(); }
 });
@@ -285,6 +291,30 @@ test('a caller deadline is shared across observation and action instead of reset
     assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe','sf.observe']);
     assert.equal(client.lastActionId,undefined);
   } finally { await mock.close(); }
+});
+
+test('game_start shares one budget across its initial observe and action preflight', async t => {
+  let now = 0;
+  t.mock.method(performance,'now',() => now);
+  const mock = await server((req,res) => {
+    now += 4000;
+    result(res,req,req.method === 'sf.health' ? health : req.method === 'sf.observe' ? observation()
+      : {actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:observation('instance-a:2')});
+  });
+  const client = new ForgeBridgeBackend(mock.endpoint,10000);
+  type Handler = (params: Data, context: { mcpReq: {} }) => Promise<{ isError?: boolean; structuredContent?: Data }>;
+  let start!: Handler;
+  const toolServer = { registerTool(name: string, _config: unknown, handler: Handler) { if (name === 'game_start') start = handler; } };
+  const trace = { encode: JSON.stringify, write: async () => {} } as unknown as Trace;
+  const tools = registerGameTools(toolServer as unknown as McpServer,client,trace,operation => operation(),10000);
+  try {
+    const response = await start({deck:'RED',stake:'WHITE'},{mcpReq:{}});
+    assert.equal(response.isError,true);
+    assert.equal(response.structuredContent?.code,'timeout');
+    assert.equal(response.structuredContent?.applied,false);
+    assert.deepEqual(mock.requests.map(req => req.method),['sf.health','sf.observe','sf.observe']);
+    assert.equal(client.lastActionId,undefined);
+  } finally { await tools.close(); await client.close(); await mock.close(); }
 });
 
 test('cancelling after dispatch preserves uncertainty, operation inspection and the mutation lock', async () => {

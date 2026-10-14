@@ -19,13 +19,12 @@ const snapshot = (revision = 1, state = 'MENU') => ({ contract: 1, backend: 'bal
 async function harness(extra: string[] = [], timeoutMs = 1000) {
   const root = await mkdtemp(resolve(tmpdir(), 'balatro-mcp-'));
   let current = snapshot(), mutations = 0, requests = 0, loseResponse = false;
-  let observeGate: Promise<void> | undefined, enteredObserve: (() => void) | undefined, preflightDelay = 0;
+  let observeGate: Promise<void> | undefined, enteredObserve: (() => void) | undefined;
   const operations = new Map<string, Data>();
   const rpc = createServer(async (req, res) => {
     let body = ''; for await (const chunk of req) body += chunk;
     const request = JSON.parse(body) as Data, params = record(request.params);
     requests++;
-    if (preflightDelay && ['sf.health','sf.observe'].includes(String(request.method))) await new Promise(resolve => setTimeout(resolve,preflightDelay));
     let value: unknown;
     switch (request.method) {
       case 'sf.health': value = health; break;
@@ -63,7 +62,6 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
     return client.callTool({ name, arguments: args });
   }
   return { root, client, call, get mutations() { return mutations; }, get requests() { return requests; },
-    delayPreflights(ms: number) { preflightDelay = ms; },
     holdNextObserve() {
       let release!: () => void;
       observeGate = new Promise<void>(resolve => { release = resolve; });
@@ -96,9 +94,6 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.doesNotMatch(instructions, /## Phase policy/);
     assert.deepEqual(tools.map(tool => tool.name).sort(), ['game_observe', 'deck_observe', 'game_start', 'game_action', 'game_analyze', 'game_health', 'game_operation'].sort());
     for (const tool of tools) { assert.ok(tool.outputSchema); assert.ok(tool.annotations); assert.equal(tool.inputSchema.type, 'object'); }
-    for (const name of ['file_read', 'file_write', 'memory_query', 'memory_record']) {
-      await assert.rejects(h.call(name, { path: 'notes.txt', content: 'removed' }), /not found/);
-    }
     const action = tools.find(tool => tool.name === 'game_action')!;
     assert.match(JSON.stringify(action.inputSchema), /uniqueItems/);
     assert.equal(action.annotations?.readOnlyHint, false);
@@ -269,17 +264,6 @@ test('stdio cancellation during preflight reaches the backend and prevents dispa
     assert.equal(h.mutations,0);
     assert.equal(record(record((await h.call('game_observe')).structuredContent).value).rev,'1');
   } finally { gate.release(); await h.close(); }
-});
-
-test('stdio game_start shares one budget across its initial observe and action preflight', async () => {
-  const h = await harness([],140); h.delayPreflights(50);
-  try {
-    const response = await h.call('game_start',{deck:'RED',stake:'WHITE'});
-    assert.equal(response.isError,true);
-    assert.equal(record(response.structuredContent).code,'timeout');
-    assert.equal(record(response.structuredContent).applied,false);
-    assert.equal(h.mutations,0);
-  } finally { await h.close(); }
 });
 
 test('MCP startup and guide access work with the game offline; game errors retain structured failure flags', async () => {
