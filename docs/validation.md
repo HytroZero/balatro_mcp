@@ -1083,3 +1083,623 @@ reports the faulty won outcome at GAME_OVER with 214390/400000 under the old
 loaded mod. The corrected behavior was verified offline; no gameplay action,
 mod installation or game restart was performed. Install the staged mod and
 restart Balatro to load the correction.
+
+## Refill scoring throughput benchmark — 2026-10-14
+
+Measured the proposed one-step refill workload with the existing sandbox, without
+implementing the next/line feature. The local reproduction script and raw timings
+are saved in ignored build/bench-refill.ts and build/bench-refill-results.json.
+Run with node build/bench-refill.ts from the repository root.
+
+Environment: Apple M4, macOS arm64, Node v24.14.1, LuaJIT 2.1.1788856981.
+Each timed run used one persistent worker, 64 different refill samples, an
+8-card hand and all 218 legal 1-to-5-card selections per sample: 13952 engine
+evaluations. The scenario discards the last three hand cards and draws three
+from the 44-card draw pile without replacement; all 52 cards remain represented
+across hand, draw pile and discard. Inputs are complete live-format snapshots
+exported by tests/analysis-fixture.lua. Random scoring uses expectation mode.
+Sample generation, fixture export, worker startup and warmup are outside timing;
+all 64 state loads, scoring calls, validation and best-score reduction are inside.
+No candidate grouping, score memoization or parallel workers were used.
+
+Three repetitions per configuration and interface produced these elapsed times
+(median, with min-max in parentheses):
+
+| Five-Joker configuration | Structured scoreBatch | Scalar scores |
+| --- | --- | --- |
+| Joker, Green Joker, Blue Joker, Abstract Joker, Cavendish | 8.31 s (7.93-8.41) | 6.98 s (6.96-9.20) |
+| Blueprint, Baron, Mime, Steel Joker, Cavendish; three Red Seal Steel Kings | 11.16 s (11.03-11.85) | 10.85 s (9.79-11.52) |
+| Bloodstone, Oops! All 6s, Lucky Cat, Space Joker, Bootstraps; three Lucky Kings | 8.99 s (8.95-9.00) | 7.52 s (7.52-7.73) |
+
+All 18 timed runs completed exactly 13952 finite scores. Ordered score digests
+matched across all repetitions and both interfaces within each configuration;
+the random configuration's structured rows all carried expectation and
+interaction-approximation metadata. State loading accounted for 0.58-1.01 s per
+run; score calls accounted for most elapsed time. Initial worker load was
+36-38 ms. The scalar interface omits hand-type and approximation metadata, so
+these scalar timings alone do not validate a complete next-analysis response.
+
+The earlier estimate of roughly 2 s per 64-sample route does not hold for these
+complete snapshots. Four sequential routes were not benchmarked, nor were
+post-play growth/destruction/Boss state transitions, the live bridge, or win-rate
+effects. All measurements were offline; no gameplay action, mod installation or
+MCP restart was performed.
+
+Follow-up profiling for a possible C implementation used the ordinary
+configuration only. build/profile-core.lua ran the same 64 full snapshots and
+13952 scalar evaluations directly in Lua, with four warmup samples and jit.p
+profiling around the timed loop. Two runs consumed 3.34 and 3.28 CPU seconds;
+the second complete process took 3.75 s wall time (including input decoding and
+startup). The last statistical profile in build/refill-profile.txt attributed
+about 40% of samples to interpreted Lua, 21% to GC, 20% to compiled Lua, 14% to
+C and 6% to JIT compilation (rounded). Baseline restoration was about 9% of all
+samples (45% within the compiled category); the first run put it at about 11%.
+These are sampling observations, not exact phase timers.
+
+A subsequent single ordinary scalar run through the Node worker API took
+5.48 s, including 0.66 s loading and 4.82 s scoring calls. Its score digest
+matched the earlier ordinary runs. Direct Lua and worker measurements are
+separate harnesses and runs; their difference does not isolate IPC overhead or
+establish a guaranteed speedup from C. No C scorer was implemented or measured.
+The proposed C speedup ranges remain engineering estimates.
+
+## On-demand refill analysis design — 2026-10-14
+
+Updated game-analyze-design.md with the planned lines + next interface,
+hand/reach/best queries, paired refill samples, state-transition boundaries,
+shared time budgets, measured throughput and the optional C prototype path.
+The implementation table continues to mark next and engine as unavailable.
+Reviewed the changed sections for consistency, parsed the new JSON example,
+and ran git diff --check. Documentation only; no runtime schema or gameplay
+behavior changed, and no additional gameplay or performance test was run.
+
+## Sandbox presentation-layer performance analysis — 2026-10-14
+
+Performed isolated experiments in ignored build files; production runtime and
+vendor source were not changed. build/sandbox-ui-analysis.md records methods,
+limitations, raw timing links and recommendations. Each structured workload
+scored 64 full snapshots with 218 selections in expectation mode. Three repeats
+per scenario and variant gave 27 complete runs (376704 scores). Full structured
+result digests matched between baseline, evaluate_play-only presentation
+stripping, and evaluate_play plus calculate_joker stripping.
+
+Median seconds, baseline / evaluate-only / both: ordinary 7.33 / 8.45 / 23.65;
+held retriggers 16.81 / 19.01 / 12.41; random expectation 9.04 / 6.31 / 52.59.
+Baseline and both-function stripping were interleaved; evaluate-only stripping
+was measured later. Gains are scenario dependent; no variant was adopted.
+
+Additional ordinary scalar core profiles took 3.34 and 1.78 CPU seconds for
+baseline and both-function stripping. A separate full worker protocol profile
+attributed about 67% and 91% of samples to JIT compilation respectively; these
+are statistical samples, not exact timers. Increasing maxtrace/maxmcode to 8192
+did not remove the regression: one complete baseline/stripped pair took 6.29 /
+61.06 s with matching result digests. Remaining tuning runs were stopped. The
+JIT failure/exit/cache mechanism was not isolated, and no universal speedup is
+claimed. No full MCP latency, live gameplay, installation or restart was tested.
+
+## Aggressive score-only engine pruning experiment — 2026-10-14
+
+Generated isolated normal-JIT and interpreted-Joker-adapter variants under ignored
+build/max-pruned and build/max-pruned-interpreted. build/max-prune.ts uses a local
+luaparse install to slice unreachable functions and lifecycle branches, remove
+presentation/event code, specialize Joker handlers and reduce initialization.
+The nine engine modules shrink from 816400 to 217456 bytes (73.4%). Successful
+score-only evaluation returns normally instead of using a completion exception.
+Both variants reject seeded/fixed/trace inputs and remain experiments. Production
+source and the default sandbox were not replaced.
+
+Differential checks covered 181 positions, all 150 Jokers and 40001 structured
+normal/ordered scores, matching original results. The normal-JIT engine passed
+all 13 analysis tests with original-engine fixtures and no skips, including the
+local HTTP bridge/worker path. The interpreted-adapter variant passed the two
+random hand/build analysis tests. Generated modules passed LuaJIT compilation.
+
+Three-repeat medians (seconds), original / pruned JIT / pruned interpreted
+adapter: ordinary 13.76 / 1.74 / 2.74; held retriggers 10.96 / 3.76 / 16.33;
+random expectation 13.56 / 34.43 / 5.29. Each run scored 13952 selections across
+64 full states, including load/structured worker communication and validation.
+All complete runs matched full-result digests. Original and pruned JIT were
+interleaved; interpreted-adapter measurements followed separately. No automatic
+mode selection or universal speedup is claimed. Failed driver/adaptive/mean
+adapter probes were not adopted; interrupted runs remain clearly named partial
+artifacts. See build/max-prune-report.md for reproducibility and scope. No live
+gameplay, installation or MCP restart was performed.
+
+## Pruned-engine JIT regression diagnosis — 2026-10-14
+
+Added isolated diagnostics and confirmation harnesses under ignored build files.
+On Apple M4 / macOS 26.6.2 arm64 / Homebrew LuaJIT 2.1.1788856981, one pruned
+random-expectation diagnostic run recorded 338033 trace starts, 88067 aborts and
+2112 machine-code allocation failures, each followed by a cache flush. Two
+additional flushes came from profiler start/stop. Statistical profiling placed
+about 87% of samples in the JIT compiler. Increasing only maxmcode to 8192 still
+produced 1020 allocation failures. Removing the generated Joker dispatch tail
+call did not resolve the regression. Increasing only sizemcode to 2048 removed
+allocation failures in the diagnostic run; all full-result hashes matched.
+An events-only follow-up, without the sampling profiler, recorded 1076 allocation
+failures and 1076 flushes in 14.406 s; sizemcode=2048 recorded neither in 0.744 s,
+with matching full-result digests. This excludes profiler start/stop as the source
+of the sustained allocation/flush cycle.
+
+An independent confirmation used the existing ScoringSandbox API, unchanged
+worker and schema, with no diagnostic/profiler hooks. Three-repeat random-build
+medians (seconds), original / pruned default JIT / same pruned source with only
+-Osizemcode=2048: 3.180 / 20.121 / 0.800. Three-repeat control medians, pruned
+default JIT / area2048: ordinary 2.424 / 0.742; held retriggers 16.744 / 0.857.
+All 21 complete worker API runs matched their corresponding original full-result
+digests; each run scored 13952 selections across 64 complete states after four
+warmup states. These are a new batch, not a replacement for historical baseline
+timings. The underlying mmap/kernel failure was not traced; conclusions concern
+allocation/flush/recompilation behavior and the measured sizemcode workaround,
+not a confirmed particular macOS defect or a cross-platform optimum.
+
+See build/max-prune-jit-diagnosis.md and build/confirm-max-prune-area-results.json
+plus build/confirm-max-prune-area-controls.json for scope and reproducibility.
+Production source, the pruning generator, and default engine were not changed.
+No full game_analyze latency, live gameplay, installation or restart was tested.
+
+## Pruned-engine JIT allocation workaround applied — 2026-10-14
+
+Updated build/max-prune.ts to prepend an early runtime JIT policy on macOS
+arm64: sizemcode=2048 before source/prototype initialization. The normal variant
+keeps all JIT enabled. Other platforms retain defaults. The policy lives in the
+generated runtime, so direct runtime callers and the existing worker launcher
+both receive it without additional command-line flags. Regenerated normal and
+interpreted-adapter engines; manifests record jitPolicy and new runtime hashes.
+Preserved the pre-fix engine separately under ignored build files.
+
+Validation:
+
+- 181 differential positions / all 150 Jokers / 40001 structured normal and
+  ordered scores matched the original engine, including unsupported boundaries.
+- Normal pruned analysis suite passed 13/13 with no skips; interpreted-adapter
+  random hand/build analysis tests passed 2/2. These are offline tests, including
+  the local HTTP bridge/worker integration, not live gameplay.
+- A separate benchmark used the existing ScoringSandbox API and the generated
+  launchers, with no diagnostic hooks or extra JIT options. Three-repeat random
+  expectation medians were 21.185 s before / 0.804 s fixed (26.4x). Fixed ordinary
+  and held-retrigger medians were 0.745 / 0.775 s. All 12 complete runs matched
+  original full-result digests; each run scored 13952 selections over 64 states.
+- Direct loading of the fixed runtime, without extra JIT startup options, recorded
+  zero machine-code allocation failures and zero flushes in the events-only
+  diagnostic; its full-result digest matched the original.
+- Generated modules/runtime/worker passed LuaJIT bytecode compilation; manifest
+  runtime hashes verified; git diff --check passed.
+
+Implementation and evidence remain under build/max-prune.ts,
+build/bench-max-prune-jit-fix-results.json and build/max-prune-report.md. The
+production default engine, vendor source and live game/mod were not replaced.
+
+## Independent pruned engine relocated beside vendor — 2026-10-14
+
+Moved the final normal-JIT engine from build/max-pruned to env/sandbox/pruned.
+The new directory contains all nine pruned engine modules, its own runtime,
+worker and JSON codec. Removed the experimental shell wrapper that referenced
+the old build path and routed fixture calls through vendor. The standalone worker
+finds dependencies beside itself, accepts the existing projectRoot/source worker
+arguments, and also runs without arguments from any cwd. The runtime retains the
+macOS arm64 sizemcode=2048 policy. Only the adapter comment and missing-module
+diagnostic changed; scoring logic and engine modules are preserved.
+
+ScoringSandbox now selects a source directory's worker.lua when present and
+otherwise uses the existing original-engine worker. Passing the pruned sourceDir
+requires no custom Lua launcher, and the vendor default remains unchanged. The
+local generation script targets the new directory and records hashes for all 12
+executable files. Both original and derived game-source directories are excluded
+from public distribution exports; the distribution regression test covers this.
+
+Validation:
+
+- New pruned-sandbox tests passed 3/3. An isolated copy in a temporary directory
+  with spaces ran directly under LuaJIT without any project-root argument or
+  project/vendor/build files. The TypeScript API also used that copied engine
+  from a different cwd. Checks include seed-policy rejection, invalidation after
+  rejected loads, repeated-position restoration, random expectation and ordered
+  retrigger scoring against the original, plus executable manifest hashes.
+- npm run check passed. npm test passed 120 tests, with only the two Windows
+  installer tests skipped on macOS (122 total).
+- The relocated engine passed the 181-position / 150-Joker / 40001-score
+  differential harness. Its analysis integration suite passed 13/13 with no
+  skips, including the local HTTP bridge/worker path.
+- npm run release:check passed. Inspection of executable bundle files found
+  only local source-directory loads and the built-in jit module; there is no
+  runtime reference to vendor, play/mod or build. git diff --check passed.
+
+Usage and supported scoring boundaries are in env/sandbox/pruned/README.md.
+These checks were offline; no gameplay action, mod installation or restart ran.
+
+## Build-directory cleanup readiness — 2026-10-14
+
+Moved the remaining pruning maintenance workflow into tracked source:
+scripts/prune-sandbox.ts, scripts/check-pruned.ts, scripts/bench-pruned.ts,
+scripts/test-pruned-analysis.ts and tests/pruned-jokers.lua. The generator now
+uses the root project's pinned luaparse@0.3.1 devDependency, project-relative
+paths, the configured LuaJIT executable and the platform null device. Removed
+its obsolete interpreted-mode shell wrapper and temporary-file writes. Commands
+are exposed as sandbox:prune, sandbox:check-pruned, sandbox:bench-pruned and
+sandbox:test-pruned-analysis. The analysis tests separate original fixture
+constructors from the selected scoring engine, avoiding the old copied suite.
+
+Consolidated key timing rows, result hashes and JIT event summaries into
+docs/performance/pruned-engine-results.json, with the maintained explanation
+and reproduction commands in docs/performance/pruned-engine.md. Historical
+build paths in earlier validation entries describe disposable experiment files;
+the current workflow does not depend on them. Failed variants and duplicate
+source trees need not be preserved.
+
+Before cleanup, preserved existing user data by moving build/mod-install-backups
+(about 58 MB) to data/mod-install-backups and build/releases (about 3.6 MB) to
+data/release-archives. These private directories remain excluded from Git and
+distribution. Future installer/release commands still create their normal build
+outputs; this preservation concerns the already existing backups and releases.
+
+Validation ran with the entire build directory temporarily absent:
+
+- Regenerated the final engine from another cwd; all 12 executable hashes
+  remained byte-identical to the previous manifest.
+- npm run check passed; npm test passed 120/122 tests, with only two Windows
+  installer tests skipped on macOS.
+- sandbox:check-pruned passed 181 positions, all 150 Jokers and 40001 scores.
+- sandbox:test-pruned-analysis passed 13/13 with no skips.
+- sandbox:bench-pruned -- --samples 2 --repetitions 1 completed all three
+  scenarios; each original/pruned pair matched complete structured hashes.
+  This was a command smoke test, not a new performance claim.
+- release:check and git diff --check passed. None of these commands recreated
+  build. The disposable build directory was restored after checking for the
+  user's planned deletion; preserved backups/releases stay under data.
+
+No live gameplay, mod installation or MCP restart was performed.
+
+## Pruned engine moved to a sibling of sandbox — 2026-10-14
+
+Moved the complete engine bundle from env/sandbox/pruned to env/pruned. The
+independent pruned implementation is now beside the original sandbox, while
+the original raw game modules stay under env/sandbox/vendor. Updated generator,
+differential checker, benchmark, analysis test runner, regression tests, export
+exclusion and documentation to the new path. Historical validation entries keep
+their original paths. No runtime or scoring code changed.
+
+Validation:
+
+- Regeneration from another cwd targeted env/pruned and retained all 12
+  executable hashes; the former env/sandbox/pruned directory was not recreated.
+- npm run check and npm run build passed.
+- Independent bundle/API tests passed 3/3; the original/pruned differential
+  checker passed 181 positions, all 150 Jokers and 40001 structured scores.
+- Pruned analysis suite passed 13/13 and distribution tests passed 2/2, with
+  no skips. release:check and git diff --check passed.
+
+No live gameplay, installation or restart was performed.
+
+## Pruned maintenance scripts consolidated in the engine directory — 2026-10-15
+
+Moved the four pruning maintenance TypeScript entry points into env/pruned:
+generate.ts, check.ts, bench.ts and test-analysis.ts. Moved the differential
+check helper from tests/pruned-jokers.lua to env/pruned/list-jokers.lua. Updated
+relative imports, npm scripts and current documentation; no pruning maintenance
+files remain in scripts. Existing shared analysis fixtures and regression tests
+remain in tests. Historical validation entries retain their original paths.
+
+Public distribution explicitly allowlists these authored maintenance tools while
+continuing to exclude the generated game modules, runtime and bundle metadata.
+No scoring code changed and no new temporary build files were created.
+
+Validation:
+
+- The relocated generator ran from another cwd; all 12 engine hashes were unchanged.
+- npm run check and npm run build passed.
+- The relocated checker passed 181 positions, 150 Jokers and 40001 scores.
+- The relocated analysis runner passed 13/13 tests with no skips.
+- Independent bundle/API and distribution tests passed 5/5 with no skips.
+- The relocated benchmark completed all three scenarios with one sample each;
+  original/pruned structured result hashes matched. This was a command smoke test.
+- release:check and git diff --check passed, and a reference scan found no active
+  references to the former scripts paths or the former Lua helper path.
+
+All checks were offline; no gameplay, installation or restart was performed.
+
+## game_analyze defaults to the pruned engine — 2026-10-15
+
+Analyzer now defaults to env/pruned, with explicit sourceDir and
+BALATRO_SANDBOX_SOURCE retaining precedence. The standalone ScoringSandbox API
+and CLI retain their original vendor default. Analysis tests keep original
+constructors for fixtures and exercise the Analyzer default unless the dedicated
+test-source override is supplied. Updated the current engine documentation.
+
+Validation:
+
+- node --test tests/analysis.test.ts passed 13/13 with no skips in 19.88 seconds,
+  including shop/build comparisons, Boss analysis and the HTTP bridge path.
+  Neither sandbox-source environment override was set.
+- npm run check and npm run build passed.
+- git diff --check passed.
+
+All checks were offline; no gameplay, installation or MCP restart was performed.
+
+## Caller lines and one-refill queries — 2026-10-15
+
+Implemented `lines + next` for selecting-hand decisions: strict hand/reach/best
+questions, terminal discard/play validation, sequential deterministic prefix
+edits, original-observation card identities, per-route outcomes and remaining
+resources/target. Current single-hand scoring and exact-play audit behavior are
+preserved. Explicit next requests take priority over automatic use/order search.
+
+The worker now materializes edits, exports an explicitly public successor state,
+and searches all legal subsets for each refill. Hand queries only classify;
+reach queries stop at the first qualifying choice; best queries accumulate a
+maximum. State export preserves JSON arrays inside live card abilities. Changes
+were made in the authored original adapter/worker and regenerated into the
+independent pruned bundle and manifest.
+
+Transitions use an explicit lifecycle support table. Supported scoring growth,
+hand/Boss histories, Green/Burnt/Castle/Hit the Road discards and Ice Cream/Seltzer
+decay/removal enter the next state. Unknown lifecycle/Boss rules, playing-card
+destruction/creation, Purple Seal generation, Gold Seal play payouts and random
+first-play outcomes are unavailable per route; expected first-play scores are
+not used to select a blind-ending state. Next-hand random scoring still uses
+expectation with approximation metadata. These are offline state adapters, not
+a claim of live state-transition equivalence for every supported build.
+
+Public draw pools retain copies and exclude hand/discard membership. Fixed
+sample permutations are independent of game RNG, deck order and route order;
+routes sharing a pool/rule use paired prefixes. A bounded connection cache
+extends the same sequence from 64 to 128/256. Zero/one-card draws enumerate
+actual copies and do not report synthetic sample hits. Four-outcome batches
+rotate across routes; partial results only count completed outcomes.
+
+Analysis now releases the game queue during computation. Opening/closing reads
+remain serialized; mutations cancel active analysis and prevent stale results
+or predictions from being published. Caller cancellation interrupts the worker;
+failed/timed-out workers are discarded without replay.
+
+Validation:
+
+- `npm test` passed 133 tests; two Windows-only installer tests skipped (135
+  total). Includes existing hand/build/Boss/HTTP analysis, new tool integration,
+  malformed schema checks and mutation-during-analysis cancellation.
+- `tests/next.test.ts` covers copy-weighted enumeration, full-scoring reference
+  comparisons for all three queries, Boss legality/history, deterministic growth
+  and after-hand decay, unsupported routes, sequential conversions, paired samples,
+  route/deck reordering, cache reuse/extension, budgets and cancellation.
+- `npm run sandbox:check-pruned` passed 181 positions, all 150 Jokers and 40001
+  structured scores against the original engine.
+- Independent-bundle tests include transition/refill requests from an isolated
+  directory with no project/vendor files.
+- `luajit tests/score-snapshot.test.lua` passed 35 checks.
+- `npm run check`, `npm run build`, `npm run release:check` and `git diff --check`
+  passed.
+
+`npm run analysis:bench-next` measures four-route best queries, 64 refills per
+route, with three independent first-request runs per configuration. On Apple M4,
+Node v24.14.1, medians from a separate run without concurrent regression jobs:
+
+| Scenario | Median | Completed outcomes per run |
+| --- | ---: | ---: |
+| Ordinary / deterministic growth | 3.800 s | 4 x 64 |
+| Baron / Mime / Blueprint retriggers | 4.440 s | 4 x 64 |
+| Random scoring effects by expectation | 4.185 s | 4 x 64 |
+
+All nine runs completed all four routes. Ordinary/retrigger scenarios compare
+two discard and two play routes; the random scenario compares four discard
+routes because random first-play state transitions are unsupported. Timing
+includes worker startup, snapshot validation, current-hand scoring, transitions,
+refills/search and summaries; excludes real HTTP reads and gameplay. No warm
+cache is reused between repetitions. Larger samples can be reproduced with
+`npm run analysis:bench-next -- --samples 128 --repetitions 3` (or 256); those
+larger workloads were not measured in this validation.
+
+All checks were offline; no gameplay, installation or MCP restart was performed.
+
+## Discard-only hit rates — 2026-10-15
+
+Supersedes the public caller-lines/one-refill interface recorded above.
+
+Replaced public `lines` with `discards` (1–4 arrays of 1–5 current hand
+indices) and reduced `next` to a snake_case target hand. Each independent
+strategy completes exactly 256 samples, even for zero/one-card refills. Success
+returns only `{rates:[...]}` inside the existing tool envelope, in input order.
+No hand-score brief, strategy echo, status, audit or score distribution is added.
+
+Analyzer dispatches this path before hand scoring. Worker `discard_hits`
+removes selected cards and classifies legal subsets, retaining Four Fingers,
+Shortcut, Smeared, Wild/Stone and relevant Boss restrictions/history. Scoring
+Joker lifecycles, payouts and Purple Seal consumable generation do not block
+classification. Hook pre-scoring effects are irrelevant to the chosen hand's
+classification. Unknown held cards and unmodelled Cerulean Bell selection or
+Crimson Heart changes to classification Jokers still return a single error.
+Failed, cancelled or incomplete work never publishes partial rates. Snapshot
+consistency checks and mutation cancellation remain in place.
+
+Public pools preserve actual copies and paired draw prefixes without using game
+RNG or hidden draw order. The connection cache remains bounded to 64 queries.
+The old public multi-step route implementation was removed; the independent
+offline sandbox transition/refill APIs remain. Authored Lua changes were
+regenerated into the pruned runtime, worker and executable-hash manifest.
+
+Updated README, served `balatro://analysis`, gameplay protocol, design, engine
+references and CLAUDE.md. The benchmark is now `analysis:bench-discards`.
+
+Validation:
+
+- `npm run check` passed.
+- `npm test` passed 130 tests, with two Windows-only tests skipped (132 total);
+  the initial run found a remaining old request in the MCP test, corrected before
+  the successful full rerun. Coverage includes strict schema rejection, exactly
+  256 samples, paired draws, cache/order invariance, failures/cancellation, no
+  scoring, Boss legality/history, Joker classification rules, compact tool
+  results, unchanged observation baseline and the isolated pruned worker.
+- `npm run sandbox:check-pruned` passed 181 positions, all 150 Jokers and 40001
+  structured scores against the original engine.
+- `npm run analysis:bench-discards` completed all nine independent runs across
+  ordinary, held-retrigger and random-scoring builds; each evaluated four
+  strategies at 256 samples and produced identical rates across repetitions.
+  Timing overlapped regression work, so no performance comparison is claimed.
+- `npm run release:check` and `git diff --check` passed.
+
+All checks were offline; no gameplay, mod installation or MCP restart was
+performed. Restart the MCP server to load the changed public tool schema.
+
+## Full sandbox default with optional pruned engine — 2026-10-15
+
+Changed Analyzer's default source from `env/pruned` to the complete original
+`env/sandbox/vendor`, matching the standalone ScoringSandbox API and CLI.
+Explicit `sourceDir` still takes priority over `BALATRO_SANDBOX_SOURCE`; either
+can select the pruned engine. No automatic fallback or engine rule changes were
+introduced. The discard-only interface still uses 256 samples and returns rates.
+
+Updated README, CLAUDE.md, analysis design and both engine references with the
+default and opt-in paths. Discard tests now use the full engine by default and
+honor the analysis-test override. The existing pruned-analysis entry now runs
+both analysis and discard suites, retaining a verified optional-engine path.
+
+Validation:
+
+- Full original source was already prepared locally; no source preparation or
+  installation was needed, and no sandbox source environment override was set.
+- `npm run check` passed.
+- `npm test` (including build) passed 130 tests; two Windows-only tests skipped
+  (132 total). Hand/build/HTTP analysis and discard classification ran against
+  the full sandbox default.
+- `npm run sandbox:test-pruned-analysis` passed all 23 hand/build/HTTP analysis
+  and discard tests with the explicit pruned override.
+- `npm run release:check` and `git diff --check` passed.
+
+All checks were offline. No live gameplay, mod installation or MCP restart was
+performed; restart the MCP server to use the new default in an existing session.
+
+## Reduce discard samples to 64 — 2026-10-15
+
+Changed the fixed discard sampling count from 256 to 64 per strategy. Rates now
+use hits / 64; the paired public-deck sequence, full sandbox default, optional
+pruned engine and rates-only response are unchanged. Updated the timeout message,
+benchmark count, tests, served analysis guide, gameplay protocol and current
+documentation. Earlier entries above describe the sample counts used at the time.
+
+Validation:
+
+- `npm run check` and `npm run build` passed.
+- `node --test tests/discards.test.ts` passed all 8 tests with the full engine.
+- The same 8 tests passed with the explicit pruned analysis-test override.
+- The targeted `game_analyze returns only discard rates` integration test passed.
+- `node --test tests/mcp.test.ts` passed all 7 tests against the rebuilt server.
+- `git diff --check` passed.
+
+All checks were offline. Restart the MCP server to apply the 64-sample setting
+in an existing session; no gameplay or MCP restart was performed here.
+
+## Remove legacy route simulation implementation — 2026-10-15
+
+Corrects the earlier decision to retain unused route APIs after simplifying the
+public tool. Removed TypeScript `materialize`, `transition` and `refill`
+methods, successor-state/refill schemas and result types, Lua worker dispatch,
+public successor-state export, Joker/Boss transition support tables, simulated
+play/discard lifecycle logic, and hand/reach/best refill branches.
+
+`discard_hits` now directly constructs each discard/refill sample and checks
+legal target-hand subsets, returning boolean hit flags only. It does not call a
+general refill or transition API. Existing one-hand scoring/search remains
+available independently. The public interface still uses 64 samples per strategy
+and returns only rates. Full sandbox remains the default with pruned opt-in.
+
+Regenerated the pruned runtime/worker and hash manifest. Updated current engine
+and analysis documentation; earlier validation entries remain historical.
+Removed stale generated `dist/env/analysis/lines.js`, `next.js` and
+`bench-next.js` outputs whose source files had already been deleted.
+
+Validation:
+
+- Source and rebuilt-output searches found no route export, transition support
+  tables, route API implementations/types, or general refill query branches.
+- `npm run check` passed.
+- `npm test` (including build) passed 130 tests; two Windows-only tests skipped
+  (132 total). Includes full-engine discard checks against legal scored subsets.
+- `npm run sandbox:test-pruned-analysis` passed all 23 tests.
+- Isolated pruned worker tests confirm removed route method names return an
+  unknown-method error, while discard hit detection and normal scoring work.
+- `npm run release:check` and `git diff --check` passed.
+
+All checks were offline. No gameplay, mod installation or MCP restart was
+performed; restart the MCP server to use the rebuilt implementation.
+
+## One worker request and one load per discard strategy — 2026-10-15
+
+Discard sampling previously sent 16 worker requests of four samples per
+strategy, each re-serializing the full position (about 34–38 KiB), and Lua
+reloaded the whole position for every sample. `discardRates` now sends one
+`discard_hits` request per strategy carrying all 64 paired draws (draw orders
+are computed once and shared across strategies); the cache stores only complete
+64-sample results. The request budget is the remaining tool deadline instead of
+a 10 s per-batch cap. Worker `discard_hits` loads the kept hand and full public
+pool once, then classifies each sample from the kept Cards plus the drawn deck
+Cards. Blind debuffs are applied to every playing card at load and
+classification reads only the picked cards, so results are unchanged. The
+sandbox accepts up to 64 draws per request. Sample count, paired draws, rates-only
+response and engine selection are unchanged. Regenerated the pruned runtime and
+manifest.
+
+Validation:
+
+- A local LuaJIT differential run compared the previous per-sample-load
+  `discardHits` with the new one on a live-format fixture: 10 Boss/Joker variants
+  (Psychic, Eye, Mouth, Plant, Goad, Pillar; Four Fingers, Shortcut, Smeared,
+  Pareidolia, Chicot; Wild/Stone deck cards), random 1–5 card discards, nine
+  target hands. 8640 samples, 0 differences.
+- `npm run check` passed.
+- `npm test` passed 130 tests, two Windows-only tests skipped (132 total). The
+  batching test now asserts one 64-draw request per strategy; the pairing test's
+  mock no longer depends on batch size.
+- `npm run sandbox:test-pruned-analysis` passed all 23 tests.
+- `npm run sandbox:check-pruned` passed 181 positions, 150 Jokers, 40001 scores.
+- `npm run release:check` and `git diff --check` passed.
+- Local timing on a warm worker, four strategies, 8-card hand: hit-heavy target
+  (`three_of_a_kind`) dropped from about 0.94–1.25 s to about 0.21 s;
+  miss-heavy target (`straight_flush`) from about 1.15–1.6 s to about 0.27–0.30 s.
+  `analysis:bench-discards` (new Analyzer per run, includes worker startup)
+  produced identical rates across all nine runs. Its timings are noisy
+  (0.23–0.87 s versus 0.54–1.04 s before).
+
+All checks were offline. No gameplay, mod installation or MCP restart was
+performed; restart the MCP server to load the change.
+
+## Review follow-ups for discard queries and the pruned engine — 2026-10-15
+
+Code:
+
+- `Analyzer.withSandbox` now owns cancellation (one abort listener instead of
+  three copies) and discards the worker only when it is broken, cancelled or
+  failed with an unexpected error. Argument errors (`BackendError`) and clean
+  worker refusals (`status: 'unsupported'`, now `SandboxRefusal`, e.g. Cerulean
+  Bell) keep the warm LuaJIT VM. Previously any discard input error closed it.
+- Discard error codes: `focus:"boss"` with `discards` is `invalid_arguments`;
+  a phase other than `SELECTING_HAND` is `illegal_action`, like not ready or no
+  discards left. A snapshot without `handSize` is an error instead of assuming 8.
+- `tools/index.ts` registers each tool with a kind (`read`, `mutation`,
+  `analysis`) instead of branching on tool names for queueing and aborts.
+- Removed the unused `HandOptions.signal` and the duplicated engine-path
+  default in `Analyzer` (`ScoringSandbox` resolves `sourceDir`, then
+  `BALATRO_SANDBOX_SOURCE`, then vendor). Deck canonical keys are computed once
+  before sorting.
+
+Docs: `balatro://analysis` discard section shortened to model-relevant rules
+and now lists error codes; `skills/core.md` only points to `discards`/`next`;
+README moves the example out of the Documentation link list into a Scoring
+analysis section; the design doc drops the deleted per-sample scoring
+benchmark and C estimates from §7 (kept here in earlier entries), and fixes the
+§6 label table and §7 not-ready wording. `env/pruned/README.md` is now exported
+so the link from `env/sandbox/README.md` resolves. CLAUDE.md pruned entry and
+command list updated.
+
+Validation:
+
+- New test: invalid indices, a Cerulean Bell refusal and a wrong phase keep the
+  same worker process; a cancelled query replaces it.
+- `npm run check` passed.
+- `npm test` (including build) passed 131 tests; two Windows-only tests skipped
+  (133 total).
+- `npm run sandbox:test-pruned-analysis` passed 24 tests;
+  `npm run sandbox:test-pruned` passed 3 tests.
+- `npm run release:check` and `git diff --check` passed.
+
+`env/sandbox/runtime.lua` and the pruned engine were not changed, so
+`sandbox:prune` / `sandbox:check-pruned` were not rerun. All checks were
+offline; no gameplay, mod installation or MCP restart was performed.
