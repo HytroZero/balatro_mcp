@@ -21,7 +21,7 @@ function failure(error: unknown): CallToolResult {
   return { isError: true, content: [{ type: 'text', text: JSON.stringify(structuredContent) }], structuredContent };
 }
 
-/** A process owns one tool context; serialize calls and game mutations. */
+/** A process owns one tool context; serialize game access, with analysis computing outside it. */
 export async function createBalatroServer(options: Options, backend: Backend = new ForgeBridgeBackend(options.endpoint, options.timeoutMs)) {
   const context = await loadGameplayContext();
   const trace = new Trace(resolve(options.dataDir, 'traces', nextId('trace') + '.jsonl'));
@@ -71,7 +71,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: toolGuide }] }));
   server.registerResource('analysis-guide', 'balatro://analysis', {
     title: 'Analysis output reference', mimeType: 'text/markdown',
-    description: 'Read once before game_analyze: score labels, hypothetical lines, order, audit and sampled build limitations.',
+    description: 'Read once before game_analyze: score labels, discard hit rates, order, audit and sampled build limitations.',
   }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: analysisGuide }] }));
   registerGameplayResources(server, context);
   return { server, async close() { await pending; await server.close(); await tools.close(); await backend.close(); await trace.flush().catch(() => {}); } };

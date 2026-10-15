@@ -29,7 +29,8 @@
     "sandbox:test": "node --test tests/sandbox.test.ts",
     "sandbox:bench": "node env/sandbox/bench.ts",
     "release:check": "node scripts/release.ts --check",
-    "release:export": "node scripts/release.ts"
+    "release:export": "node scripts/release.ts",
+    "analysis:bench-discards": "node env/analysis/bench-discards.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/server": "2.3.1",

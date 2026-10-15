@@ -10,7 +10,7 @@ After `uncertain_outcome` or a failure with `applied: true/"unknown"`, inspect `
 
 Check phase, money, slots, targets, forced cards and Boss rules before acting. Cerulean Bell also requires its forced card in discard and card-targeted consumable selections; including it may change a Tarot's effect or exceed its target limit. Scoring suggestions can omit execution constraints: `exact/clears` is not action permission.
 
-Use `game_analyze` for consequential uncertainty in survival, discards, order, Bosses or purchases. Refresh when the next decision depends on changed state, not after every transition or obvious upgrade; old scores are not exact predictions for new states. Read `balatro://analysis` once before using it.
+Use `game_analyze` for consequential uncertainty in survival, discards, order, Bosses or purchases. Refresh when the next decision depends on changed state, not after every transition or obvious upgrade; old scores are not exact predictions for new states. Read `balatro://analysis` once before using it. To compare discards, pass candidate `discards` with a target hand `next`.
 
 Before each consequential action, identify the immediate threat, the resources that can address it, and the principal cost. Explain the choice briefly, then call the tool. Continue through the next phase without waiting for user approval for ordinary authorized gameplay.
 

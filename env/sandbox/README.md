@@ -57,7 +57,7 @@ try {
 ```
 
 构造参数可设置 `lua`、`sourceDir`、`timeoutMs`（每个请求默认 5000）和 `signal`。
-`BALATRO_SANDBOX_SOURCE` 也可指定源码目录。默认使用 `env/sandbox/vendor`，
+`BALATRO_SANDBOX_SOURCE` 也可指定源码目录。`game_analyze`、独立 API 和 CLI 均默认使用完整的 `env/sandbox/vendor`，
 缺少源码时需先运行 `npm run sandbox:prepare`。模块支持项目源码和构建后的 `dist` 入口，从任意工作目录调用。
 
 `plays(state, selectionLimit, { timeoutMs, signal })` 在一个请求中完成加载、完整枚举和
@@ -196,6 +196,12 @@ Bootstraps 读平均金钱后的档位判断、Plasma 的均值平衡等继续�
 MCP 观察和动作结果不计算或返回 `plays`。`game_analyze` 按需调用时，Mod 通过只读的
 `sf.analysis_snapshot` 导出评分输入，由 `env/analysis` 在本沙盒中枚举并评分
 （见 `docs/game-analyze-design.md`）。`sandbox.plays` 仍可用于离线评分。
+
+弃牌查询使用独立的 `discards + next` 路径：1–4 个手牌下标数组、一个目标牌型，
+每个方案固定 64 次补牌采样，成功仅返回按输入顺序排列的 `rates`。
+worker 的 `discard_hits` 只做牌型识别和合法性判断，不运行计分或通用生命周期转换，
+因此与牌型无关的 Joker 成长、收益、Purple Seal 消耗牌生成不会阻止查询。
+暗牌、未建模的强制选择或牌型规则变化、取消和采样未完成时返回错误，不返回部分命中率。
 
 ## 源码来源
 

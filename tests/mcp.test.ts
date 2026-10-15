@@ -124,11 +124,15 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     const analysed = await h.call('game_analyze', { revision: '1' });
     assert.equal(analysed.isError, true); assert.equal(record(analysed.structuredContent).code, 'incompatible_backend');
     assert.equal(record((await h.call('game_analyze', { revision: '9' })).structuredContent).code, 'stale_state');
-    // Unimplemented focus values and action variants are outside the schema.
-    for (const args of [{ revision: '1', focus: 'engine' }, { revision: '1', lines: [[{ method: 'discard', cards: [0] }]] }]) {
+    // Unimplemented focus values and malformed next queries are outside the schema.
+    for (const args of [{ revision: '1', focus: 'engine' }, { revision: '1', next: { kind: 'hand' } }, { revision: '1', next: 'unknown' }, { revision: '1', lines: [[0]] }, { revision: '1', discards: [[0, 0]], next: 'pair' }]) {
       const invalid = await h.call('game_analyze', args);
       assert.equal(invalid.isError, true); assert.match(JSON.stringify(invalid.content), /Input validation error/);
     }
+    const discardWithoutNext = await h.call('game_analyze', { revision: '1', discards: [[0]] });
+    assert.equal(record(discardWithoutNext.structuredContent).code, 'invalid_arguments');
+    const nextOnOldMod = await h.call('game_analyze', { revision: '1', discards: [[0]], next: 'pair' });
+    assert.equal(record(nextOnOldMod.structuredContent).code, 'incompatible_backend');
     assert.equal(h.mutations, 0);
   } finally { await h.close(); }
 });

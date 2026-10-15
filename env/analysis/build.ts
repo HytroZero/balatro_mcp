@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { record, type Data } from '../contract.ts';
 import type { LoadedRound, ScoreState, ScoringSandbox } from '../sandbox/index.ts';
 import { interest } from './economy.ts';
-import { PLANETS } from './hand.ts';
+import { PLANETS } from './consumables.ts';
 import type { BuildInput, Economy, Offer } from './snapshot.ts';
 
 type Card = NonNullable<ScoreState['deck']>[number];

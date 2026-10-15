@@ -1,44 +1,22 @@
-import { Type, type Static, type TSchema } from 'typebox';
 import { record, type Data } from '../contract.ts';
 import type { ScoreResult, ScoreState, ScoringSandbox } from '../sandbox/index.ts';
 import { position, type AnalysisState, type Position } from './snapshot.ts';
-
-const index = Type.Integer({ minimum: 0 });
-const indices = Type.Array(index, { minItems: 1, maxItems: 64, uniqueItems: true });
-const object = <T extends Record<string, TSchema>>(properties: T) => Type.Object(properties, { additionalProperties: false });
-/** The action variants a hypothetical line may contain; shapes match ActionSchema. */
-export const AnalysisActionSchema = Type.Union([
-  object({ method: Type.Literal('play'), cards: Type.Array(index, { minItems: 1, maxItems: 5, uniqueItems: true }) }),
-  object({ method: Type.Literal('use'), consumable: index, cards: Type.Optional(Type.Array(index, { minItems: 1, maxItems: 5, uniqueItems: true })) }),
-  object({ method: Type.Literal('rearrange'), jokers: indices }),
-  object({ method: Type.Literal('rearrange'), hand: indices }),
-]);
-export const LinesSchema = Type.Array(Type.Array(AnalysisActionSchema, { minItems: 1, maxItems: 3 }), { minItems: 1, maxItems: 4 });
-export type Line = Static<typeof LinesSchema>[number];
+import { PLANETS, TAROTS } from './consumables.ts';
 
 type Scored = Extract<ScoreResult, { status: 'ok' }>;
 /** `sel` indexes the sandbox hand; `real` is the same selection as indices of the observed hand. */
 interface Entry { sel: number[]; real: number[]; r: Scored; }
 export interface HandBrief {
   focus: 'hand'; status: 'complete' | 'partial' | 'unavailable';
-  need?: string; plays?: string[]; use?: string[]; order?: string[]; lines?: string[]; notes?: string[];
+  need?: string; plays?: string[]; use?: string[]; order?: string[]; notes?: string[];
 }
 export interface HandResult { brief: HandBrief; /** Exact scores by sorted real indices, for the play audit. */ predictions: Map<string, number>; }
-export interface HandOptions { lines?: Line[]; deadline: number; /** False after a prediction mismatch in this run. */ trusted: boolean; }
+export interface HandOptions { deadline: number; /** False after a prediction mismatch in this run. */ trusted: boolean; }
 
-export const PLANETS: Record<string, string> = {
-  c_pluto: 'High Card', c_mercury: 'Pair', c_uranus: 'Two Pair', c_venus: 'Three of a Kind', c_saturn: 'Straight', c_jupiter: 'Flush',
-  c_earth: 'Full House', c_mars: 'Four of a Kind', c_neptune: 'Straight Flush', c_planet_x: 'Five of a Kind', c_ceres: 'Flush House', c_eris: 'Flush Five',
-};
 const PLANET_OF = Object.fromEntries(Object.entries(PLANETS).map(([key, hand]) => [hand, key.slice(2).replace('_', ' ').replace(/\b\w/g, c => c.toUpperCase())]));
 const FIELD: Record<string, string> = { mult: 'Mult', x_mult: 'XMult', 'extra.chips': 'chips' };
 const MAX_FAMILIES = 6, ORDER_BUDGET_MS = 1200, TAROT_SETS = 100;
 /** Tarots with a deterministic effect on chosen hand cards, by target count. */
-const TAROTS: Record<string, { min?: number; max: number }> = {
-  c_magician: { max: 2 }, c_empress: { max: 2 }, c_hierophant: { max: 2 }, c_lovers: { max: 1 }, c_chariot: { max: 1 }, c_justice: { max: 1 },
-  c_devil: { max: 1 }, c_tower: { max: 1 }, c_strength: { max: 2 }, c_star: { max: 3 }, c_moon: { max: 3 }, c_sun: { max: 3 }, c_world: { max: 3 },
-  c_death: { min: 2, max: 2 },
-};
 const HELD_EFFECTS = new Set(['j_baron', 'j_mime', 'j_raised_fist', 'j_shoot_the_moon', 'j_blackboard', 'j_reserved_parking']);
 
 const cardsOf = (value: unknown): Data[] => (Array.isArray(record(value).cards) ? record(value).cards as unknown[] : []).map(record);
@@ -65,7 +43,6 @@ function permutations<T>(items: T[]): T[][] {
   if (items.length <= 1) return [items];
   return items.flatMap((item, i) => permutations([...items.slice(0, i), ...items.slice(i + 1)]).map(rest => [item, ...rest]));
 }
-const isPermutation = (value: number[], length: number): boolean => value.length === length && new Set(value).size === length && value.every(i => i < length);
 
 function better(a: Entry, b: Entry): boolean {
   if (a.r.notAllowed !== b.r.notAllowed) return !a.r.notAllowed;
@@ -320,46 +297,6 @@ export async function handBrief(sandbox: ScoringSandbox, observed: Data, scoring
   } else if (!skipped.includes('use')) skipped.push('order');
   if (order.length) brief.order = order;
 
-  // Caller-supplied lines. Every index refers to the current observation.
-  if (options.lines) {
-    brief.lines = [];
-    for (const [n, line] of options.lines.entries()) {
-      const name = `line ${n + 1}`;
-      if (overBudget()) { brief.lines.push(`${name}: unavailable; time budget exhausted`); continue; }
-      let jokerOrder: number[] | undefined, handOrder: number[] | undefined, play: number[] | undefined, error: string | undefined;
-      const used: { slot: number; cards?: number[] }[] = [], told: string[] = [];
-      for (const [k, step] of line.entries()) {
-        if (play) { error = `step ${k + 1} follows the play`; break; }
-        if (step.method === 'use') {
-          const card = consumables[step.consumable];
-          if (!card || used.some(u => u.slot === step.consumable)) { error = `consumable ${step.consumable} is not available`; break; }
-          used.push({ slot: step.consumable, cards: step.cards });
-          told.push(`use ${String(card.label ?? card.key)}${step.cards ? ` on ${step.cards.join(' ')}` : ''}`);
-        } else if (step.method === 'rearrange' && 'jokers' in step) {
-          if (!isPermutation(step.jokers, jokers.length)) { error = 'jokers must be a full permutation'; break; }
-          jokerOrder = step.jokers; told.push(`jokers [${step.jokers.join(',')}]`);
-        } else if (step.method === 'rearrange') {
-          if (!isPermutation(step.hand, scoring.state.hand.length)) { error = 'hand must be a full permutation'; break; }
-          handOrder = step.hand; told.push(`hand [${step.hand.join(',')}]`);
-        } else {
-          if (step.cards.length > limit || step.cards.some(i => !pos.visible.includes(i))) { error = 'play selects a missing or face-down card, or too many cards'; break; }
-          if (forcedReal.some(i => !step.cards.includes(i))) { error = 'play must include the forced card'; break; }
-          play = step.cards; told.push(`play ${step.cards.join(' ')}`);
-        }
-      }
-      if (error) { brief.lines.push(`${name}: unavailable; ${error}`); continue; }
-      const applied = afterUse(base, used);
-      if (applied.error) { brief.lines.push(`${name}: unavailable; ${applied.error}`); continue; }
-      // After a hand rearrange, sandbox slots follow the new order while indices stay those of the observation.
-      const visible = (handOrder ?? scoring.state.hand.map((_, i) => i)).filter(i => pos.visible.includes(i));
-      const state: ScoreState = { ...applied.state, hand: visible.map(i => applied.state.hand[pos.visible.indexOf(i)]!),
-        jokers: jokerOrder ? jokerOrder.map(i => jokers[i]!) : applied.state.jokers };
-      const outcome = await variant(state, visible, play);
-      if (!outcome.entry) { brief.lines.push(`${name}: unavailable; ${outcome.error ?? 'could not be scored'}`); continue; }
-      if (used.some(u => PLANETS[String(consumables[u.slot]?.key)]) && constellation && !notes.includes(planetNote)) notes.push(planetNote);
-      brief.lines.push(`${name}: ${told.join(' > ')}${play ? '' : `${told.length ? ' > ' : ''}best play`} -> ${row(outcome.entry, outcome.pool, jokerOrder ? jokerOrder.map(i => jokerNames[i]!) : jokerNames)}`);
-    }
-  }
   if (skipped.length) { brief.status = 'partial'; notes.push(`time budget exhausted before: ${skipped.join(', ')}`); }
   if (expectedSeen) notes.push('expected scores substitute each random effect with its public-probability mean in one evaluation, retaining fractional scores before final rounding; they are not guaranteed scores and are excluded from exact play audits');
   if (approximationNotes.size) notes.push('interaction approximation: ' + [...approximationNotes].sort().join('; '));

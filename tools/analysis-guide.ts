@@ -3,7 +3,7 @@ export const analysisGuide = `# Balatro analysis reference
 
 Read once before using \`game_analyze\`. Execution legality and call cadence are governed by \`balatro://protocol\`. Analysis is read-only: it neither executes hypothetical actions nor issues a revision or updates the observation baseline.
 
-Read \`notes\` and \`audit\` first. \`status\` is \`complete\`, \`partial\` or \`unavailable\`; a partial result or order-search deadline does not establish optimality. The tool needs LuaJIT and prepared original scoring source; if unavailable, the other game tools still work.
+Hand and build briefs carry \`status\` (\`complete\`, \`partial\` or \`unavailable\`); read their \`notes\` and \`audit\` first. A partial result or order-search deadline does not establish optimality. Discard queries return only \`rates\` (see below). The tool needs LuaJIT and its configured scoring engine; if unavailable, the other game tools still work.
 
 ## Hand output
 
@@ -15,7 +15,6 @@ The tool scores selections with the original scoring code in a separate process.
 | \`plays\` | Best listed selection per poker hand, plus held-reward or Joker-growth alternatives |
 | \`use\` | A held Planet or targeted Tarot that improves the best scored play |
 | \`order\` | A full hand/Joker permutation that improves the score |
-| \`lines\` | Results for caller-supplied hypothetical lines |
 | \`notes\` | Assumptions, omitted work and approximations |
 | \`audit\` | Previous exact predictions compared with actual plays |
 
@@ -28,19 +27,27 @@ Rows read \`"0 2 4: Pair 500 exact; clears; …"\`. Facts can identify held/play
 
 No run seed, RNG stream, hidden identity or draw order is used or returned. Expected rows never enter exact-play audits.
 
-## Caller lines and order
+## Order and audit
 
-\`lines\` accepts up to 4 lines of up to 3 steps: use a Planet, use a Tarot with \`cards\` targets, rearrange hand/Jokers, then optionally play. Each index names a card in the current observation, also after a rearrange inside that hypothetical line. A line without play reports the best play after its steps.
+For real execution, send one action at a time and consume its returned state. An \`order\` row gives the positions to play after that real rearrange.
 
-Example: \`{"revision":"<rev>","lines":[[{"method":"use","consumable":0,"cards":[1,3]},{"method":"play","cards":[0,2,4]}]]}\`. First verify the targets and subsequent selection are legal; a hypothetical calculation is not a live validation.
+\`audit\` compares exact predictions with chips actually gained by a play at the same revision. A mismatch downgrades later deterministic rows to conditional. Discard queries publish no predictions.
 
-For real execution, send one action at a time and consume its returned state. An \`order\` row gives the positions to play after that real rearrange. If you propose an unlisted scoring/held-card order, price it with \`lines\`.
+## Discard hit rates
 
-\`audit\` compares exact predictions with the chips actually gained by a play at the same revision. A mismatch downgrades later deterministic rows to conditional and names the discrepancy.
+While selecting a hand, supply \`discards\` and \`next\` together: 1-4 arrays of 1-5 unique hand indices from the current observation, each an independent single-discard strategy, and one target poker hand shared by all of them.
+
+Example: \`{"revision":"<rev>","discards":[[0,1,3],[1,3]],"next":"straight"}\` returns \`{"rates":[0.375,0.5]}\` (illustrative): hits / 64 for each strategy, in input order.
+
+Each strategy removes its cards, keeps the rest and refills by hand size and draw rules (Serpent included) from the public remaining deck, never the real draw order. A sample hits when any legal selection from the refilled hand is classified as the target; it need not be the best play. Matching is by exact hand name, so a hand that only forms a stronger hand containing the target may not count: a straight flush alone is not a straight. Four Fingers, Shortcut, Smeared, Wild/Stone cards and Boss hand restrictions apply. Rates are 64-sample estimates; zero hits do not prove zero probability.
+
+Targets: \`high_card\`, \`pair\`, \`two_pair\`, \`three_of_a_kind\`, \`straight\`, \`flush\`, \`full_house\`, \`four_of_a_kind\`, \`straight_flush\`, \`five_of_a_kind\`, \`flush_house\`, \`flush_five\`.
+
+An error replaces all rates: \`invalid_arguments\` for a malformed query (missing card, too many cards, \`discards\` without \`next\`); \`illegal_action\` when no discard decision is available (other phase, not ready, no discards or hands left); \`backend_failure\` for an unsupported position (face-down held cards, Cerulean Bell, Crimson Heart with Four Fingers/Shortcut/Smeared) or an engine failure, named in the message; \`stale_state\` when the game changed during analysis.
 
 ## Build output
 
-In SHOP, PACK and BLIND_SELECT, \`focus:"build"\` samples 32 fixed shuffles of the public deck, never the run's draw order. Each independent hand chooses from hand size plus up to 5 drawn cards; Joker growth is frozen and random effects use their means. The clear figure is a pace proxy, not a chance-aware win probability. Compare changes on identical shuffles more than absolute levels.
+In SHOP, PACK and BLIND_SELECT, the default analysis samples 32 fixed shuffles of the public deck, never the run's draw order. Each independent hand chooses from hand size plus up to 5 drawn cards; Joker growth is frozen and random effects use their means. The clear figure is a pace proxy, not a chance-aware win probability. Compare changes on identical shuffles more than absolute levels.
 
 | Field | Meaning |
 | --- | --- |

@@ -116,6 +116,8 @@ const ScoreResultSchema = z.discriminatedUnion('status', [
 export type ScoreResult = z.infer<typeof ScoreResultSchema>;
 const failure = z.object({ status: z.enum(['unsupported', 'unavailable', 'error']), message: z.string() });
 export type ScoreFailure = z.infer<typeof failure>;
+/** The worker declined a request it does not model; its VM stays healthy. */
+export class SandboxRefusal extends Error {}
 const RoundSchema = z.object({ handSize: z.number().int(), hands: z.number().int(), discards: z.number().int(), jokerSlots: z.number().int(), jokers: z.number().int() });
 /** Round parameters of the loaded position after its Joker edits. */
 export type LoadedRound = z.infer<typeof RoundSchema>;
@@ -167,6 +169,9 @@ export class ScoringSandbox {
   }
 
   get processId(): number | undefined { return this.child?.pid; }
+  get isBroken(): boolean { return this.broken !== undefined; }
+  /** Interrupt a running analysis; this VM must be discarded by its owner. */
+  cancel(reason = new Error('Sandbox analysis cancelled')): void { this.stop(reason); }
 
   private stop(error: Error) {
     this.broken ??= error;
@@ -234,6 +239,48 @@ export class ScoringSandbox {
         child.stdin.write(request + '\n');
       });
     } finally { clearTimeout(timer); }
+  }
+
+  private scoped<T>(work: () => Promise<T>, options: SandboxRequestOptions): Promise<T> {
+    const timeout = options.timeoutMs ?? this.timeout;
+    validateTimeout(timeout);
+    const deadline = performance.now() + timeout;
+    return new Promise<T>((accept, reject) => {
+      let active = false, done = false;
+      const finish = (error?: unknown, value?: T) => {
+        if (done) return;
+        done = true; clearTimeout(timer); options.signal?.removeEventListener('abort', abort);
+        if (error !== undefined) reject(error); else accept(value!);
+      };
+      const cancel = (error: Error) => { if (done) return; if (active) this.stop(error); finish(error); };
+      const abort = () => cancel(new Error('Sandbox request cancelled', { cause: options.signal?.reason }));
+      const timer = setTimeout(() => cancel(new Error('Sandbox request budget exhausted')), Math.max(1, deadline - performance.now()));
+      timer.unref(); options.signal?.addEventListener('abort', abort, { once: true });
+      if (options.signal?.aborted) { abort(); return; }
+      void this.enqueue(async () => {
+        if (done) return;
+        active = true;
+        try { finish(undefined, await work()); } catch (error) { finish(error); }
+        finally { active = false; }
+      });
+    });
+  }
+
+  /** Return one target-hand hit flag per discard/refill sample. */
+  discardHits(state: ScoreState, cards: number[], draws: number[][], hand: string, limit: number, options: SandboxRequestOptions = {}): Promise<boolean[]> {
+    const parsed = ScoreStateSchema.parse(state);
+    ScoreInputSchema.parse({ ...parsed, play: cards });
+    z.array(z.array(z.number().int().nonnegative()).max(100)).min(1).max(64).parse(draws);
+    if (draws.some(draw => new Set(draw).size !== draw.length || draw.some(i => i >= (parsed.deck?.length ?? 0)))) throw new Error('Invalid refill indices');
+    z.number().int().min(1).max(5).parse(limit);
+    z.string().min(1).parse(hand);
+    return this.scoped(async () => {
+      this.handLength = undefined;
+      const result = z.union([z.array(z.boolean()), failure]).parse(await this.request('discard_hits', { state: parsed, cards, draws, hand, limit }, true));
+      if (!Array.isArray(result)) throw result.status === 'unsupported' ? new SandboxRefusal(result.message) : new Error(result.message);
+      if (result.length !== draws.length) throw new Error('Sandbox discard sample length mismatch');
+      return result;
+    }, options);
   }
 
   load(state: ScoreState): Promise<LoadResult> {

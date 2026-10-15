@@ -7,15 +7,18 @@ import { resolve } from 'node:path';
 import type { McpServer } from '@modelcontextprotocol/server';
 import { projectRoot } from '../src/config.ts';
 import { BackendError, record, type AnalysisRead, type Backend, type Data, type Observation } from '../env/contract.ts';
-import { Analyzer, type Line } from '../env/analysis/index.ts';
+import { Analyzer } from '../env/analysis/index.ts';
 import { economyLine, interest, rewardsLine, skipLine } from '../env/analysis/economy.ts';
 import { selections } from '../env/analysis/hand.ts';
+import type { ScoringSandbox } from '../env/sandbox/index.ts';
 import type { Trace } from '../model/trace.ts';
 import { registerGameTools } from '../tools/index.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
 
 const lua = process.env.LUAJIT ?? 'luajit';
-const source = process.env.BALATRO_SANDBOX_SOURCE ?? resolve(projectRoot, 'env/sandbox/vendor');
+// Fixtures need the full original constructors; scoring follows the Analyzer default unless overridden.
+const source = resolve(projectRoot, 'env/sandbox/vendor');
+const analysisSource = process.env.BALATRO_ANALYSIS_TEST_SOURCE;
 const skip = !existsSync(resolve(source, 'globals.lua')) ? 'Local original source required' :
   spawnSync(lua, ['-v']).status !== 0 ? 'LuaJIT required' : false;
 
@@ -65,7 +68,7 @@ test('economy lines follow the cash-out formula and the stake reward rules', () 
 
 test('hand brief scores every play, shows what each keeps and prices a held Planet', { skip }, async () => {
   const [analysis] = fixtures([{ hand, jokers: ['j_joker'], consumables: ['c_jupiter'] }]);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
     const state = shown({ target: 500, hands: 1, discards: 0, jokers: ['Joker'], consumables: [{ key: 'c_jupiter', label: 'Jupiter' }] });
     const { brief, predictions } = await analyzer.analyze(read(analysis!, state), { deadline: far(), trusted: true });
@@ -92,7 +95,7 @@ test('hand means include chance effects, never promise a clear or audit them, an
     { hand: ['S_A'], jokers: ['j_misprint', 'j_misprint'] },
     { hand: [{ key: 'S_A', enhancement: 'm_lucky' }], jokers: ['j_lucky_cat'] },
   ]);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
     const result = await analyzer.analyze(read(lucky!, shown({ target: 50 })), { deadline: far(), trusted: true });
     assert.equal(result.brief.focus, 'hand');
@@ -112,10 +115,9 @@ test('hand means include chance effects, never promise a clear or audit them, an
     assert.match(weakened.brief.plays![0]!, /conditional expected/);
     assert.equal(weakened.predictions.size, 0);
     const used = await analyzer.analyze(read(convert!, shown({ target: 50, consumables: [{ key: 'c_magician', label: 'The Magician' }] })),
-      { lines: [[{ method: 'use', consumable: 0, cards: [0] }, { method: 'play', cards: [0] }]], deadline: far(), trusted: true });
+      { deadline: far(), trusted: true });
     if (used.brief.focus !== 'hand') assert.fail('hand required');
     assert.match(used.brief.use![0]!, /High Card 80 expected/);
-    assert.match(used.brief.lines![0]!, /High Card 80 expected/);
     assert.match(used.brief.notes!.join(' '), /expected scores/);
     const estimate = await analyzer.analyze(read(large!, shown({ target: 100 })), { deadline: far(), trusted: true });
     if (estimate.brief.focus !== 'hand') assert.fail('hand required');
@@ -130,39 +132,21 @@ test('hand means include chance effects, never promise a clear or audit them, an
   } finally { await analyzer.close(); }
 });
 
-test('hand brief finds Joker and hand orders, prices caller lines and reports Joker growth', { skip }, async () => {
+test('hand brief finds Joker and hand orders and reports Joker growth', { skip }, async () => {
   const [ordered, glass, bus] = fixtures([
     { hand: ['S_K', 'H_K', 'D_3'], jokers: ['j_cavendish', 'j_joker'], consumables: ['c_mercury', 'c_fool'] },
     { hand: [{ key: 'S_K', enhancement: 'm_glass' }, { key: 'H_K', enhancement: 'm_mult' }, 'D_3'] },
     { hand: ['S_K', 'H_K', 'D_3', 'C_4'], jokers: [{ key: 'j_ride_the_bus', ability: { mult: 6 } }, 'j_green_joker'] },
   ]);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
     // Pair of Kings: 30 chips; X3 then +4 Mult gives 10, +4 then X3 gives 18.
-    const lines: Line[] = [
-      [{ method: 'rearrange', jokers: [1, 0] }, { method: 'play', cards: [0, 1] }],
-      [{ method: 'use', consumable: 0 }, { method: 'play', cards: [0, 1] }],
-      [{ method: 'use', consumable: 0 }, { method: 'rearrange', jokers: [1, 0] }],
-      [{ method: 'use', consumable: 1 }],
-      [{ method: 'play', cards: [0, 1] }, { method: 'use', consumable: 0 }],
-      [{ method: 'rearrange', hand: [2, 1, 0] }, { method: 'play', cards: [0, 2] }],
-    ];
     const state = shown({ jokers: ['Cavendish', 'Joker'], consumables: [{ key: 'c_mercury', label: 'Mercury' }, { key: 'c_fool', label: 'The Fool' }] });
-    const first = await analyzer.analyze(read(ordered!, state), { lines, deadline: far(), trusted: true });
+    const first = await analyzer.analyze(read(ordered!, state), { deadline: far(), trusted: true });
     assert.equal(first.brief.focus, 'hand');
     if (first.brief.focus !== 'hand') return;
     assert.equal(first.brief.plays![0], '0 1: Pair 300 exact; clears; up to 1 more card can ride along at the same score');
     assert.deepEqual(first.brief.order, ['rearrange jokers [1,0], then 0 1: Pair 540 exact; clears; up to 1 more card can ride along at the same score (best now 300)']);
-    assert.deepEqual(first.brief.lines, [
-      'line 1: jokers [1,0] > play 0 1 -> 0 1: Pair 540 exact; clears',
-      // Mercury: Pair level 2 is 25 chips x 3 Mult.
-      'line 2: use Mercury > play 0 1 -> 0 1: Pair 585 exact; clears',
-      'line 3: use Mercury > jokers [1,0] > best play -> 0 1: Pair 945 exact; clears; up to 1 more card can ride along at the same score',
-      'line 4: unavailable; using The Fool is not analysed yet',
-      'line 5: unavailable; step 2 follows the play',
-      // King high: 15 chips; X3 then +4 Mult is 7.
-      'line 6: hand [2,1,0] > play 0 2 -> 0 2: High Card 105 exact; short 195',
-    ]);
 
     const second = await analyzer.analyze(read(glass!, shown()), { deadline: far(), trusted: true });
     assert.equal(second.brief.focus, 'hand');
@@ -190,14 +174,13 @@ test('hand brief keeps face-down cards out of plays and respects a forced card',
     { hand: ['S_K', 'H_K', 'D_3'], blind: 'bl_hook' },
   ]);
   assert.doesNotMatch(JSON.stringify(record(record(hidden!.scoring).state).hand), /H_K/);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
-    const a = await analyzer.analyze(read(hidden!, shown({ jokers: ['Joker'] })), { lines: [[{ method: 'play', cards: [0, 1] }]], deadline: far(), trusted: true });
+    const a = await analyzer.analyze(read(hidden!, shown({ jokers: ['Joker'] })), { deadline: far(), trusted: true });
     assert.equal(a.brief.focus, 'hand');
     if (a.brief.focus !== 'hand') return;
     assert.equal(a.brief.plays![0], '0 2 3 4 5: Flush 560 conditional; reaches the target; plays the Blue Seal');
     assert.equal(a.brief.plays!.some(row => /(^| )1[ :]/.test(row.split(':')[0]!) || row.includes('Pair')), false);
-    assert.deepEqual(a.brief.lines, ['line 1: unavailable; play selects a missing or face-down card, or too many cards']);
     assert.match(a.brief.notes![0]!, /1 face-down card is held unscored/);
     assert.equal(a.predictions.size, 0);
 
@@ -209,6 +192,7 @@ test('hand brief keeps face-down cards out of plays and respects a forced card',
 
     const c = await analyzer.analyze(read(allHidden!, shown()), { deadline: far(), trusted: true });
     assert.deepEqual(c.brief, { focus: 'hand', status: 'unavailable', notes: ['every held card is face down'] });
+    await assert.rejects(analyzer.analyze(read(allHidden!, shown()), { deadline: far(), trusted: true, discards: [[0]], next: 'pair' }), /Face-down/);
 
     const d = await analyzer.analyze(read(hook!, shown()), { deadline: far(), trusted: true });
     assert.equal(d.brief.focus, 'hand');
@@ -219,31 +203,48 @@ test('hand brief keeps face-down cards out of plays and respects a forced card',
   } finally { await analyzer.close(); }
 });
 
-test('hand brief prices held Tarots on their best targets and in caller lines', { skip }, async () => {
+test('discard query errors and refusals keep a healthy worker; cancellation replaces it', { skip }, async () => {
+  const [plain, bell] = fixtures([
+    { hand: ['S_K', 'H_K', 'D_A'], handSize: 3, deck: ['C_K', 'S_A'] },
+    { hand: ['S_K', 'H_K', 'D_A'], handSize: 3, deck: ['C_K', 'S_A'], blind: 'bl_final_bell' },
+  ]);
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
+  const pid = () => (analyzer as unknown as { sandbox?: ScoringSandbox }).sandbox?.processId;
+  const query = (analysis: Data, discards: number[][], signal?: AbortSignal) =>
+    analyzer.analyze(read(analysis, shown()), { deadline: far(), trusted: true, discards, next: 'pair', signal });
+  try {
+    await query(plain!, [[2]]);
+    const warm = pid();
+    assert.notEqual(warm, undefined);
+    await assert.rejects(query(plain!, [[5]]), (error: BackendError) => error.code === 'invalid_arguments');
+    await assert.rejects(query(bell!, [[2]]), /Cerulean Bell/);
+    await assert.rejects(analyzer.analyze(read(plain!, { ...shown(), state: 'SHOP' }), { deadline: far(), trusted: true, discards: [[2]], next: 'pair' }),
+      (error: BackendError) => error.code === 'illegal_action');
+    assert.equal(pid(), warm, 'argument errors and clean refusals reuse the worker');
+    const controller = new AbortController();
+    const cancelled = query(plain!, [[0]], controller.signal);
+    controller.abort(new Error('test cancelled'));
+    await assert.rejects(cancelled, /test cancelled/);
+    await query(plain!, [[2]]);
+    assert.notEqual(pid(), warm, 'a cancelled worker is replaced');
+  } finally { await analyzer.close(); }
+});
+
+test('hand brief prices held Tarots on their best targets', { skip }, async () => {
   const [strength, chariot] = fixtures([
     { hand: ['S_K', 'H_K', 'D_Q', 'C_7', 'S_4'], consumables: ['c_strength', 'c_fool'] },
     { hand: ['S_K', 'H_K', 'D_3'], consumables: ['c_chariot'] },
   ]);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
-    const lines: Line[] = [
-      [{ method: 'use', consumable: 0, cards: [2] }, { method: 'play', cards: [0, 1, 2] }],
-      [{ method: 'use', consumable: 0, cards: [2, 3, 4] }],
-      [{ method: 'use', consumable: 0 }],
-    ];
     const state = shown({ consumables: [{ key: 'c_strength', label: 'Strength' }, { key: 'c_fool', label: 'The Fool' }] });
-    const a = await analyzer.analyze(read(strength!, state), { lines, deadline: far(), trusted: true });
+    const a = await analyzer.analyze(read(strength!, state), { deadline: far(), trusted: true });
     assert.equal(a.brief.focus, 'hand');
     if (a.brief.focus !== 'hand') return;
     // Strength turns the Queen into a third King: 60 chips x 3 Mult; the Kings alone are 30 x 2.
     assert.equal(a.brief.plays![0]!.startsWith('0 1: Pair 60 exact'), true);
     assert.equal(a.brief.use?.length, 1);
     assert.match(a.brief.use![0]!, /^consumable 0 Strength on 2, then 0 1 2: Three of a Kind 180 exact; short 120.* \(best now 60\)$/);
-    assert.deepEqual(a.brief.lines, [
-      'line 1: use Strength on 2 > play 0 1 2 -> 0 1 2: Three of a Kind 180 exact; short 120',
-      'line 2: unavailable; Strength needs 1-2 target cards',
-      'line 3: unavailable; Strength needs 1-2 target cards',
-    ]);
 
     // A new Steel card is held: the Kings score 60, X1.5 from the held Steel 3.
     const b = await analyzer.analyze(read(chariot!, shown({ consumables: [{ key: 'c_chariot', label: 'The Chariot' }] })), { deadline: far(), trusted: true });
@@ -266,7 +267,7 @@ test('build offers price chance rewards by their mean and label the clear proxy 
     shopPosition({ hand: ['H_A'], deck: [], jokers: [], consumables: [], shop: ['j_bloodstone'], vouchers: [], seed: 'PRIVATE_BUILD' }),
     shopPosition({ hand: ['H_A'], deck: [], jokers: [], consumables: [], shop: ['j_space'], vouchers: [] }),
   ]);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   const shown: Data = { ...shopShown([]), shop: { cards: [{ index: 0, label: 'Bloodstone' }] }, vouchers: { cards: [] }, consumables: { cards: [] } };
   try {
     const { brief } = await analyzer.analyze(read(shop!, shown), { deadline: far(), trusted: true });
@@ -295,7 +296,7 @@ test('build brief samples pace, Joker shares, offers and the next Ante from the 
   assert.equal(((input.state as Data).deck as unknown[]).length, 52);
   assert.deepEqual(input.blinds, { Small: { key: 'bl_small', status: 'Defeated', target: 300 }, Big: { key: 'bl_big', status: 'Upcoming', target: 450 }, Boss: { key: 'bl_club', status: 'Upcoming', target: 600 } });
   assert.doesNotMatch(JSON.stringify(shop), /SANDBOX|pseudorandom/);
-  const analyzer = new Analyzer({ lua, sourceDir: source });
+  const analyzer = new Analyzer({ lua, sourceDir: analysisSource });
   try {
     const { brief } = await analyzer.analyze(read(shop!, shopShown()), { deadline: far(), trusted: true });
     assert.equal(brief.focus, 'build');
@@ -348,7 +349,7 @@ test('build phases without a deck snapshot return economy only and other phases 
     skip: "skip Small: gives Investment Tag ($25 after the Boss is defeated); forgoes $3 reward, $1 per unused hand, this round's Joker scaling and the shop after it" });
   assert.equal((await analyzer.analyze(read({ phase: 'ROUND_EVAL', economy }, { state: 'ROUND_EVAL' }), { deadline: far(), trusted: true })).brief.status, 'unavailable');
   assert.equal((await analyzer.analyze(read({ phase: 7 }, { state: 'SHOP' }), { deadline: far(), trusted: true })).brief.status, 'unavailable');
-  assert.equal((await analyzer.analyze(read({ phase: 'SHOP', economy }, { state: 'SHOP' }), { lines: [[{ method: 'use', consumable: 0 }]], deadline: far(), trusted: true })).brief.status, 'unavailable');
+  await assert.rejects(analyzer.analyze(read({ phase: 'SHOP', economy }, { state: 'SHOP' }), { discards: [[0]], next: 'pair', deadline: far(), trusted: true }), /selecting a hand/);
   await analyzer.close();
 });
 
@@ -397,6 +398,60 @@ test('game_analyze needs an issued revision, never moves the baseline and reject
   const old = harness({ reads: [playing('i:1', 0)], analysis: false });
   await old.call('game_observe');
   assert.equal((await old.call('game_analyze', { revision: '1' })).code, 'incompatible_backend');
+});
+
+test('game_analyze returns only discard rates and preserves the observation baseline', { skip }, async () => {
+  const [analysis] = fixtures([{ hand: ['S_K', 'H_K', 'D_A'], handSize: 3, deck: ['C_K', 'S_A'], jokers: ['j_joker'] }]);
+  const snapshot = read(analysis!, shown({ target: 1000, jokers: ['Joker'] }));
+  const handlers: Record<string, Handler> = {};
+  const backend: Backend = { name: 'test', close: async () => {}, observe: async () => snapshot.observation,
+    observeDeck: async () => { throw new Error('unused'); }, act: async () => snapshot.observation,
+    analysisSnapshot: async () => snapshot };
+  const trace = { encode: (value: unknown) => JSON.stringify(value), write: async () => {} } as unknown as Trace;
+  const tools = registerGameTools({ registerTool(name: string, _config: unknown, handler: Handler) { handlers[name] = handler; } } as unknown as McpServer,
+    backend, trace, operation => operation(), 30000, new Analyzer({ lua, sourceDir: analysisSource }));
+  try {
+    await handlers.game_observe!({}, { mcpReq: {} });
+    const invalid = record((await handlers.game_analyze!({ revision: '1', next: 'three_of_a_kind' }, { mcpReq: {} })).structuredContent);
+    assert.equal(invalid.code, 'invalid_arguments');
+    const result = record((await handlers.game_analyze!({ revision: '1', discards: [[2], [0]], next: 'three_of_a_kind' }, { mcpReq: {} })).structuredContent);
+    assert.equal(result.ok, true);
+    const value = record(result.value);
+    assert.deepEqual(Object.keys(value), ['rates']);
+    const rates = value.rates as number[];
+    assert.equal(rates.length, 2); assert.ok(rates[0]! > 0 && rates[0]! < 1); assert.equal(rates[1], 0);
+    const acted = record((await handlers.game_action!({ revision: '1', action: { method: 'discard', cards: [2] } }, { mcpReq: {} })).structuredContent);
+    assert.equal(acted.ok, true); assert.equal(record(acted.value).full, undefined);
+  } finally { await tools.close(); }
+});
+
+test('a live mutation proceeds during analysis, cancels it and cannot publish stale predictions', async () => {
+  const handlers: Record<string, Handler> = {};
+  let release!: () => void, started!: () => void;
+  const entered = new Promise<void>(accept => { started = accept; });
+  const waiting = new Promise<void>(accept => { release = accept; });
+  let snapshot = playing('i:1', 0), aborted = false;
+  const analyzer = { analyze: async (_read: AnalysisRead, options: { signal: AbortSignal }) => {
+    options.signal.addEventListener('abort', () => { aborted = true; release(); }, { once: true });
+    started(); await waiting;
+    return { brief: { focus: 'hand', status: 'complete' }, predictions: new Map([['0', 100]]) };
+  }, close: async () => {} } as unknown as Analyzer;
+  const backend: Backend = { name: 'test', close: async () => {}, observe: async () => snapshot.observation,
+    observeDeck: async () => { throw new Error('unused'); }, analysisSnapshot: async () => snapshot,
+    act: async () => { snapshot = playing('i:2', 1); return snapshot.observation; } };
+  let pending: Promise<unknown> = Promise.resolve();
+  const sequential = <T>(run: () => Promise<T>): Promise<T> => { const result = pending.then(run); pending = result.catch(() => {}); return result; };
+  const trace = { encode: (value: unknown) => JSON.stringify(value), write: async () => {} } as unknown as Trace;
+  const tools = registerGameTools({ registerTool(name: string, _config: unknown, handler: Handler) { handlers[name] = handler; } } as unknown as McpServer,
+    backend, trace, sequential, 30000, analyzer);
+  try {
+    await handlers.game_observe!({}, { mcpReq: {} });
+    const analysis = handlers.game_analyze!({ revision: '1' }, { mcpReq: {} });
+    await entered;
+    const action = await handlers.game_action!({ revision: '1', action: { method: 'play', cards: [0] } }, { mcpReq: {} });
+    assert.equal(record(action.structuredContent).ok, true); assert.equal(aborted, true);
+    assert.equal(record((await analysis).structuredContent).code, 'stale_state');
+  } finally { release(); await tools.close(); }
 });
 
 test('plays at an analysed revision are audited; a mismatch suspends exact labels for the run', async () => {
@@ -449,20 +504,18 @@ test('game_analyze runs end to end over the HTTP bridge client and the scoring w
   const backend = new ForgeBridgeBackend(`http://127.0.0.1:${address.port}`, 10_000);
   const trace = { encode: (value: unknown) => JSON.stringify(value), write: async () => {} } as unknown as Trace;
   const tools = registerGameTools({ registerTool(name: string, _config: unknown, handler: Handler) { handlers[name] = handler; } } as unknown as McpServer,
-    backend, trace, operation => operation(), 10_000, new Analyzer({ lua, sourceDir: source }));
+    backend, trace, operation => operation(), 10_000, new Analyzer({ lua, sourceDir: analysisSource }));
   try {
     const observed = record((await handlers.game_observe!({}, { mcpReq: {} })).structuredContent);
     assert.equal(record(observed.value).rev, '7');
-    const result = await handlers.game_analyze!({ revision: '7', lines: [[{ method: 'use', consumable: 0 }, { method: 'play', cards: [0, 2, 4, 5, 7] }]] }, { mcpReq: {} });
+    const result = await handlers.game_analyze!({ revision: '7' }, { mcpReq: {} });
     const value = record(record(result.structuredContent).value);
     assert.deepEqual(value, { rev: '7', phase: 'SELECTING_HAND', focus: 'hand', status: 'complete', need: '500 to clear; hands 1, discards 0',
       plays: ['0 2 3 4 5: Flush 560 exact; clears; plays the Blue Seal',
         '0 2 4 5 7: Flush 520 exact; clears; holds Blue Seal (card 3) -> Jupiter at round end',
         '0 1: Pair 180 exact; short 320; up to 3 more cards can ride along at the same score',
         '0: High Card 75 exact; short 425; up to 4 more cards can ride along at the same score'],
-      use: ['consumable 0 Jupiter, then 0 2 3 4 5: Flush 850 exact; clears; plays the Blue Seal (best now 560)'],
-      // Jupiter: Flush level 2 is 50 chips x 6 Mult; 80 chips x 10 Mult with the Joker.
-      lines: ['line 1: use Jupiter > play 0 2 4 5 7 -> 0 2 4 5 7: Flush 800 exact; clears; holds Blue Seal (card 3) -> Jupiter at round end'] });
+      use: ['consumable 0 Jupiter, then 0 2 3 4 5: Flush 850 exact; clears; plays the Blue Seal (best now 560)'] });
     assert.doesNotMatch(JSON.stringify(result), /HIDDEN_SEED|passiveEffectsApplied|ability/);
     assert.deepEqual(methods, ['sf.health', 'sf.observe', 'sf.analysis_snapshot', 'sf.analysis_snapshot']);
     assert.ok(JSON.stringify(value).length < 1500, 'the hand brief stays within its size target');

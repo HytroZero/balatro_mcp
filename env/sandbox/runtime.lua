@@ -284,7 +284,7 @@ function sandbox.new(source, json)
     return name, display, poker, scoring, unlocalized
   end
 
-  function runtime.load(snapshot, onlyScore)
+  function runtime.load(snapshot, onlyScore, onlyClassify)
     restoreBaseline = nil -- A failed load invalidates the previous position.
     input = clone(snapshot)
     if onlyScore == true then input.random = 'minimal' end
@@ -420,7 +420,7 @@ function sandbox.new(source, json)
       -- Deck tallies (Steel Joker, Stencil, Driver's License) follow the edited build.
       for _, c in ipairs(G.jokers.cards) do c:update(0) end
     end
-    if blind.name == 'The Hook' and not G.GAME.blind.disabled then
+    if not onlyClassify and blind.name == 'The Hook' and not G.GAME.blind.disabled then
       return {status='unsupported', message='The Hook pre-scoring discards are not supported'}
     end
     for _, c in ipairs(G.playing_cards) do
@@ -640,6 +640,79 @@ function sandbox.new(source, json)
     table.sort(reasons)
     return {best=top, families=out, scored=scored, approximations=#reasons > 0 and reasons or nil}
   end
+  -- Classify each sampled hand after one discard; no scoring or action simulation.
+  function runtime.discardHits(state, cards, draws, hand, limit)
+    local base, selected = clone(state), {}
+    assert(#cards >= 1 and #cards <= 5, 'Select 1-5 cards to discard')
+    for _, index in ipairs(cards) do
+      assert(type(index) == 'number' and index % 1 == 0 and base.hand[index + 1] and not selected[index + 1], 'Invalid discard selection')
+      selected[index + 1] = true
+    end
+    local kept = json.array()
+    for i, card in ipairs(base.hand) do
+      if not selected[i] then
+        if type(card) == 'table' and card.ability then card.ability.forced_selection = nil end
+        kept[#kept + 1] = card
+      end
+    end
+    base.hand = kept
+    local jokers = json.array()
+    local classification = {j_four_fingers=true, j_shortcut=true, j_smeared=true, j_pareidolia=true, j_chicot=true}
+    for _, card in ipairs(base.jokers or {}) do
+      local key = type(card) == 'string' and card or card.key
+      if classification[key] then jokers[#jokers + 1] = card end
+    end
+    base.jokers, base.consumables, base.hands = jokers, json.array(), nil
+    base.random, base.applyBlind = 'expectation', true
+    local blind = type(base.blind) == 'table' and base.blind or {key=base.blind}
+    if not blind.disabled and blind.key == 'bl_final_bell' then
+      error({status='unsupported', message='Cerulean Bell selection after refill is not modelled'}, 0)
+    end
+    if not blind.disabled and blind.key == 'bl_final_heart' then
+      for _, card in ipairs(jokers) do
+        local key = type(card) == 'string' and card or card.key
+        if key == 'j_four_fingers' or key == 'j_shortcut' or key == 'j_smeared' then
+          error({status='unsupported', message='Crimson Heart may change poker-hand rules after refill'}, 0)
+        end
+      end
+    end
+    -- One load builds the kept hand and the whole public pool. Blind debuffs apply to every
+    -- playing card alike and classification reads only the picked cards, so each sample
+    -- borrows its drawn deck Cards instead of reloading the position.
+    local loaded = runtime.load(base, nil, true)
+    if loaded.status ~= 'ready' then error(loaded, 0) end
+    local pool, out = G.deck.cards, json.array()
+    for _, draw in ipairs(draws) do
+      local sample, used = {}, {}
+      for i, c in ipairs(all) do sample[i] = c end
+      for _, index in ipairs(draw) do
+        assert(type(index) == 'number' and index % 1 == 0 and pool[index + 1] and not used[index + 1], 'Invalid refill indices')
+        used[index + 1] = true
+        sample[#sample + 1] = pool[index + 1]
+      end
+      assert(#sample > 0, 'No cards after refill')
+      local picked, hit = {}, false
+      local function walk(start)
+        if #picked > 0 then
+          classifying = true
+          local name, _, poker = G.FUNCS.get_poker_hand_info(picked)
+          classifying = false
+          if name == hand and not G.GAME.blind:debuff_hand(picked, poker, name, true) then hit = true end
+        end
+        if hit or #picked == limit then return end
+        for i = start, #sample do
+          picked[#picked + 1] = sample[i]
+          walk(i + 1)
+          picked[#picked] = nil
+          if hit then return end
+        end
+      end
+      walk(1)
+      out[#out + 1] = hit
+    end
+    return out
+  end
+
   function runtime.stats()
     return {sourceLoads=1, positionLoads=loads, calculations=calculations, luaMemoryKiB=collectgarbage('count')}
   end

@@ -15,7 +15,7 @@ are no API keys or model settings to configure here.
   Blue Deck runs on Gold Stake 
   with a random seed and no human intervention or decision-making.**
   Seed: `S7M5CNQW`.
-- **A powerful `game_analyze` system** compares plays score, Joker order, and economy choices, significantly improving the model's decisions and gameplay performance.
+- **A powerful `game_analyze` system** compares plays score, discard sampling, Joker order, and economy choices, significantly improving the model's decisions and gameplay performance.
 - Observations are compact, indexed text with incremental deltas, so long runs fit in an agent's context.
 - Two gameplay skills ship with the server. See [Included skills](#included-skills).
 
@@ -25,6 +25,8 @@ are no API keys or model settings to configure here.
 - Play and discard cards, buy and sell items, open packs, use consumables,
   reroll, and start new runs.
 - Consult the bundled rules reference and strategy skills while playing.
+- Score candidate plays, Joker orders and shop choices, and estimate how often
+  a discard reaches a target hand (`game_analyze`).
 
 Ask for advice or hand over a whole run:
 
@@ -136,6 +138,18 @@ and restart. Keep only one copy of the mod.
 MCP call logs live in `data/traces/`. Installation backups live in
 `build/mod-install-backups/`. Git ignores both folders and `mcp.local.json`.
 Copy any backups you need before deleting the project.
+
+## Scoring analysis
+
+`game_analyze` runs the game's original scoring code in a separate LuaJIT
+process. For example,
+`{"revision":"<rev>","discards":[[0,1,3],[1,3]],"next":"straight"}` compares
+two discards by how often the refilled hand can play a straight, returning
+`{"rates":[0.375,0.5]}` (illustrative values). Fields, target names and errors
+are in the [analysis reference](tools/analysis-guide.ts).
+
+Analysis uses the full original sandbox in `env/sandbox/vendor` by default;
+prepare it with `npm run sandbox:prepare`.
 
 ## Platform support
 
