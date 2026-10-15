@@ -1,5 +1,5 @@
 -- Record actual status prompts during one play; never evaluate an effect.
-return function()
+return function(decision)
   local effects, active = {}, nil
   local ranks = {Ace='A',King='K',Queen='Q',Jack='J'}
   local suits = {Spades='S',Hearts='H',Clubs='C',Diamonds='D'}
@@ -15,7 +15,7 @@ return function()
     return label ~= '' and label or '?'
   end
   function effects.begin(state)
-    active = {cards={},lines={},new=0}
+    active = {cards={},lines={},messages={},new=0}
     for _, area in ipairs({'hand','jokers','consumables'}) do
       local live = area == 'consumables' and G.consumeables or G[area]
       local visible = state[area] and state[area].cards or {}
@@ -34,7 +34,7 @@ return function()
     card = extra.focus or card
     if not card then return end
     local message
-    if kind == 'extra' or kind == 'jokers' then message = text(extra.message)
+    if kind == 'extra' or kind == 'jokers' then message = text(active.messages[extra.message] or extra.message)
     elseif kind == 'debuff' then message = 'Debuffed'
     elseif kind == 'swap' then message = 'Swapped'
     elseif type(amount) == 'number' and amount ~= 0 then
@@ -51,6 +51,16 @@ return function()
       active.new = active.new + 1
     end
     active.lines[#active.lines + 1] = active.cards[card] .. ': ' .. message
+  end
+  local original_localize = assert(localize, 'Missing original localization function')
+  local function remember(args, group, value, ...)
+    local message = decision.effectText(args, group)
+    if type(value) == 'string' and type(message) == 'string' then active.messages[value] = message end
+    return value, ...
+  end
+  localize = function(args, group, ...)
+    if active then return remember(args, group, original_localize(args, group, ...)) end
+    return original_localize(args, group, ...)
   end
   local original = assert(card_eval_status_text, 'Missing original status prompt function')
   card_eval_status_text = function(card, kind, amount, percent, dir, extra, ...)

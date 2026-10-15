@@ -59,6 +59,20 @@ return function(json, english)
     local entries = english and english.misc and english.misc.v_dictionary
     return entries and type(entries[key]) == 'string' and entries[key] or fallback
   end
+  -- Read status text by its original localization key, just like card text.
+  function decision.effectText(args, group)
+    if type(args) == 'string' then
+      local entries = english.misc[group or 'dictionary']
+      return entries and entries[args]
+    elseif type(args) == 'table' and args.type == 'variable' then
+      local template = english.misc.v_dictionary[args.key]
+      if type(template) == 'string' then
+        return template:gsub('{[^}]*}', ''):gsub('#(%d+)#', function(index)
+          return tostring(assert(args.vars[tonumber(index)], 'Missing status text variable'))
+        end)
+      end
+    end
+  end
   local function probability() return G.GAME and G.GAME.probabilities and G.GAME.probabilities.normal or 1 end
   local function product(a, b) return type(a) == 'number' and type(b) == 'number' and a * b or nil end
   local function plus(a, b) return type(a) == 'number' and a + b or nil end

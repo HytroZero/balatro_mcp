@@ -1781,3 +1781,35 @@ contract after dispatch. Updated the existing fixtures and replaced old-mod
 acceptance with missing-field rejection. Type checking, build, all 49 bridge/
 compact tests, all 8 MCP tests, the three effects/decision/snapshot Lua suites,
 mod staging, release audit and diff checks passed again offline.
+
+## Keep play effects in English — 2026-10-15
+
+The recorder copied `extra.message`, which is already localized to the game's
+UI language. It now shares the observation module's English data and reads
+prompt text by the original localization key and variables. During a play, the
+localization hook associates its unchanged UI result with that English text;
+the status hook records the English text. Literal game messages remain intact.
+There is no localized-text search or unknown-effect placeholder. The game's
+prompt arguments, localization return values, language setting and localization
+tables are unchanged.
+
+Validation:
+
+- Lua effects checks passed all 42 assertions, including Chinese chips/mult,
+  edition, retrigger and upgrade prompts, unchanged UI data, and preservation
+  of localization return values.
+- Lua observation (88), decision (50) and score snapshot (35) checks passed.
+- Type checking, build, all 33 compact/MCP tests, mod staging, release audit and
+  `git diff --check` passed.
+
+All checks were offline. The updated mod is staged, not installed or live-tested;
+install it and restart Balatro to load the Lua fix.
+
+## Shorten model-facing effect guidance — 2026-10-15
+
+The tool description and model guide now explain only what `effects` tells the
+agent and how to read its card references. Removed localization, recording and
+operation-lifecycle implementation details from this guidance.
+
+Validation: build and all 15 context/MCP tests passed; `git diff --check` passed.
+Text-only change; no gameplay or mod installation was performed.

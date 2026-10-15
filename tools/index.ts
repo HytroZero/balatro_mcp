@@ -95,7 +95,7 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
     if (current.ready === false || !current.availableMethods.includes('start')) throw new BackendError('illegal_action','A run is ongoing or the game is not ready to start. Observe and continue the existing run.');
     return observed(await backend.act({ method: 'start',...params },current.revision,context), { method: 'start',...params });
   });
-  tool('game_action','mutation',"Execute one mutation with the latest issued revision. Returns rev, phase, actions, result and changed state keys, or full:true. A play also returns effects: ordered status prompts with pre-action card indices. Merge per balatro://guide; recover errors per balatro://protocol.",
+  tool('game_action','mutation',"Execute one mutation with the latest issued revision. Returns rev, phase, actions, result and changed state keys, or full:true. A play also reports which cards triggered effects. Merge per balatro://guide; recover errors per balatro://protocol.",
     Type.Object({ revision: Type.String(), action: ActionSchema },{ additionalProperties: false }),async (params,context) => {
       const revision = resolveRevision(params.revision);
       const expected = predicted?.revision === revision ? predicted : undefined;

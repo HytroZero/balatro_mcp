@@ -9,7 +9,16 @@ card_eval_status_text = function(...)
   last = {...}
   return 'original', nil, 7
 end
-local effects = dofile('play/mod/effects.lua')()
+localize = function(args, group)
+  local misc = G.localization.misc
+  if type(args) == 'string' then return misc[group or 'dictionary'][args],nil,'localize-tail' end
+  return (misc.v_dictionary[args.key]:gsub('#(%d+)#',function(index) return tostring(args.vars[tonumber(index)]) end)),nil,'localize-tail'
+end
+local decision = dofile('play/mod/decision.lua')(json,{misc={
+  dictionary={k_again_ex='Again!',k_upgrade_ex='Upgraded!'},
+  v_dictionary={a_mult='+#1# Mult',a_xmult='X#1# Mult',a_chips='+#1# Chips'},
+}})
+local effects = dofile('play/mod/effects.lua')(decision)
 local function card(rank, suit, hidden, label)
   return {public={state={hidden=hidden},value={rank=rank,suit=suit},label=label},facing=hidden and 'back' or 'front'}
 end
@@ -122,5 +131,25 @@ same(timedout.effects,'hand[0](QC): X1.5 Mult')
 card_eval_status_text(ace,'chips',99)
 same(inspect('timeout').effects,timedout.effects)
 same(effects.finish(),'')
+
+-- Localized UI prompts use the same English data as observations. Neither the
+-- arguments passed to the game nor its language/localization tables change.
+G.localization = {misc={dictionary={k_again_ex='再来一次！',k_upgrade_ex='升级！'},
+  v_dictionary={a_mult='+#1# 倍率',a_xmult='X#1# 倍率',a_chips='+#1# 筹码'}}}
+G.SETTINGS = {language='zh_CN'}
+local localization = json.encode(G.localization)
+effects.begin(game.state())
+local extra = {message=localize{type='variable',key='a_xmult',vars={2}},edition=true}
+card_eval_status_text(bonus,'extra',nil,nil,nil,extra)
+same(last[6],extra); same(extra.message,'X2 倍率')
+card_eval_status_text(joker1,'jokers',nil,nil,nil,{message=localize{type='variable',key='a_mult',vars={12}}})
+local localized,nil_return,tail = localize('k_again_ex')
+same(localized,'再来一次！'); same(nil_return,nil); same(tail,'localize-tail')
+card_eval_status_text(joker2,'extra',nil,nil,nil,{message=localized})
+card_eval_status_text(joker2,'extra',nil,nil,nil,{message=localize('k_upgrade_ex')})
+card_eval_status_text(bonus,'extra',nil,nil,nil,{message=localize{type='variable',key='a_chips',vars={50}}})
+same(effects.finish(),'hand[2](KH): X2 Mult; jokers[0](Joker): +12 Mult; jokers[1](Joker): Again!; ' ..
+  'jokers[1](Joker): Upgraded!; hand[2](KH): +50 Chips')
+same(G.SETTINGS.language,'zh_CN'); same(json.encode(G.localization),localization)
 check(calls > 20,'every prompt still invokes the original handler')
 print('Effect recording checks passed: ' .. checks)
