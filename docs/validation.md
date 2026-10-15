@@ -1722,3 +1722,20 @@ Validation:
 
 All checks were offline; no gameplay or MCP restart was performed. Restart
 the MCP server to load the change; the Lua mod is unchanged.
+
+## Blue Deck engine priority and play-as-discard in the coach skill — 2026-10-15
+
+`skills/balatro-gold-stake-coach/SKILL.md` gains a Blue Deck engine priority:
+Pair (standard or held Blue Seal) > Two Pair > Flush > High Card / Four of a
+Kind > others, with Straight-conditioned Jokers avoided and Eternal ones never
+bought. The intro and Antes 1–2 guidance no longer contradict it on Blue Deck.
+The hand comparison now states that a play can discard dead unscored cards
+when discards are scarce, after checking the poker hand and held rewards.
+
+Validation:
+
+- `node --test tests/context.test.ts` passed.
+- `npm run release:check` passed.
+
+Text-only change; no gameplay was run. The skill is read from disk as a
+`skill://` resource, so a running MCP server serves it without a restart.
