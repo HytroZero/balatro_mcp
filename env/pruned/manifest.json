@@ -1,0 +1,145 @@
+{
+  "mode": "normal-jit",
+  "inputBytes": 816400,
+  "outputBytes": 217456,
+  "inputLines": 16416,
+  "outputLines": 8490,
+  "functionsKept": [
+    "Back.init",
+    "Back.trigger_effect",
+    "Blind.debuff_card",
+    "Blind.debuff_hand",
+    "Blind.modify_hand",
+    "Card.add_to_deck",
+    "Card.calculate_joker",
+    "Card.calculate_seal",
+    "Card.change_suit",
+    "Card.get_chip_bonus",
+    "Card.get_chip_h_mult",
+    "Card.get_chip_h_x_mult",
+    "Card.get_chip_mult",
+    "Card.get_chip_x_mult",
+    "Card.get_edition",
+    "Card.get_id",
+    "Card.get_nominal",
+    "Card.get_p_dollars",
+    "Card.is_face",
+    "Card.is_suit",
+    "Card.remove_from_deck",
+    "Card.set_ability",
+    "Card.set_base",
+    "Card.set_cost",
+    "Card.set_debuff",
+    "Card.set_edition",
+    "Card.update",
+    "G.FUNCS.evaluate_play",
+    "G.FUNCS.get_poker_hand_info",
+    "Game.init",
+    "Game.init_game_object",
+    "Game.init_item_prototypes",
+    "Game.set_globals",
+    "HEX",
+    "calculate_reroll_cost",
+    "copy_table",
+    "eval_card",
+    "evaluate_poker_hand",
+    "find_joker",
+    "get_X_same",
+    "get_flush",
+    "get_highest",
+    "get_starting_params",
+    "get_straight",
+    "level_up_hand",
+    "mod_chips",
+    "mod_mult",
+    "pseudohash",
+    "pseudorandom",
+    "pseudorandom_element",
+    "pseudoseed"
+  ],
+  "modules": [
+    {
+      "path": "engine/object.lua",
+      "inputBytes": 666,
+      "outputBytes": 662,
+      "inputLines": 38,
+      "outputLines": 34
+    },
+    {
+      "path": "game.lua",
+      "inputBytes": 236989,
+      "outputBytes": 78650,
+      "inputLines": 3630,
+      "outputLines": 3984
+    },
+    {
+      "path": "globals.lua",
+      "inputBytes": 16209,
+      "outputBytes": 519,
+      "inputLines": 523,
+      "outputLines": 31
+    },
+    {
+      "path": "card.lua",
+      "inputBytes": 242551,
+      "outputBytes": 110962,
+      "inputLines": 4772,
+      "outputLines": 3448
+    },
+    {
+      "path": "blind.lua",
+      "inputBytes": 27534,
+      "outputBytes": 2435,
+      "inputLines": 752,
+      "outputLines": 100
+    },
+    {
+      "path": "back.lua",
+      "inputBytes": 12555,
+      "outputBytes": 903,
+      "inputLines": 289,
+      "outputLines": 30
+    },
+    {
+      "path": "functions/misc_functions.lua",
+      "inputBytes": 73276,
+      "outputBytes": 9008,
+      "inputLines": 2023,
+      "outputLines": 401
+    },
+    {
+      "path": "functions/common_events.lua",
+      "inputBytes": 130658,
+      "outputBytes": 2430,
+      "inputLines": 2746,
+      "outputLines": 86
+    },
+    {
+      "path": "functions/state_events.lua",
+      "inputBytes": 75962,
+      "outputBytes": 11887,
+      "inputLines": 1643,
+      "outputLines": 376
+    }
+  ],
+  "jitPolicy": {
+    "os": "OSX",
+    "arch": "arm64",
+    "machineCodeAreaKB": 2048
+  },
+  "runtimeSha256": "9c7325eff2791c7accbff9d59405dbf794458cddc27e80e80a0ddf77621235d4",
+  "files": {
+    "engine/object.lua": "7b5272ad0509b3d3144a8b5fce2c7180b3375728b61015a206fec305873abfa2",
+    "game.lua": "9a5b169f44cbf91a7b4a9e70f993a5f97fdaea0e8e28cd01658e017e3f831d88",
+    "globals.lua": "c95a6ed26e1faa562e41818a0afd7f5c036a817dd2eee44cf779c634687600e2",
+    "card.lua": "2295babf643f1e9a3c1580d1d81bed3dc141711652f5bf3ba18dcbc797a51364",
+    "blind.lua": "c1fe9e404ddcea0a5fb1e6920a9635ceb8be4403faccbda6c8d523e1fea6fab1",
+    "back.lua": "2104c8ea493a38d1d85d4b16e6daef08cfb6ffbaac72cff74b52310e00fad6c0",
+    "functions/misc_functions.lua": "6e56f81aac3c2f48a0e926694bc3f7694e4609c549d5252df289e60908a985fd",
+    "functions/common_events.lua": "e5c5bf55d0b045664b160911149664268f4e6faae227371ac70a7de41d8b7355",
+    "functions/state_events.lua": "e5de11dc63d876ac268063dcbe9ac1395413a0c40810a300cf71e83b3ef967c5",
+    "runtime.lua": "9c7325eff2791c7accbff9d59405dbf794458cddc27e80e80a0ddf77621235d4",
+    "worker.lua": "0d8a0c4840d1b7a87b9b1e3c56e2744d5b1c2e2ed6b9349fd4e9e8da414ae56c",
+    "json.lua": "7259d54eafba78b2c8a4e6f8c0b47b8d02993bcf7a4bdbe8055c55b065ec13e7"
+  }
+}

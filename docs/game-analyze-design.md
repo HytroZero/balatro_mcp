@@ -214,6 +214,8 @@ type PokerHand = 'high_card' | 'pair' | 'two_pair' | 'three_of_a_kind'
 
 ## 7. 数据与计算路径
 
+**引擎选择。** 默认使用完整原版 sandbox（`env/sandbox/vendor`）。保留剪枝版 `env/pruned` 作为显式可选入口；选择优先级为构造参数 `sourceDir`、环境变量 `BALATRO_SANDBOX_SOURCE`、完整 sandbox。设置 `BALATRO_SANDBOX_SOURCE=/path/to/project/env/pruned` 并重启 MCP 服务可选择剪枝版，移除覆盖项可恢复默认。引擎选择不改变 `discards + next` 的固定 64 次采样或仅返回 `rates` 的接口。
+
 **快照。** 扩展现有的 `play/mod/score_snapshot.lua`，由新的只读 RPC `sf.analysis_snapshot` 返回。相对现状增加：非出牌阶段可用（商店里手牌为空）、商店和已开包的报价、本 Ante 各盲注的目标与 Boss、本局已出现的 Boss、背面牌的占位（不含身份）。它不参与普通观察，不进入 revision 指纹，观察的成本和语义不变。
 
 **信息边界。** 分两层：

@@ -1,4 +1,5 @@
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
+import { existsSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { z } from 'zod';
 import { projectRoot } from '../../src/config.ts';
@@ -137,7 +138,7 @@ export interface SandboxRequestOptions {
 export interface SandboxOptions extends SandboxRequestOptions {
   /** LuaJIT executable; defaults to LUAJIT or luajit on PATH. */
   lua?: string;
-  /** Original 1.0.1o source directory; defaults to the locally prepared vendor. */
+  /** Engine directory; a bundled worker.lua is used when present. Defaults to vendor. */
   sourceDir?: string;
   /** Lifetime signal for the worker; use plays options for scoped cancellation. */
   signal?: AbortSignal;
@@ -188,8 +189,10 @@ export class ScoringSandbox {
     if (this.child) return this.child;
     const source = resolve(this.options.sourceDir ?? process.env.BALATRO_SANDBOX_SOURCE ??
       resolve(projectRoot, 'env/sandbox/vendor'));
+    const bundledWorker = resolve(source, 'worker.lua');
+    const worker = existsSync(bundledWorker) ? bundledWorker : resolve(projectRoot, 'env/sandbox/worker.lua');
     const child = spawn(this.options.lua ?? process.env.LUAJIT ?? 'luajit',
-      [resolve(projectRoot, 'env/sandbox/worker.lua'), projectRoot, source],
+      [worker, projectRoot, source],
       { cwd: projectRoot, stdio: ['pipe', 'pipe', 'pipe'], signal: this.options.signal });
     this.child = child;
     let output = '', stderr = '';

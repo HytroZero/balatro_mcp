@@ -149,7 +149,9 @@ two discards by how often the refilled hand can play a straight, returning
 are in the [analysis reference](tools/analysis-guide.ts).
 
 Analysis uses the full original sandbox in `env/sandbox/vendor` by default;
-prepare it with `npm run sandbox:prepare`.
+prepare it with `npm run sandbox:prepare`. To use the optional pruned engine,
+set `BALATRO_SANDBOX_SOURCE=/path/to/project/env/pruned` and restart the MCP
+server; remove the override to return to the full sandbox.
 
 ## Platform support
 

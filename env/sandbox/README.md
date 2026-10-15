@@ -60,6 +60,16 @@ try {
 `BALATRO_SANDBOX_SOURCE` 也可指定源码目录。`game_analyze`、独立 API 和 CLI 均默认使用完整的 `env/sandbox/vendor`，
 缺少源码时需先运行 `npm run sandbox:prepare`。模块支持项目源码和构建后的 `dist` 入口，从任意工作目录调用。
 
+可选的剪枝评分版位于与 sandbox 并列的 `env/pruned`。使用
+`new ScoringSandbox({ sourceDir: 'env/pruned' })` 即可自动启动其独立 worker，
+无需 shell 包装器或准备 vendor。该目录自带 runtime、JSON 和九个评分模块，整体复制后
+也可独立运行。只接受 expectation / minimal，不支持 seeded / fixed / trace；
+详细使用方式和边界见 [../pruned/README.md](../pruned/README.md)。
+MCP 服务也可设置 `BALATRO_SANDBOX_SOURCE=/path/to/project/env/pruned` 后重启来选择剪枝版；
+移除该环境变量即可恢复完整 sandbox。显式 `sourceDir` 优先于环境变量，未指定时使用完整 sandbox。
+裁剪版生成、差分和性能工具可通过 `sandbox:prune`、`sandbox:check-pruned`、
+`sandbox:test-pruned-analysis`、`sandbox:bench-pruned` 运行，全部不依赖 build 中的实验文件。
+
 `plays(state, selectionLimit, { timeoutMs, signal })` 在一个请求中完成加载、完整枚举和
 前 15 名排序，返回模型可读的行数组。每次重新加载局面，但复用同一个 LuaJIT VM。
 它的 deadline 包括排队等待；排队时取消不打断前一个请求，执行中取消会终止 VM。

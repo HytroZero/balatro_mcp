@@ -30,6 +30,11 @@
     "sandbox:bench": "node env/sandbox/bench.ts",
     "release:check": "node scripts/release.ts --check",
     "release:export": "node scripts/release.ts",
+    "sandbox:prune": "node env/pruned/generate.ts",
+    "sandbox:check-pruned": "node env/pruned/check.ts",
+    "sandbox:test-pruned": "node --test tests/pruned-sandbox.test.ts",
+    "sandbox:test-pruned-analysis": "node env/pruned/test-analysis.ts",
+    "sandbox:bench-pruned": "node env/pruned/bench.ts",
     "analysis:bench-discards": "node env/analysis/bench-discards.ts"
   },
   "dependencies": {
@@ -41,6 +46,7 @@
   "devDependencies": {
     "@modelcontextprotocol/client": "2.3.1",
     "@types/node": "24.10.1",
+    "luaparse": "0.3.1",
     "typescript": "5.9.3"
   }
 }

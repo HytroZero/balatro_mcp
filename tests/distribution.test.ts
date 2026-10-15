@@ -53,10 +53,14 @@ test('distribution rejects private data without printing it and excludes runtime
     assert.ok(files.includes('package-lock.json')); assert.ok(files.includes('LICENSE'));
     assert.ok(!files.some(path => /^(?:\.git\/|build\/|data\/|dist\/|node_modules\/)|\.local\.json$/.test(path)));
     assert.ok(!files.some(path => /^(?:env\/balatro\/|env\/sandbox\/vendor\/)|(?:^|\/)\.DS_Store$/.test(path)));
+    assert.ok(files.includes('env/pruned/generate.ts'));
+    assert.ok(files.includes('env/pruned/list-jokers.lua'));
+    assert.ok(files.includes('env/pruned/README.md'));
+    assert.ok(!files.some(path => path.startsWith('env/pruned/') && !/\.(?:ts|md)$/.test(path) && path !== 'env/pruned/list-jokers.lua'));
     assert.deepEqual(await auditDistribution(projectRoot, files), []);
     const destination = resolve(root, 'export');
     await copyDistribution(projectRoot, destination, files);
-    for (const path of ['env/balatro/card.lua', 'env/sandbox/vendor/card.lua', 'env/.DS_Store']) {
+    for (const path of ['env/balatro/card.lua', 'env/sandbox/vendor/card.lua', 'env/pruned/card.lua', 'env/.DS_Store']) {
       await mkdir(resolve(destination, path, '..'), { recursive: true });
       await writeFile(resolve(destination, path), 'local-only source or OS metadata');
     }

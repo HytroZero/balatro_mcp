@@ -10,6 +10,11 @@ export const distributionEntries = [
   'src', 'env', 'play', 'tools', 'model', 'scripts', 'tests', 'docs', 'skills',
 ];
 const optionalEntries = new Set(['.github', 'README.en.md', 'README.zh-CN.md']);
+// Authored maintenance files only; the generated engine is derived game code.
+const prunedTools = new Set([
+  'env/pruned/README.md', 'env/pruned/generate.ts', 'env/pruned/check.ts', 'env/pruned/bench.ts',
+  'env/pruned/test-analysis.ts', 'env/pruned/list-jokers.lua',
+]);
 const privateFile = /(?:^|\/)(?:\.env(?:\..*)?|\.npmrc|auth\.json|credentials(?:\..*)?|config\.local\.json|mcp\.local\.json|[^/]+\.local\.json|[^/]+\.(?:pem|key|p12|pfx|log|jsonl|bak|zip|gz)|\.DS_Store)$/i;
 const sensitivePatterns = [
   ['personal home path', /\/(?:Users|home)\/[a-zA-Z0-9][^/\s"'<>]*\//],
@@ -27,6 +32,7 @@ export async function distributionFiles(root: string): Promise<string[]> {
   async function visit(path: string) {
     // Locally supplied proprietary game code is never part of a public export.
     if (path === 'env/balatro' || path === 'env/sandbox/vendor' || basename(path) === '.DS_Store') return;
+    if (path.startsWith('env/pruned/') && !prunedTools.has(path)) return;
     const entry = await lstat(resolve(root, path));
     if (entry.isSymbolicLink()) throw new Error('Distribution cannot contain symlinks: ' + path);
     if (entry.isDirectory()) {
