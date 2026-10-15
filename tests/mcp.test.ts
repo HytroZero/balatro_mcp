@@ -38,8 +38,9 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
         cards: [{ rank: 'Ace', suit: 'Spades', enhancement: 'c_base', count: 2 }] }; break;
       case 'sf.act': {
         mutations++;
-        current = snapshot(Number(current.revision.split(':')[1]) + 1, 'BLIND_SELECT');
-        value = { actionId: params.actionId, status: 'completed', applied: true, observation: current };
+        current = snapshot(Number(current.revision.split(':')[1]) + 1, record(params.action).method === 'play' ? 'SELECTING_HAND' : 'BLIND_SELECT');
+        value = { actionId: params.actionId, status: 'completed', applied: true, observation: current,
+          ...(record(params.action).method === 'play' ? { effects: 'hand[1](?): X1.5 Mult; hand[0](AS): +11 Chips' } : {}) };
         operations.set(String(params.actionId), value as Data);
         if (loseResponse) { res.destroy(); return; }
         break;
@@ -64,6 +65,7 @@ async function harness(extra: string[] = [], timeoutMs = 1000) {
     return client.callTool({ name, arguments: args });
   }
   return { root, client, call, get mutations() { return mutations; }, get requests() { return requests; },
+    selectingHand() { current = snapshot(1,'SELECTING_HAND'); },
     holdNextObserve() {
       let release!: () => void;
       observeGate = new Promise<void>(resolve => { release = resolve; });
@@ -134,6 +136,26 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     const nextOnOldMod = await h.call('game_analyze', { revision: '1', discards: [[0]], next: 'pair' });
     assert.equal(record(nextOnOldMod.structuredContent).code, 'incompatible_backend');
     assert.equal(h.mutations, 0);
+  } finally { await h.close(); }
+});
+
+test('stdio play exposes effects in text, structured output and operation inspection without leaking hidden faces', async () => {
+  const h = await harness();
+  try {
+    h.selectingHand();
+    const before = record(record((await h.call('game_observe')).structuredContent).value);
+    const response = await h.call('game_action',{ revision:before.rev,action:{ method:'play',cards:[0] } });
+    const after = record(record(response.structuredContent).value);
+    assert.equal(response.isError,false);
+    assert.equal(after.effects,'hand[1](?): X1.5 Mult; hand[0](AS): +11 Chips');
+    assert.equal(record(record(JSON.parse(String(record(response.content[0]).text))).value).effects,after.effects);
+    assert.doesNotMatch(JSON.stringify(after),/King|Hearts/);
+    assert.equal(record(record((await h.call('game_operation')).structuredContent).value).effects,after.effects);
+    const observed = record(record((await h.call('game_observe')).structuredContent).value);
+    assert.equal('effects' in observed,false);
+    const next = record(record((await h.call('game_action',{ revision:observed.rev,action:{ method:'select' } })).structuredContent).value);
+    assert.equal('effects' in next,false);
+    assert.equal(h.mutations,2);
   } finally { await h.close(); }
 });
 

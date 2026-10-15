@@ -60,7 +60,7 @@ test('completed actions omit plays without scoring or extra reads',async () => {
     if(req.method==='sf.health') return result(res,req,{...health,capabilities:['scoring_snapshot']});
     if(req.method==='sf.act') {
       mutations++;revision='instance-a:'+(mutations+1);
-      return result(res,req,{actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:raw()});
+      return result(res,req,{actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:raw(),effects:''});
     }
     result(res,req,raw());
   });
@@ -74,6 +74,42 @@ test('completed actions omit plays without scoring or extra reads',async () => {
     assert.equal(mutations,2);
     assert.deepEqual(mock.requests.map(r => r.method),['sf.health','sf.observe','sf.act','sf.observe','sf.act']);
   } finally {await client.close();await mock.close();}
+});
+
+test('play requires string effects and preserves them through completion polling and inspection',async () => {
+  let revision = 1, id = '', effects: unknown = 'hand[2](?): X1.5 Mult; jokers[0](Joker): +4 Mult';
+  const raw = () => ({ ...observation('instance-a:' + revision,'SELECTING_HAND'),availableMethods:['play'] });
+  const mock = await server((req,res) => {
+    if (req.method === 'sf.health') return result(res,req,health);
+    if (req.method === 'sf.observe') return result(res,req,raw());
+    if (req.method === 'sf.act') {
+      revision++; id = String((req.params as Data).actionId);
+      return result(res,req,{ actionId:id,status:'pending',applied:true });
+    }
+    result(res,req,{ actionId:id,status:'completed',applied:true,observation:raw(),...(effects !== undefined ? { effects } : {}) });
+  });
+  const client = new ForgeBridgeBackend(mock.endpoint,1000);
+  try {
+    for (const value of [effects,'']) {
+      effects = value;
+      const after = await client.act({ method:'play',cards:[0] },'instance-a:' + revision);
+      assert.equal(after.effects,value);
+      assert.equal('effects' in after,true);
+      assert.equal((await client.inspectOperation()).effects,value);
+      assert.equal('effects' in await client.observe(),false);
+    }
+    effects = undefined;
+    const missing = new ForgeBridgeBackend(mock.endpoint,1000);
+    await assert.rejects(missing.act({ method:'play',cards:[0] },'instance-a:' + revision),
+      error => error instanceof BackendError && error.code === 'uncertain_outcome');
+    await missing.close();
+    effects = ['invalid log'];
+    await assert.rejects(client.act({ method:'play',cards:[0] },'instance-a:' + revision),
+      error => error instanceof BackendError && error.code === 'uncertain_outcome' && error.applied === true);
+    await assert.rejects(client.inspectOperation(),/Invalid bridge effects contract/);
+    await assert.rejects(client.act({ method:'play',cards:[0] },'instance-a:' + revision),/unresolved/);
+    assert.equal(mock.requests.filter(req => req.method === 'sf.act').length,4);
+  } finally { await client.close(); await mock.close(); }
 });
 
 test('deck observation is read-only and rejects malformed or inconsistent deck responses',async () => {

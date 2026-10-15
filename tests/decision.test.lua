@@ -102,7 +102,8 @@ check(equal(G.GAME,before),'observations do not mutate the run')
 G.STATE = G.STATES.MENU
 check(game.state().profileOptions ~= nil,'menu includes profile choices')
 G.OVERLAY_MENU = {}
-local bridge = assert(loadfile('play/mod/bridge.lua'))()(json,game,function() return 0 end,'test-instance',20)
+local bridge = assert(loadfile('play/mod/bridge.lua'))()(json,game,function() return 0 end,'test-instance',20,nil,
+  {begin=function()end,finish=function()return ''end})
 G.STATE = G.STATES.SELECTING_HAND
 local health = bridge.dispatch('sf.health',{})
 check(not health.ready and health.notReadyReason == 'Close the open game dialog','health explains readiness blockers')

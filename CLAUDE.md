@@ -13,6 +13,7 @@ npm test                 # builds dist/ first, then node --test tests/*.test.ts
 node --test tests/compact.test.ts   # single test file (run `npm run build` first if it spawns dist/, e.g. mcp.test.ts)
 luajit tests/observation.test.lua   # Lua mod tests (Lua 5.1 compatible); run from repo root
 luajit tests/decision.test.lua
+luajit tests/effects.test.lua  # play status prompts and operation lifecycle
 luajit tests/score-snapshot.test.lua
 node --test tests/analysis.test.ts   # game_analyze; engine-backed cases need LuaJIT and `npm run sandbox:prepare`, and skip without them
 npm run dev              # run server from source (node strips TS types directly)
@@ -52,5 +53,6 @@ Request path: MCP client → `src/index.ts` (stdio) → `src/server.ts` → `too
 ## Conventions
 
 - Lua changes take effect only after `npm run stage-mod`, reinstalling, and restarting Balatro; server changes need the MCP process restarted. Tests here are offline; say so when the live game was not exercised.
+- `play/mod/effects.lua` wraps the original status-prompt function during a dispatched `play`. Logs belong to the operation and action output (`effects`), never state or revision fingerprints. Card references and public names are frozen before dispatch; face-down names stay `?`. Do not evaluate effects to produce logs.
 - `docs/validation.md` is a dated log of what was actually executed for each change; append to it in the same style.
 - Skills live in `skills/<name>/SKILL.md` (YAML frontmatter, `description` required, `name` must match the directory). `skills/core.md` is the decision protocol, not a skill.

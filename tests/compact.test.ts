@@ -21,6 +21,29 @@ const observation = (raw: Data = {}): Observation => ({ contract: 1, backend: 'b
 const at = (o: Observation, revision: string, raw: Data = {}, extra: Partial<Observation> = {}): Observation =>
     ({ ...o, ...extra, revision, state: { ...o.state, ...playerState(raw) } });
 const runKeys = ['setup', 'ante', 'roundNo', 'money', 'handSize', 'jokerSlots', 'consumableSlots', 'hands', 'jokers', 'consumables', 'vouchers', 'tags', 'blind', 'blinds'];
+
+test('play effects survive full and partial results without persisting into state or later actions', () => {
+    const before = observation(), effects = 'hand[0](?): X1.5 Mult; jokers[0](Joker): +4 Mult';
+    const after = at(before, 'i:8', {}, { effects });
+    const action: Action = { method: 'play', cards: [0] };
+    const delta = compactActionObservation(after, action, before);
+    assert.equal(delta.effects, effects);
+    assert.ok(Check(PartialObservationSchema, delta));
+    assert.equal(delta.state, undefined);
+    const merged = applyDelta(compactObservation(before), delta);
+    assert.equal(merged.effects, effects);
+    assert.equal('effects' in merged.state, false);
+    for (const full of [compactActionObservation(after, action),
+        compactActionObservation({ ...after, terminal: true, outcome: 'lost' }, action, before)]) {
+        assert.equal(full.effects, effects);
+        assert.ok(Check(FullObservationSchema, full));
+    }
+    assert.equal(compactActionObservation({ ...after, effects: '' }, action, before).effects, '');
+    const discard = compactActionObservation(after, { method: 'discard', cards: [0] }, before);
+    assert.equal('effects' in discard, false);
+    assert.equal('effects' in applyDelta(merged, discard), false);
+    assert.equal('effects' in compactObservation(after), false);
+});
 test('full v3 snapshot is flat, typed, uses short revisions and does not mutate the backend observation', () => {
     const input = observation(), before = structuredClone(input), full = compactObservation(input);
     assert.ok(Check(FullObservationSchema, full));

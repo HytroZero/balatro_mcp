@@ -138,6 +138,7 @@ export class ForgeBridgeBackend implements Backend {
     const context = this.context(request);
     await this.identity(context);
     const value = record(await this.rpc('sf.operation',{actionId,instanceId:this.instanceId},false,context));
+    if ('effects' in value && typeof value.effects !== 'string') throw new BackendError('backend_failure','Invalid bridge effects contract.');
     if (value.observation) value.observation = this.observation(value.observation);
     return value;
   }
@@ -165,7 +166,8 @@ export class ForgeBridgeBackend implements Backend {
         if (result.status === 'completed') {
           const outcome = this.observation(result.observation);
           if (result.applied !== true || !outcome.revision.startsWith(this.instanceId + ':')) throw new BackendError('uncertain_outcome','Invalid completed operation identity.','unknown');
-          return {...outcome,actionId:this.lastActionId};
+          if (action.method === 'play' && typeof result.effects !== 'string') throw new BackendError('uncertain_outcome','Invalid play effects contract.',true);
+          return {...outcome,actionId:this.lastActionId,...(action.method === 'play' ? {effects:result.effects as string} : {})};
         }
         if (result.status !== 'pending') throw new BackendError('uncertain_outcome',String(result.message ?? 'Operation requires manual inspection.'),result.applied === true ? true : 'unknown');
         await delay(Math.min(40,this.remaining(context)),undefined,{signal:context.signal});

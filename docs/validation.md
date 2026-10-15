@@ -1739,3 +1739,45 @@ Validation:
 
 Text-only change; no gameplay was run. The skill is read from disk as a
 `skill://` resource, so a running MCP server serves it without a restart.
+
+## Return actual play effect prompts — 2026-10-15
+
+`play` results now include an action-only `effects` string, joining the game's
+actual status prompts in trigger order. Repeated triggers remain separate.
+Card indices and public names are frozen before dispatch, so played/held cards
+keep their original references and face-down names remain `?` after movement or
+reveal. No effects are evaluated to produce the log. Recording stops on
+completion, handler failure or timeout; operation inspection retains the frozen
+log, including partial logs on failure. Every successful play requires the
+string; a missing field is a protocol error.
+
+Updated the guide, tool schema/description and v3 merge contract. The decision
+protocol now permits hypotheses about face-down cards based on observed effects,
+while keeping those hypotheses distinct from observed facts.
+
+Validation:
+
+- `npm run check` and the build within `npm test` passed.
+- Bridge and compact regression suites passed all 49 tests; the MCP stdio
+  suite passed all 8 tests, including text/structured effects and inspection.
+- Lua checks passed: effects (34), observation (88), decision (50), and score
+  snapshot (35). The effects suite is included in the Lua CI job.
+- The final broad TypeScript run, excluding the existing manifest hash test,
+  reported 133 passed, 1 failed, 2 skipped (136 total). The unchanged
+  `tests/pruned-sandbox.test.ts` isolated-copy case fails on Windows because its
+  child program imports a drive-letter path directly, producing
+  `ERR_UNSUPPORTED_ESM_URL_SCHEME`. No unrelated sandbox changes were made.
+- `npm run stage-mod`, `npm run release:check` (132 source files), and
+  `git diff --check` passed.
+
+All checks were offline. The mod is staged at
+`build/balatro-mcp-mod/balatro_mcp_mod`; it was not installed or live-tested.
+Install the staged mod, restart Balatro and restart the MCP server to use the
+new output.
+
+Follow-up: removed the optional recorder bypass and old-mod missing-field
+fallback. A completed play without string `effects` is rejected as an invalid
+contract after dispatch. Updated the existing fixtures and replaced old-mod
+acceptance with missing-field rejection. Type checking, build, all 49 bridge/
+compact tests, all 8 MCP tests, the three effects/decision/snapshot Lua suites,
+mod staging, release audit and diff checks passed again offline.

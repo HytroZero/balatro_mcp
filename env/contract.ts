@@ -38,6 +38,8 @@ export interface Observation {
   ready: boolean;
   notReadyReason?: string;
   actionId?: string;
+  /** Status prompts from this play, outside the persistent observation state. */
+  effects?: string;
   outcome: 'won' | 'lost' | 'ongoing';
   state: Data;
   availableMethods: string[];

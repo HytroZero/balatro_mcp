@@ -30,7 +30,7 @@ const StateSchema = Type.Object({
 export type State = Static<typeof StateSchema>;
 const common = {
     rev: Type.String(), phase: Type.Union([Type.Enum([...phases]), Type.Null()]), notReady: Type.Optional(Type.String()),
-    outcome: Type.Optional(Type.Enum(['won', 'lost'])), actions: Type.Array(Type.String()), result: Type.Optional(Type.String()),
+    outcome: Type.Optional(Type.Enum(['won', 'lost'])), actions: Type.Array(Type.String()), result: Type.Optional(Type.String()), effects: Type.Optional(Type.String()),
 };
 export const FullObservationSchema = Type.Object({ v: Type.Literal(3), full: Type.Literal(true), ...common, state: StateSchema }, { additionalProperties: false });
 export type FullObservation = Static<typeof FullObservationSchema>;
@@ -313,13 +313,14 @@ function diff(previous: FullObservation, next: FullObservation, before: Observat
 /** Full snapshot when no reliable baseline exists; otherwise changes plus the PACK consumable list. */
 export function compactActionObservation(after: Observation, action: Action, before?: Observation): ActionObservation {
     const full = compactObservation(after), result = describe(action, after, before);
-    const { state: fullState, ...head } = full, complete: FullObservation = { ...head, result, state: fullState };
+    const effects = action.method === 'play' ? { effects: after.effects! } : {};
+    const { state: fullState, ...head } = full, complete: FullObservation = { ...head, result, ...effects, state: fullState };
     if (!before || action.method === 'start' || after.runId !== before.runId || after.backend !== before.backend || after.gameVersion !== before.gameVersion ||
         after.terminal || full.outcome !== undefined || !ready(after) || !ready(before))
         return complete;
     const state = diff(compactObservation(before), full, before, after);
     if (!state) return complete;
-    return { rev: full.rev, phase: full.phase, actions: full.actions, result, ...(Object.keys(state).length ? { state } : {}) };
+    return { rev: full.rev, phase: full.phase, actions: full.actions, result, ...effects, ...(Object.keys(state).length ? { state } : {}) };
 }
 /** Reference client merge: rebuild the full projection from a baseline and a delta. */
 export function applyDelta(base: FullObservation, delta: ActionObservation): FullObservation {
@@ -332,7 +333,8 @@ export function applyDelta(base: FullObservation, delta: ActionObservation): Ful
         else if (Array.isArray(old)) state[key] = old.map((v, i) => String(i) in value ? value[String(i)] : v);
         else state[key] = Object.fromEntries(Object.entries({ ...record(old), ...structuredClone(value) }).filter(([, v]) => v !== null));
     }
-    return { v: 3, full: true, rev: delta.rev, phase: delta.phase, actions: [...delta.actions], result: delta.result, state: state as State };
+    return { v: 3, full: true, rev: delta.rev, phase: delta.phase, actions: [...delta.actions], result: delta.result,
+        ...(delta.effects !== undefined ? { effects: delta.effects } : {}), state: state as State };
 }
 /** Deck composition has no action indices, stable IDs or draw order. */
 export function compactDeckObservation(o: DeckObservation): Data {

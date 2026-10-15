@@ -54,7 +54,9 @@ Pass the latest issued short \`rev\` as \`revision\`; internal instance-prefixed
 
 PACK responses always include the full \`state.consumables\` array, even when unchanged or empty, so held items remain visible while choosing from a pack.
 
-\`result\` is an action summary, not state. Missing baselines, start, source/readiness changes and terminal results may return full snapshots. Failed actions invalidate the delta baseline.
+\`result\` is an action summary, not state. A \`play\` also returns \`effects\`: status prompts in trigger order, joined by \`; \`, with repeated triggers retained. For example, \`hand[2](?): X1.5 Mult; jokers[0](Joker): +4 Mult\`. These indices and names refer to the cards before the action, including played and held cards; they are not indices for the next action. Face-down names stay \`?\`. The referenced card is where the game shows the prompt, without a causal source/target claim. Cards created during the play use distinct action-local references such as \`card[new0](?)\`.
+
+\`effects\` belongs only to that action; replace it on each result and drop it when absent. Every successful play includes the string; an empty string means no status prompts were captured. Recording spans dispatch through settlement, including end-of-round prompts caused by the play. \`game_operation\` retains the log; a failed operation's log is only the captured partial process. Missing baselines, start, source/readiness changes and terminal results may return full snapshots. Failed actions invalidate the delta baseline.
 
 ## State fields
 

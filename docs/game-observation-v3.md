@@ -59,6 +59,7 @@
 | `phase` | 总是 | MENU / BLIND_SELECT / SELECTING_HAND / ROUND_EVAL / SHOP / PACK / GAME_OVER；未就绪且无法识别时为 null |
 | `actions` | 总是 | 当前阶段的动作候选，见第 7 节；未就绪时为 [] |
 | `result` | 仅动作成功 | 一句英文，说明本次动作的已验证事实，见第 8 节 |
+| `effects` | play 成功时必有，其他动作不返回 | 本次出牌的实际效果提示，按触发顺序用 `; ` 拼接；空字符串表示没有捕获到提示 |
 | `notReady` | 仅未就绪 | 原因字符串；缺失表示 ready |
 | `outcome` | 仅整局结束 | `won` / `lost`；缺失表示 ongoing |
 | `state` | 有内容时 | 完整状态，或本次变化的键；无变化时省略 |
@@ -78,6 +79,17 @@
 | `summary` | 由有事实内容的 `result` 替代 |
 
 **短 revision 的安全性。** 工具层记住最后一次交给调用方的完整桥接 revision，把与之计数器相同的短 rev 还原成完整值，由桥接按原规则校验；桥接实例改变后，旧值同样过期。本连接没有发出过的短 rev（包括 MCP 进程重启后、尚未投递观察时），以及完整的 `<instance>:<counter>` revision，均直接返回 `stale_state`，不会派发动作。health 和 deck 读取不建立动作 revision；状态改变后必须重新 `game_observe`。
+
+### 出牌效果日志
+
+例如 `"effects":"hand[2](?): X1.5 Mult; hand[4](KH): +10 Chips; jokers[0](Joker): +4 Mult"`。
+每条记录标注游戏显示该提示的牌，不建立来源与目标的因果关系。筹码、倍率、乘倍率、金钱及重触发等提示按调用顺序记录，重复触发保留每一次。
+
+`hand`、`jokers` 等区域的零基索引及名称在动作开始时冻结，包括出牌和留手牌；不能拿日志中的旧索引执行下一次动作。暗牌名称保留 `?`，即使结算期间翻面。出牌期间新创建的牌使用 `card[new0](?)` 等动作内唯一标识。
+
+记录从合法 play 派发前持续到操作结算，包括该 play 导致的回合结束提示。`effects` 属于本次动作，不进入 state、状态差分或 revision 指纹；合并结果时替换它，缺失时删除旧日志。普通 observe 和非 play 不返回它。play 结果缺失该字符串视为协议错误，不兼容缺少该字段的 Mod。
+
+operation 保存已结束的日志，重复查询不追加或重放；失败时关闭记录，`game_operation` 中的日志只代表已捕获的部分过程。
 
 ## 4. state 键
 

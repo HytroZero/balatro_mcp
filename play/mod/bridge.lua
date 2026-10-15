@@ -1,5 +1,5 @@
 -- Wire protocol and operation lifecycle; independent of the socket transport.
-return function(json, game, clock, instance, timeout, analysis)
+return function(json, game, clock, instance, timeout, analysis, effects)
   local bridge = {}
   local serial, runSerial, previousRun, fingerprint = 0, 0, nil, ''
   local pending, poisoned, operations, order = nil, false, {}, {}
@@ -71,12 +71,15 @@ return function(json, game, clock, instance, timeout, analysis)
       local invoke = game.prepare(params.action)
       if #order >= 10000 then game.fail('backend_failure', 'Operation identifier capacity reached; restart bridge before further actions') end
       local id = params.actionId
-      local operation = {request=request,result={actionId=id,status='pending',applied='unknown'},deadline=clock() + timeout,quiet=0}
+      local operation = {request=request,result={actionId=id,status='pending',applied='unknown'},deadline=clock() + timeout,quiet=0,
+        recordEffects=params.action.method == 'play'}
       operations[id] = operation; order[#order + 1] = id; pending = operation; serial = serial + 1
+      if operation.recordEffects then effects.begin(before.state) end
       local ok = pcall(invoke)
       if not ok then
         poisoned = true; pending = nil
         operation.result = {actionId=id,status='failed',applied='unknown',code='uncertain_outcome',message='Original game handler failed after dispatch; inspect current state'}
+        if operation.recordEffects then operation.result.effects = effects.finish() end
       else operation.result.applied = true end
       return operation.result
     end
@@ -89,6 +92,7 @@ return function(json, game, clock, instance, timeout, analysis)
     if operation.quiet >= 2 then
       pending = nil; serial = serial + 1
       operation.result = {actionId=operation.result.actionId,status='completed',applied=true,observation=snapshot()}
+      if operation.recordEffects then operation.result.effects = effects.finish() end
       if #order > 128 then
         local old = operations[order[#order - 128]]
         if old and old ~= operation and old.result.status == 'completed' then old.result={actionId=old.result.actionId,status='retired',applied=true} end
@@ -96,6 +100,7 @@ return function(json, game, clock, instance, timeout, analysis)
     elseif clock() >= operation.deadline then
       poisoned = true; pending = nil
       operation.result = {actionId=operation.result.actionId,status='failed',applied=true,code='uncertain_outcome',message='Game did not reach a ready state before deadline; inspect the run'}
+      if operation.recordEffects then operation.result.effects = effects.finish() end
     end
   end
   return bridge
