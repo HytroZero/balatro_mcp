@@ -52,6 +52,8 @@ Pass the latest issued short \`rev\` as \`revision\`; internal instance-prefixed
 4. \`jokers\` always replaces the complete ordered array when present; \`[]\` clears it.
 5. On a phase change, drop views not used by the new phase (table below). Entering \`BLIND_SELECT\` resends \`blind\` and \`blinds\`, with vanished members null.
 
+PACK responses always include the full \`state.consumables\` array, even when unchanged or empty, so held items remain visible while choosing from a pack.
+
 \`result\` is an action summary, not state. Missing baselines, start, source/readiness changes and terminal results may return full snapshots. Failed actions invalidate the delta baseline.
 
 ## State fields

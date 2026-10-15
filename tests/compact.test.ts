@@ -217,7 +217,7 @@ test('a pack opened from the shop keeps the shop; closing it drops pack, hand an
     assert.equal(open.result, 'Opened Arcana Pack.');
     const picked = at(opened, 'i:9', { packChoices: 1, pack: { cards: [card({ id: 'death', set: 'Tarot', label: 'Death', value: { effect: 'Convert' }, target: { min: 2, max: 2 } })] } });
     const pick = checkDelta(opened, picked, { method: 'pack', card: 0 });
-    assert.deepEqual(pick.state, { pack: { picks: 1, items: ['0: Death [Tarot, 2 targets]: Convert'] } });
+    assert.deepEqual(pick.state, { consumables: [], pack: { picks: 1, items: ['0: Death [Tarot, 2 targets]: Convert'] } });
     assert.equal(pick.result, 'Picked The Sun. 1 pick left.');
     const back = at(picked, 'i:10', { state: 'SHOP', hand: { limit: 8, cards: [] } }, { availableMethods: ['buy', 'next_round'] });
     const skipped = checkDelta(picked, back, { method: 'skip' });
@@ -226,6 +226,29 @@ test('a pack opened from the shop keeps the shop; closing it drops pack, hand an
     const tagPack = at(opened, 'i:11', { state: 'PACK' });
     delete tagPack.state.shop; delete tagPack.state.vouchers; delete tagPack.state.packs;
     assert.equal('shop' in compactObservation(tagPack).state, false);
+});
+
+test('PACK responses always show the complete held consumable list', () => {
+    const held = card({ id: 'held-sun', key: 'c_sun', set: 'Tarot', label: 'The Sun',
+        value: { effect: 'Converts up to 3 cards' }, target: { min: 1, max: 3 } });
+    const expected = ['0: The Sun [Tarot, sell $1, 1-3 targets]: Converts up to 3 cards'];
+    for (const phase of ['SHOP', 'BLIND_SELECT']) {
+        const before = observation({ state: phase, consumables: { limit: 2, cards: [held] } });
+        const opened = at(before, 'i:8', { state: 'PACK', packName: 'Mega Arcana Pack', packChoices: 2 },
+            { availableMethods: ['pack', 'skip', 'use'] });
+        assert.deepEqual(compactObservation(opened).state.consumables, expected);
+        assert.deepEqual(checkDelta(before, opened, phase === 'SHOP' ? { method: 'buy', pack: 0 } : { method: 'skip' }).state?.consumables, expected);
+        const picked = at(opened, 'i:9', { packChoices: 1 });
+        assert.deepEqual(checkDelta(opened, picked, { method: 'pack', card: 0 }).state?.consumables, expected);
+        const changed = at(picked, 'i:10', { consumables: { limit: 2, cards: [{ ...held, cost: { sell: 2 } }] } });
+        assert.deepEqual(checkDelta(picked, changed, { method: 'sell', joker: 0 }).state?.consumables,
+            ['0: The Sun [Tarot, sell $2, 1-3 targets]: Converts up to 3 cards']);
+        const used = at(changed, 'i:11', { consumables: { limit: 2, cards: [] } });
+        assert.deepEqual(checkDelta(changed, used, { method: 'use', consumable: 0, cards: [0] }).state?.consumables, []);
+        assert.deepEqual(checkDelta(used, at(used, 'i:12'), { method: 'pack', card: 0 }).state?.consumables, []);
+        const closed = at(used, 'i:13', { state: phase });
+        assert.equal(checkDelta(used, closed, { method: 'skip' }).state?.consumables, undefined);
+    }
 });
 
 test('every booster type advertises skip separately and respects its own control', () => {

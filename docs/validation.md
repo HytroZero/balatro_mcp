@@ -1703,3 +1703,22 @@ Validation:
 `env/sandbox/runtime.lua` and the pruned engine were not changed, so
 `sandbox:prune` / `sandbox:check-pruned` were not rerun. All checks were
 offline; no gameplay, mod installation or MCP restart was performed.
+
+## Show held consumables in every PACK response — 2026-10-15
+
+PACK action responses now always include the complete `state.consumables`
+array, including unchanged contents and an empty `[]`. This applies when
+opening a pack from the shop or a skip Tag, and while staying in a multi-pick
+pack. Full snapshots already included held consumables. Other phases keep
+their existing delta behavior. Updated the model guide and v3 merge docs.
+
+Validation:
+
+- `npm run check` passed.
+- `node --test tests/compact.test.ts` passed all 24 tests, including PACK
+  entry, subsequent picks, item changes, consuming the final item, and exit.
+- `npm run build` passed.
+- `git diff --check` passed.
+
+All checks were offline; no gameplay or MCP restart was performed. Restart
+the MCP server to load the change; the Lua mod is unchanged.

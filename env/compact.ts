@@ -286,7 +286,7 @@ const ids = (o: Observation, name: string): unknown[] | null => {
     const values = cards(o.state[name]).map(c => record(c).id);
     return values.every(id => id !== undefined) ? values : null;
 };
-/** Changed keys only; undefined when a still-valid key vanished and only a full snapshot is unambiguous. */
+/** Changed keys plus PACK consumables; undefined when a still-valid key vanished and only a full snapshot is unambiguous. */
 function diff(previous: FullObservation, next: FullObservation, before: Observation, after: Observation): State | undefined {
     const p = previous.state as Data, n = next.state as Data, out: Data = {};
     for (const key of Object.keys(p))
@@ -294,7 +294,9 @@ function diff(previous: FullObservation, next: FullObservation, before: Observat
     const focus = previous.phase !== next.phase && next.phase !== null ? phaseFocus[next.phase] ?? [] : [];
     for (const [key, value] of Object.entries(n)) {
         const old = p[key];
-        if (!(key in p) || !validIn(key, previous.phase)) out[key] = value;
+        // Keep held consumables visible alongside every pack decision, even when unchanged.
+        if (next.phase === 'PACK' && key === 'consumables') out[key] = value;
+        else if (!(key in p) || !validIn(key, previous.phase)) out[key] = value;
         else if (focus.includes(key))
             out[key] = isObject(value) && isObject(old) ? { ...Object.fromEntries(Object.keys(old).map(name => [name, null])), ...value } : value;
         else if (isDeepStrictEqual(old, value)) continue;
@@ -308,7 +310,7 @@ function diff(previous: FullObservation, next: FullObservation, before: Observat
     }
     return out as State;
 }
-/** Full snapshot when no reliable baseline exists; otherwise the changed keys of the same projection. */
+/** Full snapshot when no reliable baseline exists; otherwise changes plus the PACK consumable list. */
 export function compactActionObservation(after: Observation, action: Action, before?: Observation): ActionObservation {
     const full = compactObservation(after), result = describe(action, after, before);
     const { state: fullState, ...head } = full, complete: FullObservation = { ...head, result, state: fullState };
