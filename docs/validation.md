@@ -1882,3 +1882,43 @@ Validation: type checking, build and all 18 resource/guide/stdio/distribution te
 passed. Source release audit and `git diff --check` passed. All checks were offline;
 no gameplay or mod installation occurred. Restart the MCP server to apply the
 registration changes; subsequent Markdown edits are read on request.
+
+## Normalize every readiness callback prototype — 2026-10-16
+
+Repeatedly creating the original deck-preview watcher changes a LuaJIT
+prototype patch flag without changing its instructions. The readiness matcher
+normalized only the first prototype in the dump (the cursor-cleanup child),
+leaving the parent watcher's flag unnormalized. The unchanged inactive watcher
+then looked like an unknown queued event and could prevent action completion
+until the bridge deadline poisoned further mutations.
+
+`play/mod/game.lua` now walks all length-prefixed prototype records and
+normalizes each patch flag. Instructions, constants, prototype lengths,
+captured-owner checks, active-preview blocking and action deadlines are unchanged.
+No automatic retry or lock-clearing path was added.
+
+Validation:
+
+- Before the fix, the new `tests/decision.test.lua` regression failed on the
+  fourth recreated watcher despite no active preview.
+- An isolated smoke script invoked the original vendored
+  `Game:update_selecting_hand`, warming the callback and recreating it ten
+  times. Before the fix it reproduced the permanent queue blocker; afterward
+  every recreated inactive watcher was recognized and readiness returned true.
+- `luajit tests/decision.test.lua` — 127 checks passed, including repeated
+  parent/child closure creation, active-preview and owner checks, real
+  cursor-cleanup delays, unrelated events, dialogs and controller locks.
+- `luajit tests/observation.test.lua`, `luajit tests/effects.test.lua` and
+  `luajit tests/score-snapshot.test.lua` — 88, 42 and 38 checks passed.
+- `npm run check` and `npm test` — passed; 133 Node tests passed, two
+  Windows-only tests skipped, zero failures.
+
+These checks are offline. The two live timeouts did not record their underlying
+event queues, so attributing those particular incidents to this reproduced
+defect remains an inference. The running mod was not used to verify this fix;
+installing the updated mod and restarting Balatro are still required.
+
+Packaging verification: `npm run stage-mod` staged the repaired standalone mod
+under `build/balatro-mcp-mod/balatro_mcp_mod`; `npm run release:check` passed
+for all 123 exported source files. Staging did not install the mod or restart
+the game.

@@ -43,8 +43,8 @@ return function(json, decision)
       end
     end
   end
-  -- LuaJIT may change capability/patch flags without changing the instructions.
-  -- Ignore only these two metadata bits; all instructions/constants still match.
+  -- LuaJIT may change dump capabilities and each prototype's patch flag without
+  -- changing instructions. Child prototypes precede their parent in the dump.
   local function callbackBytecode(func)
     local ok, code = pcall(string.dump, func, true)
     -- Balatro ships LuaJIT 2.0.5 (dump version 1); the headless test runtime
@@ -52,15 +52,28 @@ return function(json, decision)
     -- its version byte and all instruction/constant bytes in the fingerprint.
     if not ok or code:sub(1,3) ~= '\27LJ' or (code:byte(4) ~= 1 and code:byte(4) ~= 2) then return nil end
     local flags = code:byte(5)
-    if flags % 4 < 2 then return nil end -- Only stripped dumps have this layout.
-    local prototype = 6
-    while code:byte(prototype) and code:byte(prototype) >= 128 do prototype = prototype + 1 end
-    prototype = prototype + 1 -- Skip the ULEB128 prototype length.
-    local protoFlags = code:byte(prototype)
-    if not protoFlags then return nil end
+    if not flags or flags % 4 < 2 then return nil end -- Only stripped dumps have this layout.
     if flags % 32 >= 16 then flags = flags - 16 end
-    return code:sub(1,4) .. string.char(flags) .. code:sub(6,prototype-1)
-      .. string.char(protoFlags % 128) .. code:sub(prototype+1)
+    local parts = {code:sub(1,4), string.char(flags)}
+    local position = 6
+    while position < #code do
+      local start, length, scale, byte = position, 0, 1
+      repeat
+        byte = code:byte(position)
+        if not byte then return nil end
+        length = length + (byte % 128) * scale
+        scale = scale * 128
+        position = position + 1
+      until byte < 128
+      if length == 0 or position + length > #code then return nil end
+      parts[#parts+1] = code:sub(start,position-1)
+      parts[#parts+1] = string.char(code:byte(position) % 128)
+      parts[#parts+1] = code:sub(position+1,position+length-1)
+      position = position + length
+    end
+    if code:byte(position) ~= 0 then return nil end
+    parts[#parts+1] = code:sub(position)
+    return table.concat(parts)
   end
   local backgroundCode = callbackBytecode(backgroundSpin)
   local previewCode = callbackBytecode(deckPreviewWatcher(G))

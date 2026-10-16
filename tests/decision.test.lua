@@ -151,6 +151,76 @@ G.STATE=G.STATES.ROUND_EVAL; G.GAME.chips=410000; G.GAME.won=true
 local won=bridge.dispatch('sf.observe',{})
 check(won.outcome=='won' and won.terminal,'successful final Boss settlement still reports won')
 
+-- Original 1.0.1o Game:update_selecting_hand hover watcher, including its child
+-- cursor-cleanup callback. Repeated closure creation changes LuaJIT prototype
+-- metadata, not the callback's behavior.
+local function previewWatcher(self)
+  return function()
+    if self.deck_preview and not (((self.deck and self.deck.cards[1] and self.deck.cards[1].states.collide.is and not self.CONTROLLER.HID.controller)) or G.CONTROLLER.held_buttons.triggerleft) then
+      self.deck_preview:remove()
+      self.deck_preview = nil
+      local _card = G.CONTROLLER.focused.target
+      local start = G.TIMERS.REAL
+      self.E_MANAGER:add_event(Event({
+        func = function()
+          if _card and _card.area and _card.area == G.hand then
+            local _x, _y = _card:put_focused_cursor()
+            G.CONTROLLER:update_cursor({x=_x/(G.TILESCALE*G.TILESIZE),y=_y/(G.TILESCALE*G.TILESIZE)})
+          end
+          if start + 0.4 < G.TIMERS.REAL then
+            return true
+          end
+        end
+      }))
+      return true
+    end
+  end
+end
+if jit then
+  reset()
+  G.CONTROLLER={HID={},held_buttons={},focused={}}
+  G.TIMERS={REAL=0}
+  G.E_MANAGER={queues={base={}},add_event=function(self,event) self.queues.base[#self.queues.base+1]=event end}
+  Event=function(event)
+    event.trigger=event.trigger or 'immediate'
+    if event.blocking==nil then event.blocking=true end
+    if event.blockable==nil then event.blockable=true end
+    return event
+  end
+  game=assert(loadfile('play/mod/game.lua'))()(json,decision)
+  for iteration=1,8 do
+    local watcher=previewWatcher(G)
+    local event=Event({func=watcher,blocking=false,blockable=false})
+    G.E_MANAGER.queues.base={event}
+    check(game.ready(),'an absent preview must not block after repeated watcher creation: '..iteration)
+    check(G.E_MANAGER.queues.base[1]==event,'recognition must leave the original event queued')
+    local removed=0
+    G.deck_preview={remove=function() removed=removed+1 end}
+    check(not game.ready(),'an active preview still blocks after a cached recognition')
+    check(removed==0,'readiness must not execute the preview callback')
+    check(watcher() and removed==1,'the original callback still removes an abandoned preview')
+    check(not game.ready(),'the real cursor-cleanup child must finish before accepting actions')
+    local cleanup=G.E_MANAGER.queues.base[2]
+    check(not cleanup.func(),'cursor cleanup waits for its original delay')
+    G.TIMERS.REAL=G.TIMERS.REAL+1
+    check(cleanup.func(),'cursor cleanup eventually completes')
+    G.E_MANAGER.queues.base[2]=nil
+    check(game.ready(),'the inactive watcher must not block after its child closure was created')
+  end
+  G.E_MANAGER.queues.base={Event({func=previewWatcher({}),blocking=false,blockable=false})}
+  check(not game.ready(),'an identical watcher captured from a different owner still blocks')
+  G.E_MANAGER.queues.base={Event({func=function() error('readiness executed an unknown event') end,blocking=false,blockable=false})}
+  check(not game.ready(),'unrelated nonblocking callbacks must still settle')
+  G.E_MANAGER.queues.base={}
+  G.OVERLAY_MENU={}
+  check(not game.ready(),'presentation exclusions must not bypass dialogs')
+  G.OVERLAY_MENU=nil
+  G.CONTROLLER.locks={animation=true}
+  check(not game.ready(),'presentation exclusions must not bypass controller locks')
+  G.CONTROLLER.locks={}
+  check(game.ready(),'the stable hand becomes ready after real blockers clear')
+end
+
 -- Graceful localization failure must not make observations unusable.
 localize = function() error('Unsupported modded localization') end
 check(not decision.blind('bl_eye',{}).rulesKnown,'unavailable rule text is explicit')
