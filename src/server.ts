@@ -5,8 +5,6 @@ import { errorEnvelope, record, type Backend } from '../env/contract.ts';
 import { ForgeBridgeBackend } from '../play/client.ts';
 import { Trace } from '../model/trace.ts';
 import { registerGameTools } from '../tools/index.ts';
-import { toolGuide } from '../tools/guide.ts';
-import { analysisGuide } from '../tools/analysis-guide.ts';
 import type { Options } from './config.ts';
 import { loadGameplayContext, registerGameplayResources } from './context.ts';
 import { nextId } from './ids.ts';
@@ -65,14 +63,6 @@ export async function createBalatroServer(options: Options, backend: Backend = n
       } catch (error) { return failure(error); }
     }));
   }
-  server.registerResource('gameplay-guide', 'balatro://guide', {
-    title: 'Tool and state guide', mimeType: 'text/markdown',
-    description: 'Read once before gameplay: state fields, delta merging, indices and card-order semantics.',
-  }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: toolGuide }] }));
-  server.registerResource('analysis-guide', 'balatro://analysis', {
-    title: 'Analysis output reference', mimeType: 'text/markdown',
-    description: 'Read once before game_analyze: score labels, discard hit rates, order, audit and sampled build limitations.',
-  }, async uri => ({ contents: [{ uri: uri.href, mimeType: 'text/markdown', text: analysisGuide }] }));
   registerGameplayResources(server, context);
   return { server, async close() { await pending; await server.close(); await tools.close(); await backend.close(); await trace.flush().catch(() => {}); } };
 }

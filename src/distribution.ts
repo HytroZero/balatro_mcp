@@ -7,7 +7,7 @@ import { promisify } from 'node:util';
 export const distributionEntries = [
   '.github', '.editorconfig', '.gitattributes', '.gitignore', '.nvmrc', 'LICENSE', 'README.md', 'README.en.md', 'README.zh-CN.md',
   'package.json', 'package-lock.json', 'mcp.example.json', 'tsconfig.json', 'tsconfig.build.json',
-  'src', 'env', 'play', 'tools', 'model', 'scripts', 'tests', 'docs', 'skills',
+  'src', 'env', 'play', 'tools', 'model', 'scripts', 'tests', 'docs', 'resources',
 ];
 const optionalEntries = new Set(['.github', 'README.en.md', 'README.zh-CN.md']);
 // Authored maintenance files only; the generated engine is derived game code.

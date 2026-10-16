@@ -2,7 +2,7 @@
 
 This is the Strategy Forge documentation at extraction time. Paths and npm commands
 below refer to the upstream project, not this MCP package. Use `../README.md` and
-`../tools/guide.ts` (served as `balatro://guide`) for this package's setup and operation. The Lua mod and bridge
+`../resources/guide.md` (served as `balatro://guide`) for this package's setup and operation. The Lua mod and bridge
 protocol are preserved unchanged.
 
 Strategy Forge implements its own HTTP transport, JSON codec, observations, action bindings and asynchronous operation protocol. BalatroBot was reviewed as a design reference and is not a runtime dependency. Only `play/mod/` is staged.

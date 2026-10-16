@@ -17,14 +17,14 @@ are no API keys or model settings to configure here.
   Seed: `S7M5CNQW`.
 - **A powerful `game_analyze` system** compares plays score, discard sampling, Joker order, and economy choices, significantly improving the model's decisions and gameplay performance.
 - Observations are compact, indexed text with incremental deltas, so long runs fit in an agent's context.
-- Two gameplay skills ship with the server. See [Included skills](#included-skills).
+- Rules and coaching are available as direct MCP resources. See [Gameplay resources](#gameplay-resources).
 
 ## What can it do?
 
 - Read your hand, Jokers, consumables, shop, blinds, and remaining deck.
 - Play and discard cards, buy and sell items, open packs, use consumables,
   reroll, and start new runs.
-- Consult the bundled rules reference and strategy skills while playing.
+- Consult the bundled rules reference and strategy coach while playing.
 - Score candidate plays, Joker orders and shop choices, and estimate how often
   a discard reaches a target hand (`game_analyze`).
 
@@ -146,7 +146,7 @@ process. For example,
 `{"revision":"<rev>","discards":[[0,1,3],[1,3]],"next":"straight"}` compares
 two discards by how often the refilled hand can play a straight, returning
 `{"rates":[0.375,0.5]}` (illustrative values). Fields, target names and errors
-are in the [analysis reference](tools/analysis-guide.ts).
+are in the [analysis reference](resources/analysis.md).
 
 Analysis uses the full original sandbox in `env/sandbox/vendor` by default;
 prepare it with `npm run sandbox:prepare`. To use the optional pruned engine,
@@ -170,12 +170,11 @@ error message.
 
 - [Windows setup and troubleshooting](docs/windows.md)
 - [macOS setup and troubleshooting](docs/macos.md)
-- [State and action field contract](tools/guide.ts) (`balatro://guide`)
-- [Analysis output reference](tools/analysis-guide.ts) (`balatro://analysis`)
+- [State and action field contract](resources/guide.md) (`balatro://guide`)
+- [Analysis output reference](resources/analysis.md) (`balatro://analysis`)
 - [Observation field design and staged implementation](docs/game-observation-design.md)
 - [`game_analyze` design and staged implementation](docs/game-analyze-design.md)
 - [Game rules and strategy context](docs/context.md)
-- [Gameplay skills](skills/README.md)
 - [Source attribution and validation](docs/upstream.md)
 - [Offline scoring sandbox](env/sandbox/README.md)
 - [Preparing a release](docs/releasing.md)
@@ -183,55 +182,30 @@ error message.
 For server options, run `node dist/src/index.js --help`. A manual client
 configuration template is in [`mcp.example.json`](mcp.example.json).
 
-## Included skills
+## Gameplay resources
 
-The server publishes its gameplay skills as MCP resources and as `skill:<name>`
-prompts, so any MCP client can load them on demand. `balatro://skills` lists each
-skill and its files as `skill://<name>/<path>` URIs that do not depend on where
-the server is installed, and `balatro://objects/<name>` looks up one Joker,
-consumable, Voucher, Tag or Boss.
-For normal gameplay, read `balatro://protocol`, `balatro://guide` and the relevant
-skill once. Read `balatro://analysis` before first using `game_analyze`; look up
-specific mechanics through objects and linked chapters. `balatro://context`
-remains an explicit full-reference alternative; do not load it alongside its parts.
+All references are direct MCP resources listed by `resources/list`.
+For normal gameplay, read `balatro://protocol`, `balatro://guide` and
+`balatro://coach` once. Read `balatro://analysis` before first analysis.
 
-### `balatro-gold-stake-coach`
+- `balatro://rules`: small topic directory. Read one topic directly, such as
+  `balatro://rules/jokers`, `balatro://rules/scoring` or `balatro://rules/blinds`.
+- `balatro://objects/Blueprint`: one object’s rule, metadata, topic URI and Wiki
+  link. Optional `?kind=` filters ambiguous names.
+- `balatro://coach`: strategy for survival, economy, engine growth and Boss
+  preparation toward an Ante 8 win. Difficult tradeoffs use `balatro://coach/decisions`.
 
-A strategy coach for complete runs aimed at Gold Stake. It covers blind
-selection and skipping, hand and discard choices, shops and cash flow, packs and
-consumables, Joker ordering, and Boss Blind preparation, with the goal of a
-reliable Ante 8 win rather than a high endless score. It works from observed
-game values instead of numbers remembered from older guides, and it ends each
-run with an evidence-based review.
+Rules retain the 2026-10-02 Balatro Wiki snapshot for 1.0.1o-FULL, covering 366
+objects including all 150 Jokers. Unused Wiki implementation and validation
+chapters are omitted. [Sources and license](resources/rules/sources.md) are retained.
 
-- Entry point: [`skills/balatro-gold-stake-coach/SKILL.md`](skills/balatro-gold-stake-coach/SKILL.md)
-- References: decision tables, plus notes on mechanics and their sources
-
-### `balatro-wiki-rules`
-
-A versioned rules knowledge base built from a [Balatro Wiki](https://balatrowiki.org/)
-snapshot (2026-10-02, game version 1.0.1o-FULL). It has 12 chapters, from the
-run lifecycle and the scoring sequence to Boss Blinds, the shop economy, RNG,
-and validation. The object catalog covers 366 objects, including all 150 Jokers,
-and any of them can be found by name, through MCP as `balatro://objects/Blueprint`
-or from a shell with the lookup script:
-
-```sh
-python skills/balatro-wiki-rules/scripts/lookup.py Blueprint
-```
-
-Agents use it to resolve mechanics questions during play. It also serves as the
-reference when implementing or testing a simulator.
-
-- Entry point: [`skills/balatro-wiki-rules/SKILL.md`](skills/balatro-wiki-rules/SKILL.md)
-- Sources and license: [`references/sources.md`](skills/balatro-wiki-rules/references/sources.md)
-
-See [`skills/README.md`](skills/README.md) to add your own skill.
+Add or edit documents under `resources/`; register new URIs in
+[the resource manifest](src/resources.ts). See [resource documentation](docs/context.md).
 
 ## Contributing
 
 Issues and pull requests are welcome. Installation feedback from macOS and
-Linux users, new gameplay skills, and full-run reports (model, deck, stake, and
+Linux users, rules and strategy improvements, and full-run reports (model, deck, stake, and
 result) are especially useful. Please remove private paths and personal
 information from logs before sharing them.
 
@@ -245,7 +219,7 @@ npm test
 ## License
 
 Code is licensed under [MIT](LICENSE). The Wiki-derived reference material in
-`skills/balatro-wiki-rules` keeps its
-[CC BY-NC-SA 3.0 license and attribution](skills/balatro-wiki-rules/references/sources.md).
+`resources/rules/` and the object catalog keep their
+[CC BY-NC-SA 3.0 license and attribution](resources/rules/sources.md).
 
 Balatro is a separate game by LocalThunk and is not included in this project.

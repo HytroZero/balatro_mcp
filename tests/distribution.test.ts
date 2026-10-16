@@ -51,6 +51,12 @@ test('distribution rejects private data without printing it and excludes runtime
     assert.doesNotMatch(JSON.stringify(issues), /private-user|0x1234567890/);
     const files = await distributionFiles(projectRoot);
     assert.ok(files.includes('package-lock.json')); assert.ok(files.includes('LICENSE'));
+    assert.ok(files.includes('resources/rules/jokers.md'));
+    assert.ok(files.includes('resources/coach.md'));
+    assert.ok(files.includes('resources/guide.md'));
+    assert.ok(files.includes('resources/analysis.md'));
+    assert.ok(files.includes('resources/objects.json'));
+    assert.ok(files.includes('resources/sources/source-manifest.json'));
     assert.ok(!files.some(path => /^(?:\.git\/|build\/|data\/|dist\/|node_modules\/)|\.local\.json$/.test(path)));
     assert.ok(!files.some(path => /^(?:env\/balatro\/|env\/sandbox\/vendor\/)|(?:^|\/)\.DS_Store$/.test(path)));
     assert.ok(files.includes('env/pruned/generate.ts'));

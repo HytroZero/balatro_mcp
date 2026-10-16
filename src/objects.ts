@@ -1,8 +1,8 @@
 import { readFile } from 'node:fs/promises';
 import { resolve } from 'node:path';
+import { gameplayResources, readGameplayResource } from './resources.ts';
 
-const catalogPath = 'skills/balatro-wiki-rules/references/objects.json';
-const rulesPath = 'model/context/balatro.md';
+const catalogPath = 'resources/objects.json';
 const matchLimit = 20;
 
 /** Kind of object each balatro://rules table describes, keyed by its first header cell. */
@@ -59,7 +59,7 @@ function search(query: string, objects: CatalogObject[]): CatalogObject[] {
 
 async function loadCatalog(root: string): Promise<CatalogObject[]> {
   try { return JSON.parse(await readFile(resolve(root, catalogPath), 'utf8')).objects; }
-  catch { throw new Error('The object catalog of balatro-wiki-rules is unavailable.'); }
+  catch { throw new Error('The Balatro object catalog is unavailable.'); }
 }
 
 export async function objectNames(root: string, prefix: string): Promise<string[]> {
@@ -68,18 +68,19 @@ export async function objectNames(root: string, prefix: string): Promise<string[
 }
 
 /**
- * Port of balatro-wiki-rules/scripts/lookup.py for agents without a shell:
- * exact name match first, then substring, joined with the object's balatro://rules row.
+ * Exact name match first, then substring, joined with the object's rule topic row.
  */
-export async function lookupObjects(root: string, query: string, kind?: string, chapterUri = (path: string) => path) {
+export async function lookupObjects(root: string, query: string, kind?: string) {
   let objects = await loadCatalog(root);
   if (kind) objects = objects.filter(object => object.kind === kind.toLowerCase());
   const found = search(query, objects);
-  const rows = found.length ? rulesRows(await readFile(resolve(root, rulesPath), 'utf8')) : [];
+  const topics = new Set(found.slice(0, matchLimit).map(object => object.chapter));
+  const rows = (await Promise.all(gameplayResources.filter(resource => topics.has(resource.uri))
+    .map(async resource => rulesRows(await readGameplayResource(root, resource))))).flat();
   const matches = found.slice(0, matchLimit).map(({ lookup_url, table_source: _, individual_revision_id: __, chapter, ...object }) => ({
     ...object,
     rules: rulesFor({ lookup_url, chapter, ...object }, rows) ?? null,
-    chapter: chapter ? chapterUri(chapter) : null,
+    chapter: chapter ?? null,
     wiki: lookup_url,
   }));
   return {

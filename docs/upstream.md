@@ -17,10 +17,9 @@ machine paths are omitted from the public record.
   `sf.*` for compatibility.
 - `model/trace.ts`: MCP call persistence and trace sanitization. No model provider
   integration is enabled.
-- `model/prompt.ts`, `model/context/`, `skills/`: gameplay context, decision
-  protocol, coaching skill, and attributed Wiki-derived reference material. The
-  decision protocol and the coaching skill's execution sections are rewritten for
-  this server's tools and observation v3.
+- `resources/`: state and analysis guides, decision protocol,
+  coaching policy and attributed Wiki-derived gameplay rules. References are
+  split into direct MCP resources; unused implementation chapters were removed.
 - `tools/index.ts`: game tools. The upstream arbitrary file and memory tools are
   excluded; six game/diagnostic tools are registered in this server.
 
@@ -33,14 +32,12 @@ Use the root README for setup.
 ## Licenses
 
 Project code is distributed under the root [MIT license](../LICENSE).
-Skill discovery is implemented in `src/skills.ts` using the `yaml` and `ignore`
-packages. The server no longer depends on Pi packages. Installed dependencies
-retain their own licenses.
+Installed dependencies retain their own licenses.
 
-Wiki-derived material under `skills/balatro-wiki-rules/` retains **CC BY-NC-SA 3.0**,
+Wiki-derived material under `resources/rules/` and the object catalog retain **CC BY-NC-SA 3.0**,
 attributed to Balatro Wiki contributors. Its sources, revision records, license,
 and adaptation notes are retained in
-[`references/sources.md`](../skills/balatro-wiki-rules/references/sources.md).
+[`sources.md`](../resources/rules/sources.md).
 This material is separately licensed from the MIT project code.
 
 No original Balatro game source/assets, game saves, existing memories, provider

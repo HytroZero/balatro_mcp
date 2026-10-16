@@ -7,8 +7,8 @@ import { resolve } from 'node:path';
 import { Client } from '@modelcontextprotocol/client';
 import { StdioClientTransport } from '@modelcontextprotocol/client/stdio';
 import { record, type Data } from '../env/contract.ts';
-import { toolGuide } from '../tools/guide.ts';
-import { analysisGuide } from '../tools/analysis-guide.ts';
+const toolGuide = await readFile(new URL('../resources/guide.md', import.meta.url), 'utf8');
+const analysisGuide = await readFile(new URL('../resources/analysis.md', import.meta.url), 'utf8');
 
 const health = { status: 'ok', bridge: 'balatro_mcp_mod', protocol: 1, instanceId: 'mcp-test', gameVersion: '1.0.1o-FULL',
   luaRuntime: 'LuaJIT 2.0.5', preservesTiming: true, ready: true, capabilities: ['observe', 'deck_observe', 'act', 'operation', 'decision_state', 'analysis_snapshot'] };
@@ -94,7 +94,7 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     const { tools } = await h.client.listTools();
     const instructions = h.client.getInstructions()!;
     assert.ok(instructions.length <= 800);
-    assert.match(instructions, /balatro:\/\/skills/);
+    assert.match(instructions, /balatro:\/\/coach/);
     assert.match(instructions, /balatro:\/\/protocol/);
     assert.match(instructions, /balatro:\/\/analysis/);
     assert.doesNotMatch(instructions, /## Phase policy/);
@@ -112,9 +112,9 @@ test('built stdio server exposes all tools, exact schemas, annotations and the g
     assert.ok(resources.resources.some(resource => resource.uri === 'balatro://analysis'));
     const guide = await h.client.readResource({ uri: 'balatro://guide' }); assert.equal(record(guide.contents[0]).text, toolGuide);
     const analysis = await h.client.readResource({ uri: 'balatro://analysis' }); assert.equal(record(analysis.contents[0]).text, analysisGuide);
-    const fullContext = await h.client.readResource({ uri:'balatro://context' });
-    assert.ok(String(record(fullContext.contents[0]).text).includes((await readFile(resolve('model/context/balatro.md'),'utf8')).trim()));
-    assert.doesNotMatch(instructions + String(record(fullContext.contents[0]).text) + String(record(guide.contents[0]).text), /memory_query|memory_record/);
+    assert.ok(!resources.resources.some(resource => resource.uri === 'balatro://context'));
+    await assert.rejects(h.client.readResource({ uri: 'balatro://context' }));
+    assert.doesNotMatch(instructions + String(record(guide.contents[0]).text) + String(record(analysis.contents[0]).text), /memory_query|memory_record/);
     assert.deepEqual(await readdir(h.root), ['traces']);
     assert.equal(record((await h.call('game_health')).structuredContent).ok, true);
     const observed = record(record((await h.call('game_observe')).structuredContent).value);

@@ -15,7 +15,6 @@ test('configuration has project-relative data defaults and explicit flags overri
 test('configuration rejects unknown flags and invalid action deadlines', () => {
   for (const value of ['NaN', '0', '-5', '1.5', '600001']) assert.throws(() => parseOptions(['--timeout-ms', value], {}));
   assert.throws(() => parseOptions(['--config', 'old.json'], {}));
-  assert.throws(() => parseOptions(['--skill-dir', '/tmp/removed'], {}));
   assert.throws(() => parseOptions(['--online-memory'], {}));
   assert.throws(() => parseOptions(['--read-only-memory'], {}));
 });

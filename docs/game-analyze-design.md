@@ -189,7 +189,7 @@ type PokerHand = 'high_card' | 'pair' | 'two_pair' | 'three_of_a_kind'
 
 **计算路径。** `env/analysis/discards.ts` 独立处理方案和采样，每个方案只向 worker 发送一次 `discard_hits` 请求，携带全部 64 组抽牌；worker 只加载一次留牌和公共牌池，每个样本直接取用抽到的牌对象并检测目标牌型，不再逐样本重新加载局面。缓存只保存完整的 64 个样本结果。worker 仅保留影响牌型或判型所需 debuff 的 Joker，复用原版牌型识别与 Boss 禁牌判断。Four Fingers、Shortcut、Smeared、Wild/Stone、Eye/Mouth 历史和 Psychic 的张数限制仍生效。Joker 成长、金钱变化、Purple Seal 生成消耗牌、出牌计分和分数对账不影响本次命中事件，也不作为拒绝查询的理由。
 
-**错误与一致性。** 暗牌、没有弃牌次数、Cerulean Bell 补牌后的强制选择，以及 Crimson Heart 可能改变牌型 Joker 的状态仍需明确规则，当前返回简短错误；各错误码的含义见 `tools/analysis-guide.ts`（`balatro://analysis`）。取消、worker 失败或预算不足时不返回部分命中率，不把未完成样本当成失败。发布结果前复核 revision 与分析快照；局面变化返回 `stale_state`。全程不执行或排队真实动作。
+**错误与一致性。** 暗牌、没有弃牌次数、Cerulean Bell 补牌后的强制选择，以及 Crimson Heart 可能改变牌型 Joker 的状态仍需明确规则，当前返回简短错误；各错误码的含义见 `resources/analysis.md`（`balatro://analysis`）。取消、worker 失败或预算不足时不返回部分命中率，不把未完成样本当成失败。发布结果前复核 revision 与分析快照；局面变化返回 `stale_state`。全程不执行或排队真实动作。
 
 ### 5.6 boss 与 engine（显式调用）
 
@@ -254,7 +254,7 @@ type PokerHand = 'high_card' | 'pair' | 'two_pair' | 'three_of_a_kind'
 
 ## 8. 模型怎么用
 
-写入 `tools/guide.ts` 和 `skills/core.md`：
+写入 `resources/guide.md` 和 `resources/protocol.md`：
 
 - 每个需要判断的决策点调用一次：每次出牌或弃牌前、进入商店时、每次改变构筑的购买之后、选盲注时、开包后。收款之类的过场不用。
 - 先读 `notes` 和 `audit`，再读数字。

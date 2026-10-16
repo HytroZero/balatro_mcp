@@ -1,0 +1,560 @@
+{
+  "snapshot_date": "2026-10-02",
+  "source_site": "https://balatrowiki.org/",
+  "wiki_version_label": "1.0.1o-FULL / Friends of Jimbo 4",
+  "sitemap_page_count": 515,
+  "unique_pages_fetched": 68,
+  "request_entries": 69,
+  "image_elements_not_visually_read": 7731,
+  "sources": [
+    {
+      "title": "Balatro Wiki",
+      "url": "https://balatrowiki.org/",
+      "revision_id": 26289,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 31
+    },
+    {
+      "title": "Balatro",
+      "url": "https://balatrowiki.org/w/Balatro",
+      "revision_id": 27150,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 9
+    },
+    {
+      "title": "Jokers",
+      "url": "https://balatrowiki.org/w/Jokers",
+      "revision_id": 29533,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 250
+    },
+    {
+      "title": "Decks",
+      "url": "https://balatrowiki.org/w/Decks",
+      "revision_id": 29456,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 187
+    },
+    {
+      "title": "Poker hands",
+      "url": "https://balatrowiki.org/w/Poker_hands",
+      "revision_id": 29455,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 94
+    },
+    {
+      "title": "Card modifiers",
+      "url": "https://balatrowiki.org/w/Card_modifiers",
+      "revision_id": 29454,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 7,
+      "image_elements_not_visually_read": 70
+    },
+    {
+      "title": "The Shop",
+      "url": "https://balatrowiki.org/w/The_Shop",
+      "revision_id": 29452,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 38
+    },
+    {
+      "title": "Stakes",
+      "url": "https://balatrowiki.org/w/Stakes",
+      "revision_id": 29491,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 18
+    },
+    {
+      "title": "Blinds and Antes",
+      "url": "https://balatrowiki.org/w/Blinds_and_Antes",
+      "revision_id": 29321,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 4,
+      "image_elements_not_visually_read": 77
+    },
+    {
+      "title": "Tags",
+      "url": "https://balatrowiki.org/w/Tags",
+      "revision_id": 29453,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 63
+    },
+    {
+      "title": "Consumables",
+      "url": "https://balatrowiki.org/w/Consumables",
+      "revision_id": 25165,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 58
+    },
+    {
+      "title": "Tarot cards",
+      "url": "https://balatrowiki.org/w/Tarot_cards",
+      "revision_id": 29490,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 50
+    },
+    {
+      "title": "Planet cards",
+      "url": "https://balatrowiki.org/w/Planet_cards",
+      "revision_id": 29462,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 64
+    },
+    {
+      "title": "Spectral cards",
+      "url": "https://balatrowiki.org/w/Spectral_cards",
+      "revision_id": 29461,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 38
+    },
+    {
+      "title": "Vouchers",
+      "url": "https://balatrowiki.org/w/Vouchers",
+      "revision_id": 29460,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 46
+    },
+    {
+      "title": "Booster Packs",
+      "url": "https://balatrowiki.org/w/Booster_Packs",
+      "revision_id": 29459,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 8,
+      "image_elements_not_visually_read": 68
+    },
+    {
+      "title": "Guide: Activation Sequence",
+      "url": "https://balatrowiki.org/w/Guide:_Activation_Sequence",
+      "revision_id": 27309,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 47
+    },
+    {
+      "title": "Activation Type",
+      "url": "https://balatrowiki.org/w/Activation_Type",
+      "revision_id": 25438,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 182
+    },
+    {
+      "title": "Skip",
+      "url": "https://balatrowiki.org/w/Skip",
+      "revision_id": 26397,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 18
+    },
+    {
+      "title": "Seed",
+      "url": "https://balatrowiki.org/w/Seed",
+      "revision_id": 29312,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 8
+    },
+    {
+      "title": "Listed probability",
+      "url": "https://balatrowiki.org/w/Listed_probability",
+      "revision_id": 26525,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 26
+    },
+    {
+      "title": "Challenge Decks",
+      "url": "https://balatrowiki.org/w/Challenge_Decks",
+      "revision_id": 27788,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 166
+    },
+    {
+      "title": "Update 1.0.1o",
+      "url": "https://balatrowiki.org/w/Update_1.0.1o",
+      "revision_id": 24326,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 4
+    },
+    {
+      "title": "Update 1.0.1f",
+      "url": "https://balatrowiki.org/w/Update_1.0.1f",
+      "revision_id": 26609,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 137
+    },
+    {
+      "title": "Money",
+      "url": "https://balatrowiki.org/w/Money",
+      "revision_id": 28606,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 8,
+      "image_elements_not_visually_read": 70
+    },
+    {
+      "title": "Chips",
+      "url": "https://balatrowiki.org/w/Chips",
+      "revision_id": 29133,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 36
+    },
+    {
+      "title": "Mult",
+      "url": "https://balatrowiki.org/w/Mult",
+      "revision_id": 29429,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 3,
+      "image_elements_not_visually_read": 100
+    },
+    {
+      "title": "Hands",
+      "url": "https://balatrowiki.org/w/Hands",
+      "revision_id": 27064,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 36
+    },
+    {
+      "title": "Discards",
+      "url": "https://balatrowiki.org/w/Discards",
+      "revision_id": 27303,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 0,
+      "image_elements_not_visually_read": 49
+    },
+    {
+      "title": "Negative Effects",
+      "url": "https://balatrowiki.org/w/Negative_Effects",
+      "revision_id": 26540,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 63
+    },
+    {
+      "title": "Blueprint",
+      "url": "https://balatrowiki.org/w/Blueprint",
+      "revision_id": 29276,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 290
+    },
+    {
+      "title": "Brainstorm",
+      "url": "https://balatrowiki.org/w/Brainstorm",
+      "revision_id": 29557,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 282
+    },
+    {
+      "title": "Four Fingers",
+      "url": "https://balatrowiki.org/w/Four_Fingers",
+      "revision_id": 27923,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 226
+    },
+    {
+      "title": "Shortcut",
+      "url": "https://balatrowiki.org/w/Shortcut",
+      "revision_id": 27205,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 224
+    },
+    {
+      "title": "Photograph",
+      "url": "https://balatrowiki.org/w/Photograph",
+      "revision_id": 27167,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 257
+    },
+    {
+      "title": "Hanging Chad",
+      "url": "https://balatrowiki.org/w/Hanging_Chad",
+      "revision_id": 28944,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 250
+    },
+    {
+      "title": "Mime",
+      "url": "https://balatrowiki.org/w/Mime",
+      "revision_id": 26715,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 252
+    },
+    {
+      "title": "Baron",
+      "url": "https://balatrowiki.org/w/Baron",
+      "revision_id": 25092,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 253
+    },
+    {
+      "title": "Raised Fist",
+      "url": "https://balatrowiki.org/w/Raised_Fist",
+      "revision_id": 26617,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 232
+    },
+    {
+      "title": "Flower Pot",
+      "url": "https://balatrowiki.org/w/Flower_Pot",
+      "revision_id": 28438,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 230
+    },
+    {
+      "title": "Seeing Double",
+      "url": "https://balatrowiki.org/w/Seeing_Double",
+      "revision_id": 27223,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 244
+    },
+    {
+      "title": "Matador",
+      "url": "https://balatrowiki.org/w/Matador",
+      "revision_id": 26619,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 273
+    },
+    {
+      "title": "Madness",
+      "url": "https://balatrowiki.org/w/Madness",
+      "revision_id": 28671,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 261
+    },
+    {
+      "title": "Lucky cards",
+      "url": "https://balatrowiki.org/w/Lucky_cards",
+      "revision_id": 29142,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 76
+    },
+    {
+      "title": "Blue Seal",
+      "url": "https://balatrowiki.org/w/Blue_Seal",
+      "revision_id": 29146,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 77
+    },
+    {
+      "title": "Eternal",
+      "url": "https://balatrowiki.org/w/Eternal",
+      "revision_id": 29153,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 109
+    },
+    {
+      "title": "Perishable",
+      "url": "https://balatrowiki.org/w/Perishable",
+      "revision_id": 29154,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 84
+    },
+    {
+      "title": "Rental",
+      "url": "https://balatrowiki.org/w/Rental",
+      "revision_id": 29155,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 70
+    },
+    {
+      "title": "The Serpent",
+      "url": "https://balatrowiki.org/w/The_Serpent",
+      "revision_id": 28863,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 38
+    },
+    {
+      "title": "The Pillar",
+      "url": "https://balatrowiki.org/w/The_Pillar",
+      "revision_id": 29498,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 46
+    },
+    {
+      "title": "The Arm",
+      "url": "https://balatrowiki.org/w/The_Arm",
+      "revision_id": 29435,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 42
+    },
+    {
+      "title": "The Flint",
+      "url": "https://balatrowiki.org/w/The_Flint",
+      "revision_id": 28850,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 39
+    },
+    {
+      "title": "The Mouth",
+      "url": "https://balatrowiki.org/w/The_Mouth",
+      "revision_id": 28857,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 47
+    },
+    {
+      "title": "The Eye",
+      "url": "https://balatrowiki.org/w/The_Eye",
+      "revision_id": 28848,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 2,
+      "image_elements_not_visually_read": 44
+    },
+    {
+      "title": "The Soul",
+      "url": "https://balatrowiki.org/w/The_Soul",
+      "revision_id": 28987,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 108
+    },
+    {
+      "title": "Plasma Deck",
+      "url": "https://balatrowiki.org/w/Plasma_Deck",
+      "revision_id": 27471,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 90
+    },
+    {
+      "title": "Interest",
+      "url": "https://balatrowiki.org/w/Interest",
+      "revision_id": 26521,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 16
+    },
+    {
+      "title": "Ectoplasm",
+      "url": "https://balatrowiki.org/w/Ectoplasm",
+      "revision_id": 28990,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 142
+    },
+    {
+      "title": "Death",
+      "url": "https://balatrowiki.org/w/Death",
+      "revision_id": 28491,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 123
+    },
+    {
+      "title": "Strength",
+      "url": "https://balatrowiki.org/w/Strength",
+      "revision_id": 28398,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 115
+    },
+    {
+      "title": "Ankh",
+      "url": "https://balatrowiki.org/w/Ankh",
+      "revision_id": 28268,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 136
+    },
+    {
+      "title": "Hex",
+      "url": "https://balatrowiki.org/w/Hex",
+      "revision_id": 28275,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 117
+    },
+    {
+      "title": "Telescope",
+      "url": "https://balatrowiki.org/w/Telescope",
+      "revision_id": 29064,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 75
+    },
+    {
+      "title": "Observatory",
+      "url": "https://balatrowiki.org/w/Observatory",
+      "revision_id": 29108,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 69
+    },
+    {
+      "title": "Oops! All 6s",
+      "url": "https://balatrowiki.org/w/Oops!_All_6s",
+      "revision_id": 29281,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 244
+    },
+    {
+      "title": "The Fool",
+      "url": "https://balatrowiki.org/w/The_Fool",
+      "revision_id": 29445,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 115
+    },
+    {
+      "title": "Glass cards",
+      "url": "https://balatrowiki.org/w/Glass_cards",
+      "revision_id": 29138,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 91
+    },
+    {
+      "title": "Lucky Cat",
+      "url": "https://balatrowiki.org/w/Lucky_Cat",
+      "revision_id": 29175,
+      "retrieved": "2026-10-02",
+      "tables_extracted": 1,
+      "image_elements_not_visually_read": 241
+    }
+  ],
+  "excluded_probe": {
+    "url": "https://balatrowiki.org/w/The_Space",
+    "status": 404,
+    "reason": "nonexistent title; not an object or source used by the reference"
+  }
+}

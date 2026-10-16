@@ -1841,3 +1841,44 @@ Validation:
 The running mod was not reloaded, staged or installed. No gameplay mutation
 was performed; the fix still needs installation and a Balatro restart to take
 effect in game.
+
+## Replace gameplay skills with direct resources — 2026-10-16
+
+Removed the gameplay skill tree, discovery/frontmatter parsing, skill index,
+file template, prompt expansion and YAML dependency. Plain Markdown references
+now live under `resources/` with an explicit URI manifest in `src/resources.ts`.
+`balatro://rules` is a small topic directory; individual rules and coaching are
+read directly at `balatro://rules/<topic>` and `balatro://coach`. Unused Wiki
+implementation/validation chapters, duplicate catalogs and the Python lookup
+script were deleted; source attribution, revisions and license records remain.
+
+Startup does not scan or load documents. Object lookup reads only matched topics
+and returns direct topic links. The optional full context is assembled on demand.
+The release allowlist, bootstrap, field guide and maintenance docs were updated.
+
+Validation:
+
+- Type checking and build passed.
+- Full TypeScript suite: 133 passed, 2 Windows-only skips, 0 failures.
+- All 18 resource/stdio/guide/distribution checks passed; the final resource and
+  distribution rerun passed all 7 tests, including topic-only lookup, complete
+  reads, 366 catalog links, unavailable old endpoints and resource boundaries.
+- Source release audit and `git diff --check` passed.
+
+All checks were offline. No gameplay, mod installation or game restart occurred.
+Restart the MCP server to load the new resource registrations.
+
+## Keep reference prose in Markdown — 2026-10-16
+
+Removed `balatro://context` and its `model/prompt.ts` assembler. Moved the state
+and analysis guides from TypeScript string exports to `resources/guide.md` and
+`resources/analysis.md`, registered through the same resource manifest and lazy
+file reader as the other references. Deleted both old guide modules and their
+compiled artifacts; the old `skills/` directory is absent. The guide phase table
+is static Markdown, with tests checking exact coverage and agreement with the
+projection's `phaseViews`. Updated documentation links and MCP regressions.
+
+Validation: type checking, build and all 18 resource/guide/stdio/distribution tests
+passed. Source release audit and `git diff --check` passed. All checks were offline;
+no gameplay or mod installation occurred. Restart the MCP server to apply the
+registration changes; subsequent Markdown edits are read on request.
