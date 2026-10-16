@@ -1821,3 +1821,23 @@ defaults, the old scoring export, optional analysis backend and raw voucher fall
 Validation: check/build; 134 TypeScript passes, 2 platform skips, SHA256 test excluded;
 Lua checks 88/50/42/34; staging, release audit and diff check passed. Fixed the isolated
 worker test's Windows import with a file URL. All checks offline; mod not installed.
+
+## Normalize the unset Mouth hand lock — 2026-10-16
+
+The original game sets `blind.only_hand=false` before the Mouth's first play.
+The live score schema accepts an optional string, so exporting that sentinel
+caused an incompatible-backend error. The Lua snapshot now omits the unset
+lock while preserving a chosen hand type and leaving live blind state unchanged.
+
+Validation:
+
+- `luajit tests/score-snapshot.test.lua`: all 38 checks passed, including
+  unset/chosen Mouth locks and preservation of both live values.
+- A read-only live `sf.analysis_snapshot` returned `bl_mouth` with
+  `only_hand=false` and failed the TypeScript schema. Applying the Lua
+  normalization to that returned blind in a separate process made the complete
+  snapshot pass `AnalysisSnapshotSchema`.
+
+The running mod was not reloaded, staged or installed. No gameplay mutation
+was performed; the fix still needs installation and a Balatro restart to take
+effect in game.

@@ -4,7 +4,7 @@ Play only when requested; inspection never authorizes play. Continue an existing
 
 Use the latest complete observation and issued `rev`. Merge successful action deltas per `balatro://guide`; do not reobserve after every action. Reobserve after context loss, external changes or `stale_state`, then reconsider.
 
-Never mutate while `notReady`. Only animation, queued-event, screen/phase/control initialization and booster-card waits permit read-only recovery: wait 1, 2, 4 seconds with at most 3 additional `game_observe` calls within 15 seconds. Stop early on outcome, errors or non-transient blockers. Resume the authorized task from a ready full snapshot; otherwise report the latest reason and wait for the user. Report dialogs, unknown blockers and backend failures immediately; do not close dialogs, restart or switch backends.
+Never mutate while `notReady`. Only animation, queued-event, screen/phase/control initialization and booster-card waits permit read-only recovery: wait 5, 10, 20 seconds with at most 3 additional `game_observe` calls within 15 seconds. Stop early on outcome, errors or non-transient blockers. Resume the authorized task from a ready full snapshot; otherwise report the latest reason and wait for the user. Report dialogs, unknown blockers and backend failures immediately; do not close dialogs, restart or switch backends.
 
 After `uncertain_outcome` or a failure with `applied: true/"unknown"`, inspect `game_operation` before any readiness recovery; never replay the mutation. For `applied:false`, correct the cause rather than repeating a rejected request.
 

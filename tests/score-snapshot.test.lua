@@ -24,6 +24,17 @@ check(not json.encode(first):find('PRIVATE_SEED',1,true) and not first.state.gam
 G.deck.cards={c,b}
 check(json.encode(snapshot.analysis('SELECTING_HAND').scoring) == json.encode(first), 'draw order is excluded')
 check(G.GAME.dollars == before and G.hand.cards[1] == a, 'read leaves run and card objects unchanged')
+G.GAME.blind.config.blind.key='bl_mouth'
+G.GAME.blind.only_hand=false
+local unlocked = snapshot.analysis('SELECTING_HAND').scoring
+check(unlocked.status == 'ready' and unlocked.state.blind.only_hand == nil, 'unset Mouth lock is omitted from scoring input')
+check(G.GAME.blind.only_hand == false, 'snapshot preserves the live unset Mouth lock')
+G.GAME.blind.only_hand='Two Pair'
+local locked = snapshot.analysis('SELECTING_HAND').scoring
+check(locked.status == 'ready' and locked.state.blind.only_hand == 'Two Pair', 'Mouth lock retains the chosen hand type')
+check(G.GAME.blind.only_hand == 'Two Pair', 'snapshot preserves the live chosen Mouth lock')
+G.GAME.blind.config.blind.key='bl_eye'
+G.GAME.blind.only_hand=nil
 local tag = {key='tag_holo'}
 tag.tag_sprite = {config={tag=tag}}
 G.GAME.round_resets.blind_tag = tag

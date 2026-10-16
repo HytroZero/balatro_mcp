@@ -109,7 +109,7 @@ return function(json)
     membership()
     state.hand, state.deck, state.discard = area(G.hand, true, false, true), area(G.deck, true, true), area(G.discard, true, true)
     state.blind = {key=vanilla(blind.config and blind.config.blind), disabled=blind.disabled == true,
-      only_hand=blind.only_hand, hands=copy(blind.hands)}
+      only_hand=blind.only_hand or nil, hands=copy(blind.hands)}
     assert(#state.hand > 0, 'No hand to score')
     assert(type(G.hand.config.highlighted_limit) == 'number', 'Missing selection limit')
     return {status='ready',state=state,selectionLimit=math.min(5,G.hand.config.highlighted_limit)}

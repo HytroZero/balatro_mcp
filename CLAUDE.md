@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-Balatro MCP is a local stdio MCP server (TypeScript, Node ≥ 24.13) plus a standalone Steamodded Lua mod that runs inside Balatro 1.0.1o. The parent directory's `AGENTS.md` (loaded via `../CLAUDE.md`) covers the wider Balatro RL project; this subproject is the live-game bridge.
+Balatro MCP is a local stdio MCP server (TypeScript, Node ≥ 24.13) plus a standalone Steamodded Lua mod that runs inside Balatro 1.0.1o.
 
 ## Commands
 
