@@ -339,23 +339,23 @@ test('build brief samples pace, Joker shares, offers and the next Ante from the 
   } finally { await analyzer.close(); }
 });
 
-test('build phases without a deck snapshot return economy only and other phases are unavailable', async () => {
+test('analysis requires phase inputs and preserves explicit unavailability', async () => {
   const analyzer = new Analyzer();
   const economy = { dollars: 17, interestAmount: 1, interestCap: 25, noInterest: false, moneyPerHand: 1, moneyPerDiscard: 0, rentalRate: 3, rentals: 0, blindRewards: { Small: 3, Big: 4 } };
   const blinds = { Small: { status: 'Select', skipReward: { key: 'tag_investment', displayName: 'Investment Tag' } }, Big: { status: 'Upcoming' } };
-  const shop = await analyzer.analyze(read({ phase: 'BLIND_SELECT', economy }, { state: 'BLIND_SELECT', currentBlind: 'Small', blinds }), { deadline: far(), trusted: true });
-  assert.deepEqual(shop.brief, { focus: 'build', status: 'partial', notes: ['the installed mod does not export the deck for build numbers'],
+  const shop = await analyzer.analyze(read({ phase: 'BLIND_SELECT', economy, build: { status: 'unavailable', message: 'Unsupported build' } }, { state: 'BLIND_SELECT', currentBlind: 'Small', blinds }), { deadline: far(), trusted: true });
+  assert.deepEqual(shop.brief, { focus: 'build', status: 'partial', notes: ['no build numbers: Unsupported build'],
     economy: '$17: interest $3 at cash-out; spend up to $2 keeps it; next step at $20; each $5 below costs $1/round', rewards: 'Small $3, Big $4; plus $1 per unused hand',
     skip: "skip Small: gives Investment Tag ($25 after the Boss is defeated); forgoes $3 reward, $1 per unused hand, this round's Joker scaling and the shop after it" });
   assert.equal((await analyzer.analyze(read({ phase: 'ROUND_EVAL', economy }, { state: 'ROUND_EVAL' }), { deadline: far(), trusted: true })).brief.status, 'unavailable');
-  assert.equal((await analyzer.analyze(read({ phase: 7 }, { state: 'SHOP' }), { deadline: far(), trusted: true })).brief.status, 'unavailable');
+  for (const phase of ['SELECTING_HAND','SHOP','PACK','BLIND_SELECT']) await assert.rejects(analyzer.analyze(read({ phase }, { state: phase }), { deadline: far(), trusted: true }), /Invalid phase analysis snapshot/);
   await assert.rejects(analyzer.analyze(read({ phase: 'SHOP', economy }, { state: 'SHOP' }), { discards: [[0]], next: 'pair', deadline: far(), trusted: true }), /selecting a hand/);
   await analyzer.close();
 });
 
 type Handler = (params: Data, context: { mcpReq: { signal?: AbortSignal } }) => Promise<{ isError?: boolean; structuredContent: Data }>;
 /** registerGameTools over a scripted backend and analyzer; no game, worker or MCP transport. */
-function harness(script: { reads: AnalysisRead[]; briefs?: { predictions: Map<string, number> }[]; acts?: Observation[]; analysis?: boolean }) {
+function harness(script: { reads: AnalysisRead[]; briefs?: { predictions: Map<string, number> }[]; acts?: Observation[] }) {
   const handlers: Record<string, Handler> = {}, traced: Data[] = [];
   const calls = { observe: 0, analysis: 0, act: 0 };
   const server = { registerTool(name: string, _config: unknown, handler: Handler) { handlers[name] = handler; } };
@@ -363,7 +363,7 @@ function harness(script: { reads: AnalysisRead[]; briefs?: { predictions: Map<st
     observe: async () => { calls.observe++; return script.reads[0]!.observation; },
     observeDeck: async () => { throw new Error('unused'); },
     act: async () => { calls.act++; return script.acts!.shift()!; },
-    ...(script.analysis === false ? {} : { analysisSnapshot: async () => { const next = script.reads[Math.min(calls.analysis, script.reads.length - 1)]!; calls.analysis++; return next; } }) };
+    analysisSnapshot: async () => { const next = script.reads[Math.min(calls.analysis, script.reads.length - 1)]!; calls.analysis++; return next; } };
   const analyzer = { analyze: async (_read: AnalysisRead, options: { trusted: boolean }) => ({ brief: { focus: 'hand' as const, status: 'complete' as const, plays: [`trusted ${options.trusted}`] },
     predictions: script.briefs?.shift()?.predictions ?? new Map<string, number>() }), close: async () => {} };
   const trace = { encode: (value: unknown) => JSON.stringify(value), write: async (type: string, data: unknown) => { traced.push({ type, data }); } } as unknown as Trace;
@@ -395,9 +395,6 @@ test('game_analyze needs an issued revision, never moves the baseline and reject
   const unready = harness({ reads: [waiting] });
   await unready.call('game_observe');
   assert.deepEqual(record((await unready.call('game_analyze', { revision: '1' })).value), { rev: '1', phase: 'SELECTING_HAND', status: 'unavailable', notes: ['Waiting for the card animation'] });
-  const old = harness({ reads: [playing('i:1', 0)], analysis: false });
-  await old.call('game_observe');
-  assert.equal((await old.call('game_analyze', { revision: '1' })).code, 'incompatible_backend');
 });
 
 test('game_analyze returns only discard rates and preserves the observation baseline', { skip }, async () => {
@@ -489,13 +486,13 @@ test('game_analyze runs end to end over the HTTP bridge client and the scoring w
   const [analysis] = fixtures([{ hand, jokers: ['j_joker'], consumables: ['c_jupiter'] }]);
   const state = shown({ target: 500, hands: 1, discards: 0, jokers: ['Joker'], consumables: [{ key: 'c_jupiter', label: 'Jupiter' }] });
   const observation = { contract: 1, backend: 'balatro_mcp_mod', revision: 'live:7', runId: 'live:run:1', gameVersion: '1.0.1o', terminal: false, outcome: 'ongoing',
-    ready: true, state: { ...state, seed: 'HIDDEN_SEED' }, availableMethods: ['play', 'discard'], legality: 'backend-authoritative' };
+    ready: true, state: { ...state, seed: 'HIDDEN_SEED', redeemedVouchers: [], hand: { cards: hand }, controls: { play: { maxCards: 5 }, discard: { available: false, maxCards: 5 } } }, availableMethods: ['play', 'discard'], legality: 'backend-authoritative' };
   const methods: string[] = [];
   const http = createServer(async (incoming, response) => {
     let text = ''; for await (const chunk of incoming) text += chunk;
     const request = JSON.parse(text) as Data; methods.push(String(request.method));
     const value = request.method === 'sf.health' ? { status: 'ok', bridge: 'balatro_mcp_mod', protocol: 1, instanceId: 'live', gameVersion: '1.0.1o-FULL', preservesTiming: true,
-      capabilities: ['observe', 'deck_observe', 'act', 'operation', 'analysis_snapshot'] } : request.method === 'sf.analysis_snapshot' ? { observation, analysis } : observation;
+      capabilities: ['observe', 'deck_observe', 'act', 'operation', 'decision_state', 'analysis_snapshot'] } : request.method === 'sf.analysis_snapshot' ? { observation, analysis } : observation;
     response.end(JSON.stringify({ jsonrpc: '2.0', id: request.id, result: value }));
   });
   await new Promise<void>(done => http.listen(0, '127.0.0.1', done));

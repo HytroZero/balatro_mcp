@@ -1813,3 +1813,11 @@ operation-lifecycle implementation details from this guidance.
 
 Validation: build and all 15 context/MCP tests passed; `git diff --check` passed.
 Text-only change; no gameplay or mod installation was performed.
+
+## Remove obsolete compatibility — 2026-10-16
+
+Required current bridge capabilities and phase inputs; removed permissive control
+defaults, the old scoring export, optional analysis backend and raw voucher fallback.
+Validation: check/build; 134 TypeScript passes, 2 platform skips, SHA256 test excluded;
+Lua checks 88/50/42/34; staging, release audit and diff check passed. Fixed the isolated
+worker test's Windows import with a file URL. All checks offline; mod not installed.

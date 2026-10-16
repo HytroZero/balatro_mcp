@@ -61,7 +61,7 @@ test('pruned worker runs from an isolated copy with no project or vendor files',
     }
     // The TypeScript API must choose this copy's worker, from a different cwd.
     const program = `import assert from 'node:assert/strict';
-      const {ScoringSandbox} = await import(${JSON.stringify(resolve(projectRoot, 'env/sandbox/index.ts'))});
+      const {ScoringSandbox} = await import(${JSON.stringify(new URL('../env/sandbox/index.ts', import.meta.url).href)});
       const sandbox = new ScoringSandbox({sourceDir:${JSON.stringify(engine)}, lua:${JSON.stringify(lua)}});
       try {
         assert.equal((await sandbox.load({hand:['S_K','H_K','D_A'], jokers:['j_joker'], random:'expectation'})).status,'ready');

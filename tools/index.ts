@@ -112,8 +112,7 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
       const signal = context.signal ? AbortSignal.any([context.signal, controller.signal]) : controller.signal;
       try {
         const revision = resolveRevision(params.revision);
-        if (!backend.analysisSnapshot) throw new BackendError('incompatible_backend','This backend does not support game_analyze.');
-        const first = await sequential(() => backend.analysisSnapshot!({ ...context, signal }));
+        const first = await sequential(() => backend.analysisSnapshot({ ...context, signal }));
         signal.throwIfAborted();
         if (first.observation.revision !== revision) throw new BackendError('stale_state','State changed; observe again before analysing.');
         const head = { rev: shortRevision(revision), phase: String(first.observation.state.state) };
@@ -127,7 +126,7 @@ export function registerGameTools(server: McpServer, backend: Backend, trace: Tr
         // Analysis inputs are outside the revision fingerprint, so compare them directly.
         return await sequential(async () => {
           signal.throwIfAborted();
-          const second = await backend.analysisSnapshot!({ ...context, signal });
+          const second = await backend.analysisSnapshot({ ...context, signal });
           signal.throwIfAborted();
           if (second.observation.revision !== revision || JSON.stringify(second.analysis) !== JSON.stringify(first.analysis)) throw new BackendError('stale_state','State changed during analysis; observe again.');
           if ('rates' in analysis.brief) return { value: analysis.brief };

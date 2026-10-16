@@ -170,8 +170,7 @@ export function compactState(raw: Data, phase: Phase | null, ready = true, termi
         Object.assign(state, {
             handSize: num(record(raw.hand).limit) ?? '?', jokerSlots: num(record(raw.jokers).limit) ?? '?', consumableSlots: num(record(raw.consumables).limit) ?? '?',
             hands: hands(raw.hands), jokers: cards(raw.jokers).map((c, i) => item(c, i, 'jokers')), consumables: cards(raw.consumables).map((c, i) => item(c, i, 'consumables')),
-            vouchers: Array.isArray(raw.redeemedVouchers) ? raw.redeemedVouchers.map(v => { const u = record(v); return `${u.name ?? u.key}: ${text(u.effect) ?? '?'}`; }) :
-                Object.entries(record(raw.used_vouchers)).filter(([, v]) => v === true).map(([key]) => `${key}: ?`),
+            vouchers: list(raw.redeemedVouchers).map(v => { const u = record(v); return `${u.name ?? u.key}: ${text(u.effect) ?? '?'}`; }),
             tags: list(raw.tags).map(t => { const tag = record(t); return tag.hidden === true ? '?' : `${tagName(tag)}: ${tagRules(tag)}`; }),
             blind: typeof raw.currentBlind === 'string' ? raw.currentBlind : '?', blinds: blinds(raw, phase),
         });
@@ -207,15 +206,16 @@ function phaseOf(o: Observation): Phase | null {
 /** Phase candidates with their limits. use/sell/rearrange are implicit for non-empty areas. */
 function actions(o: Observation, ready: boolean): string[] {
     if (!ready) return [];
-    const c = record(o.state.controls), open = (key: string) => record(c[key]).available !== false;
-    const max = Math.min(5, num(record(c.play).maxCards) ?? num(record(o.state.hand).highlighted_limit) ?? 5), out: string[] = [];
+    const c = record(o.state.controls), open = (key: string) => record(c[key]).available === true, out: string[] = [];
     const gates: Record<string, string> = { discard: 'discard', select: 'select', skip: phaseOf(o) === 'PACK' ? 'packSkip' : 'skip', reroll_boss: 'rerollBoss', reroll: 'reroll', cash_out: 'cashOut', next_round: 'nextRound' };
     for (const method of o.availableMethods) {
         if (['use', 'sell', 'rearrange'].includes(method) || gates[method] && !open(gates[method])) continue;
-        if (method === 'play' || method === 'discard') out.push(`${method} 1-${max}`);
-        else if (method === 'reroll') {
-            const price = num(record(c.reroll).price) ?? num(record(o.state.round).reroll_cost);
-            out.push(price === null ? method : `reroll $${price}`);
+        if (method === 'play' || method === 'discard') {
+            const max = num(record(c[method]).maxCards);
+            if (max !== null && Number.isInteger(max) && max >= 1 && max <= 5) out.push(`${method} 1-${max}`);
+        } else if (method === 'reroll') {
+            const price = num(record(c.reroll).price);
+            if (price !== null && price >= 0) out.push(`reroll $${price}`);
         } else out.push(method);
     }
     return out;

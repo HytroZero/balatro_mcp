@@ -68,7 +68,7 @@ export interface Backend {
   observeDeck(context?: RequestContext): Promise<DeckObservation>;
   act(action: Action, revision: string, context?: RequestContext): Promise<Observation>;
   /** Read-only; never issues a revision baseline and never releases an action lock. */
-  analysisSnapshot?(context?: RequestContext): Promise<AnalysisRead>;
+  analysisSnapshot(context?: RequestContext): Promise<AnalysisRead>;
   close(): Promise<void>;
 }
 export function record(value: unknown): Data {
@@ -85,7 +85,7 @@ export interface DeckObservation {
 // Only information shown in the game may cross into the model transcript.
 export function playerState(raw: Data): Data {
   const state: Data = {};
-  for (const key of ['state','round_num','ante_num','money','won','deck','stake','seed','used_vouchers','hands','round','blinds','blind','currentBlind','creditLimit','remainingCards','packChoices','tags','profileOptions',
+  for (const key of ['state','round_num','ante_num','money','won','deck','stake','seed','hands','round','blinds','blind','currentBlind','creditLimit','remainingCards','packChoices','tags','profileOptions',
     'totalCards','routeAnte','completedRound','cashOut','controls','redeemedVouchers','packKey','packName','packReturnPhase']) {
     if (raw[key] !== undefined) state[key] = structuredClone(raw[key]);
   }

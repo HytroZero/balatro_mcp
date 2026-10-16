@@ -60,23 +60,23 @@ export class Analyzer {
     validateDiscards(options.discards, options.next);
     const none = new Map<string, number>(), state = read.observation.state, phase = String(state.state);
     const focus = options.focus ?? 'auto';
+    if (options.discards && focus !== 'auto') throw new BackendError('invalid_arguments', 'discards cannot be combined with focus boss.');
+    if (options.discards && phase !== 'SELECTING_HAND') throw new BackendError('illegal_action', `Discards are compared while selecting a hand, not in ${phase}.`);
     const parsed = AnalysisSnapshotSchema.safeParse(read.analysis);
+    if (!parsed.success || parsed.data.phase !== phase) throw new BackendError('incompatible_backend', 'Invalid phase analysis snapshot; update the mod and restart Balatro.');
     if (options.discards) {
-      if (focus !== 'auto') throw new BackendError('invalid_arguments', 'discards cannot be combined with focus boss.');
-      if (phase !== 'SELECTING_HAND') throw new BackendError('illegal_action', `Discards are compared while selecting a hand, not in ${phase}.`);
-      if (!parsed.success) throw new BackendError('incompatible_backend', 'The analysis snapshot cannot be read.');
-      const scoring = parsed.data.scoring;
-      if (!scoring || scoring.status !== 'ready') throw new BackendError('backend_failure', scoring?.message ?? 'No hand snapshot.');
+      const scoring = parsed.data.scoring!;
+      if (scoring.status !== 'ready') throw new BackendError('backend_failure', scoring.message);
       const brief = await this.withSandbox(sandbox => discardRates(sandbox, position(scoring.state), options.discards!, options.next!, {
         deadline: options.deadline, signal: options.signal, limit: scoring.selectionLimit, cache: this.discardSamples,
       }), options.signal);
       return { brief, predictions: none };
     }
-    if (!parsed.success) return { brief: { focus: 'build', status: 'unavailable', notes: ['the installed mod returned an analysis snapshot this server cannot read'] }, predictions: none };
-    const { scoring, build, economy } = parsed.data;
+    const { economy } = parsed.data;
     if (phase === 'SELECTING_HAND') {
+      const scoring = parsed.data.scoring!;
       if (focus === 'boss') return { brief: { focus: 'boss', status: 'unavailable', notes: ['focus boss is analysed in SHOP, PACK and BLIND_SELECT'] }, predictions: none };
-      if (!scoring || scoring.status !== 'ready') return { brief: { focus: 'hand', status: 'unavailable', notes: [scoring?.message ?? 'no scoring input for this hand'] }, predictions: none };
+      if (scoring.status !== 'ready') return { brief: { focus: 'hand', status: 'unavailable', notes: [scoring.message] }, predictions: none };
       try {
         const result = await this.withSandbox(sandbox => handBrief(sandbox, state, scoring, options), options.signal);
         return { brief: result.brief, predictions: result.predictions };
@@ -87,6 +87,7 @@ export class Analyzer {
     }
     const kind = focus === 'boss' ? 'boss' : 'build';
     if (!BUILD_PHASES.includes(phase)) return { brief: { focus: kind, status: 'unavailable', notes: [`nothing to analyse in ${phase}`] }, predictions: none };
+    const build = parsed.data.build!;
     const brief: BuildBrief = { focus: kind, status: 'complete', notes: [] };
     if (economy) {
       brief.economy = economyLine(economy);
@@ -94,9 +95,9 @@ export class Analyzer {
       if (rewards) brief.rewards = rewards;
       if (skip) brief.skip = skip;
     }
-    if (!build || build.status !== 'ready') {
+    if (build.status !== 'ready') {
       brief.status = economy ? 'partial' : 'unavailable';
-      brief.notes.push(build?.message ? `no build numbers: ${build.message}` : 'the installed mod does not export the deck for build numbers');
+      brief.notes.push(`no build numbers: ${build.message}`);
       return { brief, predictions: none };
     }
     try {

@@ -26,17 +26,17 @@ async function server(handler: (request: Data,response: ServerResponse) => void)
   const address=http.address(); assert.ok(address && typeof address === 'object');
   return {endpoint:`http://127.0.0.1:${address.port}`,requests,close:async () => {http.closeAllConnections(); await new Promise<void>(resolve => http.close(() => resolve()));}};
 }
-const health={status:'ok',bridge:'balatro_mcp_mod',protocol:1,instanceId:'instance-a',gameVersion:'1.0.1o-FULL',preservesTiming:true,capabilities:['observe','deck_observe','act','operation']};
-const observation=(revision='instance-a:1',state='MENU') => ({contract:1,backend:'balatro_mcp_mod',revision,runId:'run-1',gameVersion:'1.0.1o',ready:true,terminal:false,outcome:'ongoing',state:{state},availableMethods:state==='MENU'?['start']:['select'],legality:'backend-authoritative'});
+const health={status:'ok',bridge:'balatro_mcp_mod',protocol:1,instanceId:'instance-a',gameVersion:'1.0.1o-FULL',preservesTiming:true,capabilities:['observe','deck_observe','act','operation','decision_state','analysis_snapshot']};
+const observation=(revision='instance-a:1',state='MENU') => ({contract:1,backend:'balatro_mcp_mod',revision,runId:'run-1',gameVersion:'1.0.1o',ready:true,terminal:false,outcome:'ongoing',state:{state,redeemedVouchers:[],hand:{cards:[{}]},controls:{play:{maxCards:5},discard:{available:true,maxCards:5},select:{available:true},skip:{available:true},rerollBoss:{available:false}}},availableMethods:state==='MENU'?['start']:['select'],legality:'backend-authoritative'});
 function result(response: ServerResponse,request: Data,value: unknown) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,result:value}));}
 function failure(response: ServerResponse,request: Data,code: string) {response.end(JSON.stringify({jsonrpc:'2.0',id:request.id,error:{code:-32000,message:code,data:{code,applied:false}}}));}
 const action={method:'start' as const,deck:'RED' as const,stake:'WHITE' as const};
 
 test('bridge reads and inspections omit plays and internal snapshots without scoring or extra reads',async () => {
   let revision='instance-a:1';
-  const raw=() => ({...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',scoringSnapshot,
+  const raw=() => ({...observation(revision,'SELECTING_HAND'),state:{...observation(revision,'SELECTING_HAND').state,scoringSnapshot,
     plays:['legacy shadow score'],seed:'HIDDEN_SEED'}});
-  const mock=await server((req,res) => result(res,req,req.method==='sf.health'?{...health,capabilities:['scoring_snapshot']}:
+  const mock=await server((req,res) => result(res,req,req.method==='sf.health'?health:
     req.method==='sf.operation'?{actionId:'a1',status:'completed',applied:true,observation:raw()}:raw()));
   const client=new ForgeBridgeBackend(mock.endpoint,1000);
   try {
@@ -55,9 +55,9 @@ test('bridge reads and inspections omit plays and internal snapshots without sco
 
 test('completed actions omit plays without scoring or extra reads',async () => {
   let mutations=0,revision='instance-a:1';
-  const raw=() => ({...observation(revision,'SELECTING_HAND'),availableMethods:['play'],state:{state:'SELECTING_HAND',scoringSnapshot,plays:['legacy shadow score']}});
+  const raw=() => ({...observation(revision,'SELECTING_HAND'),availableMethods:['play'],state:{...observation(revision,'SELECTING_HAND').state,scoringSnapshot,plays:['legacy shadow score']}});
   const mock=await server((req,res) => {
-    if(req.method==='sf.health') return result(res,req,{...health,capabilities:['scoring_snapshot']});
+    if(req.method==='sf.health') return result(res,req,health);
     if(req.method==='sf.act') {
       mutations++;revision='instance-a:'+(mutations+1);
       return result(res,req,{actionId:(req.params as Data).actionId,status:'completed',applied:true,observation:raw(),effects:''});
@@ -140,11 +140,15 @@ test('standalone client submits one action then polls its correlated completion'
     const sent=mock.requests.find(v=>v.method==='sf.act')?.params as Data; assert.equal(sent.instanceId,'instance-a'); assert.equal(sent.revision,before.revision);
   } finally {await mock.close();}
 });
-test('deck_observe reports an outdated installed mod before attempting the unsupported RPC',async () => {
-  const mock=await server((req,res) => result(res,req,{...health,capabilities:['observe','act','operation']}));
+test('missing required capabilities block observation before any game RPC',async () => {
+  let capabilities: unknown;
+  const mock=await server((req,res) => result(res,req,{...health,capabilities}));
   try {
-    await assert.rejects(new ForgeBridgeBackend(mock.endpoint,1000).observeDeck(),error => error instanceof BackendError && error.code==='incompatible_backend' && /restart Balatro/.test(error.message));
-    assert.equal(mock.requests.length,1); assert.equal(mock.requests[0]?.method,'sf.health');
+    for (const missing of health.capabilities) {
+      capabilities=health.capabilities.filter(value => value!==missing);
+      await assert.rejects(new ForgeBridgeBackend(mock.endpoint,1000).observe(),error => error instanceof BackendError && error.code==='incompatible_backend' && /restart Balatro/.test(error.message));
+    }
+    assert.ok(mock.requests.every(request => request.method==='sf.health'));
   } finally {await mock.close();}
 });
 test('concurrent preflight observations still permit only one action dispatch',async () => {
@@ -250,11 +254,11 @@ test('wrong implementation and incompatible build block actions; a restarted bri
   } finally {await mock.close();}
 });
 test('malformed, mismatched and foreign completed results cannot be accepted',async () => {
-  for (const mode of ['rpc-id','action-id','observation']) {
+  for (const mode of ['rpc-id','action-id','observation','controls']) {
     const mock=await server((req,res)=>{
       if(req.method==='sf.health') result(res,req,health); else if(req.method==='sf.observe') result(res,req,observation());
       else if(mode==='rpc-id') result(res,{...req,id:-1},{});
-      else result(res,req,{actionId:mode==='action-id'?'WRONG':(req.params as Data).actionId,status:'completed',applied:true,observation:observation('foreign:2')});
+      else result(res,req,{actionId:mode==='action-id'?'WRONG':(req.params as Data).actionId,status:'completed',applied:true,observation:mode==='controls'?{...observation('instance-a:2','SELECTING_HAND'),state:{state:'SELECTING_HAND'}}:observation('foreign:2')});
     });
     try {const client=new ForgeBridgeBackend(mock.endpoint,1000); await assert.rejects(client.act(action,(await client.observe()).revision),(e:unknown)=>e instanceof BackendError && e.code==='uncertain_outcome');}
     finally {await mock.close();}
@@ -394,20 +398,16 @@ test('health runs once per bridge instance; later reads and actions skip it unti
   } finally { await mock.close(); }
 });
 
-test('analysis snapshot is capability-gated, validated and never inspects or releases the action lock',async () => {
-  let capabilities=health.capabilities, analysis: unknown={phase:'SELECTING_HAND'}, revision='instance-a:1';
+test('analysis snapshot is validated and never inspects or releases the action lock',async () => {
+  const analysis={phase:'SELECTING_HAND'}; let revision='instance-a:1';
   const mock=await server((req,res)=>{
-    if(req.method==='sf.health') result(res,req,{...health,capabilities});
+    if(req.method==='sf.health') result(res,req,health);
     else if(req.method==='sf.observe') result(res,req,observation(revision,'SELECTING_HAND'));
-    else if(req.method==='sf.analysis_snapshot') result(res,req,{observation:{...observation(revision,'SELECTING_HAND'),state:{state:'SELECTING_HAND',seed:'HIDDEN_SEED',scoringSnapshot}},analysis});
+    else if(req.method==='sf.analysis_snapshot') result(res,req,{observation:{...observation(revision,'SELECTING_HAND'),state:{...observation(revision,'SELECTING_HAND').state,seed:'HIDDEN_SEED',scoringSnapshot}},analysis});
     else if(req.method==='sf.act') {/* The dispatch response is lost. */}
     else result(res,req,{actionId:(req.params as Data).actionId,status:'pending',applied:true});
   });
   try {
-    const old=new ForgeBridgeBackend(mock.endpoint,1000);
-    await assert.rejects(old.analysisSnapshot(),(e:unknown)=>e instanceof BackendError && e.code==='incompatible_backend' && e.applied===false);
-    assert.deepEqual(mock.requests.map(r => r.method),['sf.health']);
-    capabilities=[...health.capabilities,'analysis_snapshot'];
     const client=new ForgeBridgeBackend(mock.endpoint,150);
     const first=await client.analysisSnapshot();
     assert.deepEqual(first.analysis,{phase:'SELECTING_HAND'});

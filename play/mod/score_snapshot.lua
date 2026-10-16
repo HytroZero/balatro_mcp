@@ -103,13 +103,11 @@ return function(json)
     end
     return state
   end
-  local function build(hiddenHand)
-    -- Check before inspecting any identity or ability of a hidden card.
-    if not hiddenHand then for _, c in ipairs(G.hand.cards) do assert(c.facing ~= 'back', 'Face-down cards cannot be scored') end end
+  local function build()
     local state = shell()
     local blind = assert(G.GAME.blind, 'Missing blind')
     membership()
-    state.hand, state.deck, state.discard = area(G.hand, true, false, hiddenHand), area(G.deck, true, true), area(G.discard, true, true)
+    state.hand, state.deck, state.discard = area(G.hand, true, false, true), area(G.deck, true, true), area(G.discard, true, true)
     state.blind = {key=vanilla(blind.config and blind.config.blind), disabled=blind.disabled == true,
       only_hand=blind.only_hand, hands=copy(blind.hands)}
     assert(#state.hand > 0, 'No hand to score')
@@ -199,7 +197,7 @@ return function(json)
   function snapshot.analysis(phase)
     local result = {phase=phase}
     if phase == 'SELECTING_HAND' then
-      local ok, value = pcall(build, true)
+      local ok, value = pcall(build)
       result.scoring = ok and value or {status='unavailable',message=tostring(value)}
     elseif phase == 'SHOP' or phase == 'PACK' or phase == 'BLIND_SELECT' then
       local ok, value = pcall(deckBuild)
@@ -212,17 +210,7 @@ return function(json)
       result.build = {status='unavailable', message='Build snapshot cannot be serialized'}
       if pcall(json.encode, result) then return result end
     end
-    return {phase=phase,scoring={status='unavailable',message='Analysis snapshot cannot be serialized'}}
-  end
-  function snapshot.read()
-    local ok, result = pcall(build)
-    if ok then
-      -- Keep unsupported values from making the ordinary observation unreadable.
-      local encoded = pcall(json.encode, result)
-      if encoded then return result end
-      return {status='unavailable',message='Scoring snapshot cannot be serialized'}
-    end
-    return {status='unavailable',message=tostring(result)}
+    return {phase=phase,build=result.build,scoring=result.scoring and {status='unavailable',message='Analysis snapshot cannot be serialized'}}
   end
   return snapshot
 end

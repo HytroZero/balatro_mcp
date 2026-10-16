@@ -38,7 +38,7 @@ for _, configuration in ipairs(configurations) do
   local tag={key='tag_holo'}
   tag.tag_sprite={config={tag=tag}}
   G.GAME.round_resets.blind_tag=tag
-  local snapshot=exporter.read()
+  local snapshot=exporter.analysis('SELECTING_HAND').scoring
   assert(snapshot.status=='ready',snapshot.message)
   -- Scoring must not be necessary to serialize a live position.
   local plays=json.array()

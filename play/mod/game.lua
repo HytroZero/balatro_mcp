@@ -165,7 +165,7 @@ return function(json, decision)
   end
   local function targetCards(card, indices)
     if (card.ability.consumeable and card.ability.consumeable.max_highlighted or card.ability.name == 'Aura') and (not indices or #indices == 0) then fail('invalid_arguments', 'Explicit hand targets are required') end
-    return selection(indices or json.array(), G.hand and G.hand.config.highlighted_limit or 5, false)
+    return selection(indices or json.array(), G.hand.config.highlighted_limit, false)
   end
   function game.prepare(action)
     if type(action) ~= 'table' or getmetatable(action) == json.array_mt or type(action.method) ~= 'string' then fail('invalid_arguments', 'Expected action object') end
@@ -188,7 +188,7 @@ return function(json, decision)
       end
     elseif method == 'play' or method == 'discard' then
       params(action, {cards=true}); need(phase == 'SELECTING_HAND')
-      local cards = selection(action.cards, math.min(5, G.hand.config.highlighted_limit or 5), true); need(#cards > 0)
+      local cards = selection(action.cards, math.min(5, G.hand.config.highlighted_limit), true); need(#cards > 0)
       if method == 'discard' then need(G.GAME.current_round.discards_left > 0) end
       local handler = method == 'play' and 'play_cards_from_highlighted' or 'discard_cards_from_highlighted'
       local check = method == 'play' and 'can_play' or 'can_discard'
@@ -340,7 +340,6 @@ return function(json, decision)
     if phase == 'PACK' then state.pack=areaData(G.pack_cards) end
     local hands = {}; for name, hand in pairs(run.hands or {}) do if hand.visible then hands[name]={level=hand.level,chips=hand.chips,mult=hand.mult,played=hand.played} end end
     state.hands = hands
-    local vouchers = {}; for key, value in pairs(run.used_vouchers or {}) do if value then vouchers[key]=true end end; state.used_vouchers = vouchers
     local blinds = {}
     for name, key in pairs(run.round_resets and run.round_resets.blind_choices or {}) do
       local blind = G.P_BLINDS and G.P_BLINDS[key] or {}
@@ -373,10 +372,12 @@ return function(json, decision)
       state.cashOut = {amount=round.dollars or json.null,known=type(round.dollars) == 'number',lines=json.array(),linesKnown=false}
     end
     state.redeemedVouchers = json.array()
-    for key in pairs(vouchers) do
-      local center = G.P_CENTERS and G.P_CENTERS[key]
-      local label, effect, known = decision.card({ability=center and center.config or {},config={center=center or {key=key,set='Voucher'}}})
-      state.redeemedVouchers[#state.redeemedVouchers+1] = {key=key,name=label,effect=effect or json.null,rulesKnown=known}
+    for key, redeemed in pairs(run.used_vouchers or {}) do
+      if redeemed then
+        local center = G.P_CENTERS and G.P_CENTERS[key]
+        local label, effect, known = decision.card({ability=center and center.config or {},config={center=center or {key=key,set='Voucher'}}})
+        state.redeemedVouchers[#state.redeemedVouchers+1] = {key=key,name=label,effect=effect or json.null,rulesKnown=known}
+      end
     end
     table.sort(state.redeemedVouchers,function(a,b) return a.key < b.key end)
     local controls = {}
@@ -385,10 +386,10 @@ return function(json, decision)
       return {available=available,price=price,reason=not available and 'button_unavailable' or json.null}
     end
     if phase == 'SELECTING_HAND' then
-      local forced, limit = json.array(), G.hand and G.hand.config.highlighted_limit or 5
+      local forced, limit = json.array(), G.hand and G.hand.config.highlighted_limit
       for index, card in ipairs(G.hand and G.hand.cards or {}) do if card.ability and card.ability.forced_selection then forced[#forced+1] = index-1 end end
-      controls = {play={minCards=1,maxCards=math.min(5,limit),forcedIndices=forced},
-        discard={available=(round.discards_left or 0)>0,minCards=1,maxCards=math.min(5,limit)},
+      controls = {play={minCards=1,maxCards=limit and math.min(5,limit),forcedIndices=forced},
+        discard={available=(round.discards_left or 0)>0,minCards=1,maxCards=limit and math.min(5,limit)},
         scoringRequirements=run.blind and not run.blind.disabled and state.blind.rules or json.array()}
     elseif phase == 'SHOP' then controls={reroll=button('reroll_shop',round.reroll_cost),nextRound=button('toggle_shop')}
     elseif phase == 'BLIND_SELECT' then controls={select=button('select_blind'),skip=button('skip_blind'),rerollBoss=button('reroll_boss')}

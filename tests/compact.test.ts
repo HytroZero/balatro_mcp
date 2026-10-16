@@ -11,7 +11,7 @@ const joker = (id: string, label: string, effect: string, over: Data = {}): Data
 const observation = (raw: Data = {}): Observation => ({ contract: 1, backend: 'balatro_mcp_mod', revision: 'i:7', runId: 'run1', gameVersion: '1.0.1o',
     ready: true, terminal: false, outcome: 'ongoing', legality: 'backend-authoritative', availableMethods: ['play', 'discard', 'use', 'sell', 'rearrange'],
     state: playerState({ state: 'SELECTING_HAND', deck: 'RED', stake: 'WHITE', seed: 'TEST', ante_num: 1, round_num: 1, money: 4, creditLimit: 0,
-        remainingCards: 44, totalCards: 52, routeAnte: 1, currentBlind: 'Small', round: { chips: 0, hands_left: 4, discards_left: 3, handHistoryKnown: true, handTypeCounts: {} },
+        remainingCards: 44, totalCards: 52, routeAnte: 1, currentBlind: 'Small', redeemedVouchers: [], controls: { play: { maxCards: 5 }, discard: { available: true, maxCards: 5 } }, round: { chips: 0, hands_left: 4, discards_left: 3, handHistoryKnown: true, handTypeCounts: {} },
         blind: { key: 'bl_small', name: 'Small Blind', chips: 300, rules: [], rulesKnown: true },
         blinds: { Boss: { key: 'bl_head', name: 'The Head', status: 'Upcoming', rules: ['Hearts are', 'debuffed'], rulesKnown: true, target: 600 },
             Small: { key: 'bl_small', name: 'Small Blind', status: 'Current', rules: [], rulesKnown: true, target: 300 },
@@ -152,12 +152,15 @@ test('consumables and hand still patch elements while membership and order are u
     assert.deepEqual(delta.state?.hand, { 0: '0: AH [selected]' });
 });
 
-test('legacy plays are omitted from full observations and action deltas', () => {
+test('obsolete fields are omitted and incomplete controls do not invent actions', () => {
     const lines = ['0 1: Pair 120', '0: High Card 16'];
-    const playing = observation({ plays: lines });
+    const playing = observation({ plays: lines, used_vouchers: { v_overstock: true } });
     const full = compactObservation(playing);
     assert.ok(Check(FullObservationSchema, full));
     assert.equal('plays' in full.state, false);
+    assert.deepEqual(full.state.vouchers, []);
+    assert.deepEqual(compactObservation(observation({ controls: {} })).actions, []);
+    assert.deepEqual(compactObservation({ ...observation({ state: 'SHOP', controls: { reroll: { available: true } } }), availableMethods: ['reroll'] }).actions, []);
     const discarded = at(playing, 'i:8', { round: { chips: 0, hands_left: 4, discards_left: 2, handHistoryKnown: true, handTypeCounts: {} }, plays: ['0: High Card 16'] });
     assert.equal('plays' in (checkDelta(playing, discarded, { method: 'discard', cards: [0] }).state ?? {}), false);
     const shop = at(playing, 'i:9', { state: 'SHOP' }, { availableMethods: ['next_round'] });
@@ -185,7 +188,7 @@ test('seeds are hidden in every ongoing phase and revealed only in terminal snap
 test('round end, cash-out, next blind and selection drop and add phase views', () => {
     const playing = observation({ hands: { Pair: { level: 1, chips: 10, mult: 2, played: 0 } } });
     const evaluated = at(playing, 'i:8', { state: 'ROUND_EVAL', ante_num: 2, round: { chips: 1950, hands_left: 3, discards_left: 2 }, hands: { Pair: { level: 1, chips: 10, mult: 2, played: 1 } },
-        completedRound: { ante: 1, target: 300, blindName: 'Small Blind', defeated: true }, cashOut: { amount: 4, known: true, lines: [] }, hand: { limit: 8, cards: [] },
+        completedRound: { ante: 1, target: 300, blindName: 'Small Blind', defeated: true }, cashOut: { amount: 4, known: true, lines: [] }, hand: { limit: 8, cards: [] }, controls: { cashOut: { available: true } },
         blinds: { ...record(playing.state.blinds), Small: { name: 'Small Blind', status: 'Defeated', rules: [], rulesKnown: true, target: 300 } } }, { availableMethods: ['cash_out', 'use'] });
     const end = checkDelta(playing, evaluated, { method: 'play', cards: [0] });
     assert.deepEqual(end.state, { hands: { Pair: '10x2 played 1' }, blinds: { Small: '300 [defeated]' }, cashOut: { blind: 'Small Blind', score: 1950, target: 300, payout: 4 } });
@@ -202,7 +205,7 @@ test('round end, cash-out, next blind and selection drop and add phase views', (
     // blind and blinds did not change in the shop, but entering BLIND_SELECT resends them for the skip decision.
     assert.deepEqual(checkDelta(shop, blind, { method: 'next_round' }), { rev: '10', phase: 'BLIND_SELECT', actions: ['select', 'skip'], result: 'Left the shop.',
         state: { blind: 'Big', blinds: { Small: '300 [defeated]', Big: '450; skip: Juggle Tag (+3 hand size next round)', Boss: 'The Head 600: Hearts are debuffed' } } });
-    const selected = at(blind, 'i:11', { state: 'SELECTING_HAND', round_num: 2, blind: { name: 'Big Blind', chips: 450 }, controls: {} }, { availableMethods: ['play', 'discard'] });
+    const selected = at(blind, 'i:11', { state: 'SELECTING_HAND', round_num: 2, blind: { name: 'Big Blind', chips: 450 }, controls: observation().state.controls }, { availableMethods: ['play', 'discard'] });
     const entered = checkDelta(blind, selected, { method: 'select' });
     assert.deepEqual(Object.keys(entered.state!).sort(), ['deck', 'hand', 'round', 'roundNo']);
     assert.equal(entered.result, 'Selected Big Blind.');
@@ -210,7 +213,7 @@ test('round end, cash-out, next blind and selection drop and add phase views', (
 test('skip names the reward even when the Tag fires on pickup', () => {
     const orbital = { key: 'tag_orbital', name: 'Orbital Tag', rules: ['Upgrade Pair by 3 levels'], rulesKnown: true };
     const offer = at(observation(), 'i:8', { state: 'BLIND_SELECT', blinds: { ...record(observation().state.blinds),
-        Small: { name: 'Small Blind', status: 'Select', rules: [], rulesKnown: true, target: 300, skipReward: orbital } }, controls: {} }, { availableMethods: ['select', 'skip'] });
+        Small: { name: 'Small Blind', status: 'Select', rules: [], rulesKnown: true, target: 300, skipReward: orbital } }, controls: { select: { available: true }, skip: { available: true } } }, { availableMethods: ['select', 'skip'] });
     assert.equal(compactObservation(offer).state.blinds?.Small, '300; skip: Orbital Tag (Upgrade Pair by 3 levels)');
     const skipped = (raw: Data) => at(offer, 'i:9', { currentBlind: 'Big', blinds: { ...record(offer.state.blinds),
         Small: { name: 'Small Blind', status: 'Skipped', rules: [], rulesKnown: true, target: 300, skipReward: orbital } }, ...raw });
@@ -326,7 +329,7 @@ test('playing cards show enhancements, seals and permanent chips; other centers 
         cards: [{ rank: 'Ace', suit: 'Spades', enhancement: 'm_glass', seal: 'Gold', count: 2 }, { rank: '', suit: '', enhancement: 'm_stone', count: 1 }] }).cards, ['2x AS [glass, gold seal]', '1x Stone']);
 });
 test('item lines carry stickers, editions, prices and targets but no derived eligibility', () => {
-    const full = compactObservation({ ...observation({ state: 'SHOP', money: 2, controls: { reroll: { available: false, price: 5 } },
+    const full = compactObservation({ ...observation({ state: 'SHOP', money: 2, controls: { reroll: { available: false, price: 5 }, nextRound: { available: true } },
         jokers: { limit: 5, cards: [joker('popcorn', 'Popcorn', '+16 Mult', { modifier: { eternal: true, perishable: 0, rental: true }, state: { debuff: true } })] },
         consumables: { limit: 2, cards: [card({ id: 'aura', set: 'Spectral', label: 'Aura', value: { effect: 'Add an edition' }, target: { aura: true } })] },
         shop: { cards: [joker('joker', 'Joker', '+4 Mult', { index: 9, modifier: { edition: 'negative' } }), card({ id: 'pc', cost: { buy: 3 }, modifier: { enhancement: 'm_gold' } })] },

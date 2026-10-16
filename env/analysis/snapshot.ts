@@ -43,7 +43,8 @@ export const AnalysisSnapshotSchema = z.object({
     z.object({ status: z.literal('unavailable'), message: z.string() }),
   ]).optional(),
   economy: EconomySchema.optional(),
-});
+}).refine(value => value.phase === 'SELECTING_HAND' ? value.scoring !== undefined :
+  !['SHOP','PACK','BLIND_SELECT'].includes(value.phase) || value.build !== undefined, 'Missing phase analysis input');
 export type AnalysisSnapshot = z.infer<typeof AnalysisSnapshotSchema>;
 export type AnalysisState = z.infer<typeof AnalysisStateSchema>;
 

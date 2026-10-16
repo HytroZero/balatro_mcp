@@ -1,6 +1,6 @@
 import { nextId } from '../src/ids.ts';
 import { setTimeout as delay } from 'node:timers/promises';
-import { Type } from 'typebox';
+import { Type, type TSchema } from 'typebox';
 import { Check } from 'typebox/value';
 import { ActionSchema, BackendError, playerState, record, type Action, type AnalysisRead, type Backend, type Data, type DeckObservation, type ErrorCode, type Observation, type RequestContext } from '../env/contract.ts';
 
@@ -9,6 +9,16 @@ const ObservationSchema = Type.Object({ contract: Type.Literal(1),backend: Type.
   availableMethods: Type.Array(Type.String()),legality: Type.Literal('backend-authoritative') },{ additionalProperties:false });
 const errorCodes: ErrorCode[] = ['invalid_arguments','illegal_action','stale_state','cancelled','timeout','backend_failure','uncertain_outcome','incompatible_backend'];
 const count = Type.Integer({minimum:0});
+const gate = Type.Object({available:Type.Boolean()});
+const selection = Type.Object({maxCards:Type.Integer({minimum:1,maximum:5})});
+const decision = (controls: Record<string,TSchema>, fields: Record<string,TSchema> = {}) => Type.Object({redeemedVouchers:Type.Array(Type.Unknown()),controls:Type.Object(controls),...fields});
+const decisionStates: Record<string,TSchema> = {
+  MENU:Type.Object({}),
+  SELECTING_HAND:decision({play:selection,discard:Type.Object({...gate.properties,...selection.properties})},{hand:Type.Object({cards:Type.Array(Type.Unknown(),{minItems:1})})}),
+  BLIND_SELECT:decision({select:gate,skip:gate,rerollBoss:gate}),
+  SHOP:decision({reroll:Type.Object({...gate.properties,price:Type.Number({minimum:0})}),nextRound:gate}),
+  ROUND_EVAL:decision({cashOut:gate}), PACK:decision({packSkip:gate}),
+};
 const DeckObservationSchema = Type.Object({ revision:Type.String({minLength:1}),runId:Type.String({minLength:1}),remainingCards:count,previewCards:count,uncertainCards:count,
   cards:Type.Array(Type.Object({rank:Type.String(),suit:Type.String(),enhancement:Type.String(),count:Type.Integer({minimum:1}),
     edition:Type.Optional(Type.String()),seal:Type.Optional(Type.String()),bonus:Type.Optional(Type.Number()),permanentBonus:Type.Optional(Type.Number()),debuff:Type.Optional(Type.Boolean())},{additionalProperties:false})) },{additionalProperties:false});
@@ -17,8 +27,6 @@ export class ForgeBridgeBackend implements Backend {
   readonly name = 'balatro_mcp_mod';
   private requestId = 0;
   private instanceId?: string;
-  private deckObserveSupported = false;
-  private analysisSupported = false;
   private uncertain = false;
   private busy = false;
   private endpoint: URL;
@@ -69,17 +77,17 @@ export class ForgeBridgeBackend implements Backend {
   async diagnose(context?: RequestContext): Promise<Data> { return record(await this.rpc('sf.health',{},false,this.context(context))); }
   private async identity(context: RequestContext): Promise<void> {
     const health = await this.diagnose(context);
+    const capabilities = health.capabilities;
     if (health.status !== 'ok' || health.bridge !== 'balatro_mcp_mod' || health.protocol !== 1 || typeof health.instanceId !== 'string' ||
-        typeof health.gameVersion !== 'string' || health.gameVersion.replace(/-FULL$/,'') !== this.gameVersion || health.preservesTiming !== true) {
-      throw new BackendError('incompatible_backend','Load the standalone balatro_mcp_mod mod and verify its protocol and target game version.');
+        typeof health.gameVersion !== 'string' || health.gameVersion.replace(/-FULL$/,'') !== this.gameVersion || health.preservesTiming !== true ||
+        !Array.isArray(capabilities) || !['observe','deck_observe','act','operation','decision_state','analysis_snapshot'].every(capability => capabilities.includes(capability))) {
+      throw new BackendError('incompatible_backend','Update the standalone balatro_mcp_mod mod, restart Balatro, and verify its protocol and target game version.');
     }
     if (this.instanceId && this.instanceId !== health.instanceId) {
       if (this.busy) throw new BackendError('stale_state','Bridge restarted during an action; observe again before continuing.');
       this.uncertain = false; this.lastActionId = undefined;
     }
     this.instanceId = health.instanceId;
-    this.deckObserveSupported = Array.isArray(health.capabilities) && health.capabilities.includes('deck_observe');
-    this.analysisSupported = Array.isArray(health.capabilities) && health.capabilities.includes('analysis_snapshot');
   }
   /** Health runs once per bridge instance; a revision from another instance means the mod restarted. */
   private async ensureIdentity(context: RequestContext,revision?: unknown): Promise<void> {
@@ -87,6 +95,7 @@ export class ForgeBridgeBackend implements Backend {
   }
   private observation(value: unknown): Observation {
     if (!Check(ObservationSchema,value) || value.gameVersion !== this.gameVersion || !value.revision.startsWith(this.instanceId + ':') || typeof value.state.state !== 'string') throw new BackendError('backend_failure','Invalid bridge observation contract.');
+    if (value.ready && !value.terminal && (!decisionStates[value.state.state] || !Check(decisionStates[value.state.state],value.state)) || !value.ready && value.availableMethods.length) throw new BackendError('backend_failure','Invalid bridge decision state.');
     const state = playerState(value.state);
     return {...value,state};
   }
@@ -115,7 +124,6 @@ export class ForgeBridgeBackend implements Backend {
   async observeDeck(request?: RequestContext): Promise<DeckObservation> {
     const context = this.context(request);
     await this.ensureIdentity(context);
-    if (!this.deckObserveSupported) throw new BackendError('incompatible_backend','The installed mod does not support deck_observe. Update the balatro_mcp_mod mod and restart Balatro.');
     const value = await this.rpc('sf.deck_observe',{},false,context);
     await this.ensureIdentity(context,record(value).revision);
     if (!Check(DeckObservationSchema,value) || !value.revision.startsWith(this.instanceId + ':') || value.cards.reduce((sum,card) => sum + card.count,0) !== value.previewCards ||
@@ -127,7 +135,6 @@ export class ForgeBridgeBackend implements Backend {
     const context = this.context(request);
     await this.ensureIdentity(context);
     if (this.busy || this.uncertain) throw new BackendError('illegal_action','A previous action is unresolved; inspect it with game_operation before analysing.');
-    if (!this.analysisSupported) throw new BackendError('incompatible_backend','The installed mod does not support game_analyze. Update the balatro_mcp_mod mod and restart Balatro.');
     const value = record(await this.rpc('sf.analysis_snapshot',{},false,context));
     await this.ensureIdentity(context,record(value.observation).revision);
     return { observation: this.observation(value.observation), analysis: record(value.analysis) };

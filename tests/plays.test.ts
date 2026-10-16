@@ -7,7 +7,6 @@ import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
 import { projectRoot } from '../src/config.ts';
 import { ScoringSandbox, LiveScoreStateSchema, type ScoreResult, type ScoreState } from '../env/sandbox/index.ts';
-import { ScoringSnapshotSchema } from '../play/plays.ts';
 
 const lua = process.env.LUAJIT ?? 'luajit';
 const source = process.env.BALATRO_SANDBOX_SOURCE ?? resolve(projectRoot, 'env/sandbox/vendor');
@@ -181,17 +180,15 @@ test('active deadline, cancellation and close terminate a worker instead of retu
 
 test('live snapshot export round-trips original scores without applying passive effects twice', { skip }, async () => {
   const fixtures = JSON.parse(execFileSync(lua,['tests/score-snapshot-original.lua',source],{cwd:projectRoot,encoding:'utf8'})) as
-    { snapshot: unknown; plays: number[][]; expected: ScoreResult[] }[];
+    { snapshot: { status: string; state: unknown }; plays: number[][]; expected: ScoreResult[] }[];
   const sandbox = new ScoringSandbox({lua,sourceDir:source});
   try {
     for (const fixture of fixtures) {
-      const snapshot = ScoringSnapshotSchema.parse(fixture.snapshot);
-      assert.equal(snapshot.status,'ready');
-      if (snapshot.status !== 'ready') continue;
-      assert.equal(snapshot.state.passiveEffectsApplied,true);
-      assert.equal(LiveScoreStateSchema.safeParse(snapshot.state).success,true);
-      assert.equal(snapshot.state.game?.pseudorandom,undefined);
-      assert.equal((await sandbox.load(snapshot.state)).status,'ready');
+      assert.equal(fixture.snapshot.status,'ready');
+      const state = LiveScoreStateSchema.parse(fixture.snapshot.state);
+      assert.equal(state.passiveEffectsApplied,true);
+      assert.equal(state.game.pseudorandom,undefined);
+      assert.equal((await sandbox.load(state)).status,'ready');
       assert.deepEqual(await sandbox.scoreBatch(fixture.plays),fixture.expected);
     }
   } finally { await sandbox.close(); }
