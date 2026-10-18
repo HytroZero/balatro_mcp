@@ -2034,3 +2034,58 @@ Balatro, install the staged mod, restart, and observe a fresh snapshot.
 No gameplay mutation, mod installation or game restart was performed for this
 diagnosis; the live inspection outside the normal MCP read path is recorded
 above.
+
+## Restore and consolidate the complete coach — 2026-10-18
+
+Restored the strategy from the parent of `802a7e0` (`13d84ec`) and integrated
+all four files of the former Gold Stake Coach skill into `resources/coach.md`:
+the entrypoint, decision tables, mechanics/source notes and state/review
+template. The Pair/held-value checklist, shop comparisons, conditional engine
+selection, detailed Boss failure/preparation table, estimation fallback and
+attribution links are available in one read. Duplicate Boss tables were merged;
+the later Blue Deck engine ranking and Straight prohibition were removed in
+favor of the original adaptive policy. Extra-card cycling now also checks played
+card count, active-discard distinctions, held value and The Tooth's fee.
+
+Adapted the historical text to the current seven-tool/direct-resource contract:
+read-only `game_analyze`, `discards`/`next` rates, scoring labels and build-model
+limits, complete Joker-array replacement, current round-history fields, play
+effects, forced consumable targets and operation-lock recovery. Examples use
+`skip` to leave a pack instead of the obsolete `pack`/`skip:true` form. Startup
+scope and terminal stopping follow the current protocol. Maintainer evidence
+paths and source-check provenance were updated without re-fetching community
+references or claiming new gameplay results.
+
+Removed the three merged coach reference files and their resource registrations.
+Updated resource descriptions, README, context/architecture documentation and the
+existing unregistered-resource test. Protocol, guide, analysis, game behavior and
+scoring algorithms were not modified.
+
+Validation:
+
+- All 12 JSON examples parsed and passed the current action/start schemas or
+  the analysis input schema matching `tools/index.ts`; paired discard arguments
+  also passed `validateDiscards`. Checked a single document title and absence
+  of obsolete skill/coach-subresource links, pack-skip syntax and the later
+  fixed Blue Deck policy.
+- `npm run check` — passed.
+- `npm test` — build passed; 135 tests passed, two Windows-only tests skipped,
+  zero failures. This includes full resource reads, long-content preservation,
+  internal links, removed-URI rejection and the built stdio server.
+- `npm run release:check` — distribution audit passed for 120 source files.
+- `git diff --check` — passed.
+
+All verification was offline. No gameplay action, game/mod installation or
+restart was performed. The build contains the consolidated resource manifest;
+restart or reconnect the MCP server to load that manifest. Coach Markdown is
+read on demand, while an existing chat must refresh previously cached content.
+
+## Keep coach interface guidance focused on supported usage — 2026-10-18
+
+Coach now describes the supported resource entrypoints, tool inputs and note-taking
+workflow directly. Removed migration commentary, unsupported parameter names and
+unavailable-tool inventories from the gameplay instructions. Context documentation
+now describes the consolidated document's contents directly.
+
+Validation: `node --test tests/context.test.ts` passed all five resource tests;
+`git diff --check` passed. This was a text-only update with no gameplay actions.

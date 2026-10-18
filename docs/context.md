@@ -11,10 +11,7 @@
 | `balatro://protocol` | 执行、恢复、合法性、分析时机、动作前解释：`resources/protocol.md` |
 | `balatro://guide` | 字段、增量合并、索引和排列：`resources/guide.md` |
 | `balatro://analysis` | 分析结果和计算局限：`resources/analysis.md` |
-| `balatro://coach` | 金注策略正文：`resources/coach.md` |
-| `balatro://coach/decisions` | 困难取舍的决策参考 |
-| `balatro://coach/sources` | 策略来源和版本说明 |
-| `balatro://coach/state-input` | 按用户要求复盘时使用的状态模板 |
+| `balatro://coach` | 完整金注策略、决策清单、引擎和 Boss 对照表、工具示例、复盘模板、机制与来源：`resources/coach.md` |
 | `balatro://rules/sources` | Wiki 来源、修订记录、署名和许可 |
 | `balatro://objects/<name>` | 单个对象的规则、目录元数据、主题 URI 与 Wiki 链接 |
 
@@ -28,6 +25,8 @@ Joker 的能力及关键交互，不需要先加载任何包装文档。资源�
 `src/resources.ts` 显式定义每个静态 URI、标题、用途和文件位置；`src/context.ts`
 注册这些资源。服务启动时不扫描目录、不解析元数据、不读入规则或策略全文。
 每次 `resources/read` 只读取对应文件；guide 和 analysis 也直接读取 Markdown，不通过 TypeScript 生成正文。修改正文无需重启，修改注册清单需要重启。
+Coach 的策略正文、决策表、机制与来源、工具示例和复盘模板统一保存在 `resources/coach.md`。
+执行、字段和分析输出以 protocol、guide、analysis 的当前契约为准。
 URI 不映射为任意文件路径；只有注册的 Markdown 可读，真实路径越出 `resources/`
 的链接会被拒绝。目录中的对象 JSON 和来源清单不通过通配文件接口开放。
 

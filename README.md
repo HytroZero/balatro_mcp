@@ -210,8 +210,9 @@ For normal gameplay, read `balatro://protocol`, `balatro://guide` and
   `balatro://rules/jokers`, `balatro://rules/scoring` or `balatro://rules/blinds`.
 - `balatro://objects/Blueprint`: one object’s rule, metadata, topic URI and Wiki
   link. Optional `?kind=` filters ambiguous names.
-- `balatro://coach`: strategy for survival, economy, engine growth and Boss
-  preparation toward an Ante 8 win. Difficult tradeoffs use `balatro://coach/decisions`.
+- `balatro://coach`: complete strategy for an Ante 8 win, including survival,
+  economy, engine selection, hand/held-value checklists, shop and Boss comparisons,
+  current tool-call examples, a run review template and sources, all in one document.
 
 Rules retain the 2026-10-02 Balatro Wiki snapshot for 1.0.1o-FULL, covering 366
 objects including all 150 Jokers. Unused Wiki implementation and validation

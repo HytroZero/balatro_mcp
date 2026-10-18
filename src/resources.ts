@@ -32,12 +32,9 @@ export const gameplayResources: readonly GameplayResource[] = [
   { name: 'analysis-guide', uri: 'balatro://analysis', title: 'Analysis output reference', description: 'Read once before game_analyze: score labels, discard hit rates, order, audit and sampled build limitations.', path: 'analysis.md' },
   { name: 'game-rules', uri: 'balatro://rules', title: 'Rules directory', description: 'Small directory of rules by topic. Read the linked topic needed for the current question, or use balatro://objects/<name> for one object.', path: 'rules.md' },
   { name: 'decision-protocol', uri: 'balatro://protocol', title: 'Decision protocol', description: 'Read once before gameplay: authorization, recovery, legality, analysis cadence and pre-action explanations.', path: 'protocol.md' },
-  { name: 'coach', uri: 'balatro://coach', title: 'Gold Stake coach', description: 'Read once before gameplay: engine selection, survival, growth, economy and Boss preparation toward an Ante 8 win.', path: 'coach.md' },
+  { name: 'coach', uri: 'balatro://coach', title: 'Gold Stake coach', description: 'Read once before gameplay: complete Ante 8 policy, decision checklists, engine and Boss comparisons, tool examples, review template and sources.', path: 'coach.md' },
   ...ruleTopics.map(([topic, title, description]) => ({ name: `rules-${topic}`, uri: `balatro://rules/${topic}`, title, description, path: `rules/${topic}.md` })),
   { name: 'rules-sources', uri: 'balatro://rules/sources', title: 'Rules sources and license', description: 'Wiki snapshot coverage, revisions, attribution and CC BY-NC-SA 3.0 license.', path: 'rules/sources.md' },
-  { name: 'coach-decisions', uri: 'balatro://coach/decisions', title: 'Decision comparisons', description: 'Read for difficult shop, engine, hand-size and restrictive Boss tradeoffs.', path: 'coach/decisions.md' },
-  { name: 'coach-sources', uri: 'balatro://coach/sources', title: 'Coach sources', description: 'Strategy provenance, version boundaries and historical patch evidence.', path: 'coach/sources.md' },
-  { name: 'coach-state-input', uri: 'balatro://coach/state-input', title: 'Run review template', description: 'State template for a requested run review.', path: 'coach/state-input.md' },
 ];
 
 export async function readGameplayResource(root: string, resource: GameplayResource): Promise<string> {

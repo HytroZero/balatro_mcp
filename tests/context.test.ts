@@ -82,7 +82,7 @@ test('unregistered URIs and filesystem escapes are unavailable', async () => {
   await symlink(outside, resolve(root, 'resources/rules/jokers.md'));
   const connection = await connect(root);
   try {
-    for (const uri of ['balatro://context', 'balatro://skills', 'skill://coach/SKILL.md', 'balatro://rules/missing', 'balatro://rules/objects.json', 'balatro://rules/..%2Fprivate.md', 'balatro://coach?raw', pathToFileURL(outside).href]) {
+    for (const uri of ['balatro://context', 'balatro://skills', 'skill://coach/SKILL.md', 'balatro://coach/decisions', 'balatro://coach/sources', 'balatro://coach/state-input', 'balatro://rules/missing', 'balatro://rules/objects.json', 'balatro://rules/..%2Fprivate.md', 'balatro://coach?raw', pathToFileURL(outside).href]) {
       await assert.rejects(connection.client.readResource({ uri }), uri);
     }
     await assert.rejects(connection.client.readResource({ uri: 'balatro://rules/jokers' }), /outside/);
