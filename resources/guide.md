@@ -55,6 +55,14 @@ An item reads `"<i>: <Name> [tags]: <effect>"`. Tags identify type, purchase/sel
 
 A playing card reads `"0: AD [bonus, foil, red seal, +5 chips]"`. Stone has no rank/suit. Face-down cards read `"0: ?"` with only forced/selected tags. Unresolved effect values are `?`.
 
+## Operation and health diagnostics
+
+`game_operation` can report `pending`, `timed_out`, `completed`, `failed` or an older completed result's `retired` tombstone. During an unresolved action, `gameReady` is the underlying game's readiness, `notReadyReason` is its current blocker when not ready, and `quietFrames` counts consecutive ready updates. `timed_out` records the original `timeoutReason`, retained on late completion even if the current blocker changes. A timed-out play keeps recording effects; its final `effects` string is available only on completion. Handler failures freeze their partial effects instead.
+
+`game_health` separates bridge `ready` / `notReadyReason` from `gameReady` / `gameNotReadyReason`. Optional `mutationLock` is `pending`, `timed_out` or `handler_failed`; a ready game can still have a locked bridge. Ordinary observations include both the action-wait context and the underlying blocker in `notReady`.
+
+Neither diagnostic call releases the client lock or issues an action revision. Follow [the protocol](balatro://protocol) to resume after verified completion; never resubmit a timed-out action.
+
 ## Remaining deck and references
 
 `deck_observe` returns `remainingCards`, `previewCards`, `uncertainCards` and grouped `"<count>x <card> [attributes]"` lines. These have no draw order or action indices. The preview can include face-down held cards, without identifying them; do not treat uncertain membership as an exact draw distribution. Actions do not refresh this preview. If its `rev` differs, observe before acting.

@@ -116,6 +116,24 @@ Look for `ok: true` and `ready: true`. If the game isn't ready, wait for the
 animation to finish or close any open dialogs. On macOS, make sure you started
 Balatro with `npm run launch:macos`.
 
+**An action timed out, but the game looks normal**
+
+Do not repeat the action. Inspect `game_operation`: `timed_out` keeps tracking the
+original action while mutations remain locked. Once the game is ready for two
+consecutive updates, that operation becomes `completed`; use `game_observe` to
+verify completion and obtain a fresh revision before continuing.
+
+`game_health` reports the underlying game's `gameReady` separately from bridge
+`ready`, with `mutationLock` identifying an unresolved action or handler failure.
+Operation diagnostics preserve the original `timeoutReason` and current blocker.
+A handler exception remains `failed` and requires restarting Balatro; normal
+readiness alone cannot safely clear it.
+
+For a lock created by an older mod, close Balatro, install the updated mod and
+relaunch, then use Continue to resume the saved run. The fix does not retroactively
+clear an old in-memory lock. Restart the MCP server after updating its code too.
+See the [recovery protocol](resources/protocol.md).
+
 **You moved the project or changed your Node installation**
 
 Regenerate the configuration, then update it in your client:

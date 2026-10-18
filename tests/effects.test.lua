@@ -25,7 +25,7 @@ end
 local ace, bonus, hidden = card('Ace','Spades'), card('King','Hearts'), card('Queen','Clubs',true)
 local joker1, joker2 = card(nil,nil,false,'Joker'), card(nil,nil,false,'Joker')
 G = {GAME={},hand={cards={ace,bonus,hidden}},jokers={cards={joker1,joker2}},consumeables={cards={}}}
-local now, ready, invoke, dispatches = 0, true, function() end, 0
+local now, ready, blocker, invoke, dispatches = 0, true, 'Waiting for queued game events', function() end, 0
 local game = {
   state=function()
     local state = {state='SELECTING_HAND'}
@@ -36,7 +36,7 @@ local game = {
     end
     return state
   end,
-  ready=function() return ready end,
+  ready=function() return ready, not ready and blocker or nil end,
   cards=function() return {} end,
   methods=function() return json.array({'play','discard'}) end,
   fail=function(code) error(code) end,
@@ -114,23 +114,80 @@ end
 bridge.dispatch('sf.act',request('new-cards'))
 same(complete('new-cards').effects,'card[new0](?): +5 Chips; card[new1](?): +2 Mult; card[new0](?): +5 Chips')
 
--- Both failure paths freeze their partial log and stop capturing late callbacks.
+-- Handler exceptions freeze their partial log and require a bridge restart,
+-- even when the original game is otherwise ready.
 invoke = function() card_eval_status_text(ace,'chips',8); error('game handler failed') end
 local failed = bridge.dispatch('sf.act',request('failed'))
 same(failed.status,'failed'); same(failed.effects,'hand[1](AS): +8 Chips')
 card_eval_status_text(ace,'chips',99)
 same(inspect('failed').effects,failed.effects)
 same(effects.finish(),'')
+bridge.update(); bridge.update()
+local health = bridge.dispatch('sf.health',{})
+same(health.gameReady,true); same(health.ready,false); same(health.mutationLock,'handler_failed')
+same(inspect('failed').status,'failed')
+check(not pcall(bridge.dispatch,'sf.act',request('after-handler-error')),'handler errors keep mutations locked')
+
+-- Timeouts keep the original operation alive, including late status prompts.
 bridge = dofile('play/mod/bridge.lua')(json,game,function() return now end,'effects-test',20,nil,effects)
 invoke = function() card_eval_status_text(hidden,'h_x_mult',1.5) end
-bridge.dispatch('sf.act',request('timeout'))
+local timeoutRequest = request('timeout')
+bridge.dispatch('sf.act',timeoutRequest)
+local timeoutDispatches = dispatches
 ready=false; now=21; bridge.update()
 local timedout = inspect('timeout')
-same(timedout.status,'failed'); same(timedout.applied,true)
-same(timedout.effects,'hand[0](QC): X1.5 Mult')
+same(timedout.status,'timed_out'); same(timedout.applied,true)
+same(timedout.timeoutReason,blocker); same(timedout.notReadyReason,blocker); same(timedout.gameReady,false)
+same(timedout.effects,nil) -- The log is not final until completion.
+health = bridge.dispatch('sf.health',{})
+same(health.gameReady,false); same(health.gameNotReadyReason,blocker); same(health.mutationLock,'timed_out')
+local waiting = bridge.dispatch('sf.observe',{})
+check(waiting.notReadyReason:find(blocker,1,true),'observations retain the underlying blocker')
+same(#waiting.availableMethods,0)
+same(bridge.dispatch('sf.act',timeoutRequest).status,'timed_out')
+check(not pcall(bridge.dispatch,'sf.act',request('during-timeout')),'new actions cannot bypass a timeout')
+same(dispatches,timeoutDispatches)
 card_eval_status_text(ace,'chips',99)
-same(inspect('timeout').effects,timedout.effects)
-same(effects.finish(),'')
+blocker='Close the open game dialog'; now=100; bridge.update()
+same(inspect('timeout').notReadyReason,blocker)
+same(inspect('timeout').timeoutReason,'Waiting for queued game events')
+ready=true; bridge.update()
+health = bridge.dispatch('sf.health',{})
+same(health.gameReady,true); same(health.ready,false); same(health.mutationLock,'timed_out')
+bridge.dispatch('sf.observe',{}); inspect('timeout')
+same(inspect('timeout').quietFrames,1) -- Read-only calls cannot substitute for stable game frames.
+ready=false; bridge.update()
+same(inspect('timeout').quietFrames,0)
+ready=true; bridge.update()
+same(inspect('timeout').status,'timed_out')
+bridge.update()
+local recovered = inspect('timeout')
+same(recovered.status,'completed'); same(recovered.applied,true); same(recovered.actionId,'timeout')
+same(recovered.observation.ready,true)
+same(recovered.timeoutReason,'Waiting for queued game events')
+same(recovered.effects,'hand[0](QC): X1.5 Mult; hand[1](AS): +99 Chips')
+same(bridge.dispatch('sf.act',timeoutRequest).status,'completed')
+same(dispatches,timeoutDispatches)
+card_eval_status_text(ace,'chips',100)
+same(inspect('timeout').effects,recovered.effects)
+local staleAfterTimeout = request('stale-after-timeout','discard')
+staleAfterTimeout.revision = timeoutRequest.revision
+check(not pcall(bridge.dispatch,'sf.act',staleAfterTimeout),'late completion invalidates the pre-action revision')
+invoke=function() end
+bridge.dispatch('sf.act',request('after-timeout','discard'))
+same(complete('after-timeout').status,'completed')
+same(dispatches,timeoutDispatches + 1)
+same(bridge.dispatch('sf.health',{}).mutationLock,nil)
+
+-- Reaching the deadline on the first ready frame must still allow the second
+-- frame to complete the same operation, without another dispatch.
+bridge.dispatch('sf.act',request('ready-at-deadline','discard'))
+now=120; bridge.update()
+same(inspect('ready-at-deadline').status,'timed_out')
+same(inspect('ready-at-deadline').timeoutReason,'Waiting for consecutive ready frames')
+bridge.update()
+same(inspect('ready-at-deadline').status,'completed')
+same(dispatches,timeoutDispatches + 2)
 
 -- Localized UI prompts use the same English data as observations. Neither the
 -- arguments passed to the game nor its language/localization tables change.

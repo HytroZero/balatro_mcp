@@ -8,93 +8,6 @@ return function(json, decision)
   local ids = setmetatable({}, {__mode='k'}); local nextId = 0
   local function fail(code, message) error({code=code, message=message, applied=false}, 0) end
   game.fail = fail
-  -- Recognition only: never execute this copy. Stripped LuaJIT bytecode identifies
-  -- the unchanged 1.0.1o background callback even when loaders shift source lines.
-  local backgroundSpin = function()
-    local _dt = G.ARGS.spin.amount > G.ARGS.spin.eased and G.real_dt*2. or 0.3*G.real_dt
-    local delta = G.ARGS.spin.real - G.ARGS.spin.eased
-    if math.abs(delta) > _dt then delta = delta*_dt/math.abs(delta) end
-    G.ARGS.spin.eased = G.ARGS.spin.eased + delta
-    G.ARGS.spin.amount = _dt*(G.ARGS.spin.eased) + (1 - _dt)*G.ARGS.spin.amount
-    G.TIMERS.BACKGROUND = G.TIMERS.BACKGROUND - 60*(G.ARGS.spin.eased - G.ARGS.spin.amount)*_dt
-  end
-  -- Recognition only: the original hover watcher never returns true if
-  -- deck_info removes self.deck_preview first. Keep it running in the engine,
-  -- but exclude it from readiness only while its captured preview is absent.
-  local function deckPreviewWatcher(self)
-    return function()
-      if self.deck_preview and not (((self.deck and self.deck.cards[1] and self.deck.cards[1].states.collide.is and not self.CONTROLLER.HID.controller)) or G.CONTROLLER.held_buttons.triggerleft) then
-        self.deck_preview:remove()
-        self.deck_preview = nil
-        local _card = G.CONTROLLER.focused.target
-        local start = G.TIMERS.REAL
-        self.E_MANAGER:add_event(Event({
-          func = function()
-            if _card and _card.area and _card.area == G.hand then
-              local _x, _y = _card:put_focused_cursor()
-              G.CONTROLLER:update_cursor({x=_x/(G.TILESCALE*G.TILESIZE),y=_y/(G.TILESCALE*G.TILESIZE)})
-            end
-            if start + 0.4 < G.TIMERS.REAL then
-              return true
-            end
-          end
-        }))
-        return true
-      end
-    end
-  end
-  -- LuaJIT may change dump capabilities and each prototype's patch flag without
-  -- changing instructions. Child prototypes precede their parent in the dump.
-  local function callbackBytecode(func)
-    local ok, code = pcall(string.dump, func, true)
-    -- Balatro ships LuaJIT 2.0.5 (dump version 1); the headless test runtime
-    -- uses LuaJIT 2.1 (version 2). Compare within the running runtime, retaining
-    -- its version byte and all instruction/constant bytes in the fingerprint.
-    if not ok or code:sub(1,3) ~= '\27LJ' or (code:byte(4) ~= 1 and code:byte(4) ~= 2) then return nil end
-    local flags = code:byte(5)
-    if not flags or flags % 4 < 2 then return nil end -- Only stripped dumps have this layout.
-    if flags % 32 >= 16 then flags = flags - 16 end
-    local parts = {code:sub(1,4), string.char(flags)}
-    local position = 6
-    while position < #code do
-      local start, length, scale, byte = position, 0, 1
-      repeat
-        byte = code:byte(position)
-        if not byte then return nil end
-        length = length + (byte % 128) * scale
-        scale = scale * 128
-        position = position + 1
-      until byte < 128
-      if length == 0 or position + length > #code then return nil end
-      parts[#parts+1] = code:sub(start,position-1)
-      parts[#parts+1] = string.char(code:byte(position) % 128)
-      parts[#parts+1] = code:sub(position+1,position+length-1)
-      position = position + length
-    end
-    if code:byte(position) ~= 0 then return nil end
-    parts[#parts+1] = code:sub(position)
-    return table.concat(parts)
-  end
-  local backgroundCode = callbackBytecode(backgroundSpin)
-  local previewCode = callbackBytecode(deckPreviewWatcher(G))
-  local callbackKinds = setmetatable({}, {__mode='k'})
-  local function inactivePresentationEvent(event)
-    if type(event) ~= 'table' or event.trigger ~= 'immediate' or event.blocking ~= false or event.blockable ~= false or type(event.func) ~= 'function' then return false end
-    local kind = callbackKinds[event.func]
-    if kind == nil then
-      local code = callbackBytecode(event.func)
-      kind = backgroundCode ~= nil and code == backgroundCode and 'background'
-        or previewCode ~= nil and code == previewCode and 'preview' or false
-      callbackKinds[event.func] = kind
-    end
-    if kind == 'background' then return true end
-    if kind == 'preview' and debug and debug.getupvalue then
-      -- Recheck captured state on every read, including after cache hits.
-      local _, owner = debug.getupvalue(event.func, 1)
-      return owner == G and owner.deck_preview == nil
-    end
-    return false
-  end
   function game.phase()
     for name, value in pairs(G.STATES or {}) do if value == G.STATE then return packs[name] and 'PACK' or name end end
     return 'UNKNOWN'
@@ -112,10 +25,14 @@ return function(json, decision)
       for _, card in ipairs(G[name] and G[name].cards or {}) do if card.states and card.states.drag and card.states.drag.is then return false, 'Finish dragging the card' end end
     end
     if G.GAME and (G.GAME.STOP_USE or 0) > 0 then return false, 'Waiting for the card animation' end
+    if G.deck_preview then return false, 'Close the deck preview' end
     if G.E_MANAGER and G.E_MANAGER.queues then
       for _, event in ipairs(G.E_MANAGER.queues.base or {}) do
-        -- All other events, including nonblocking gameplay events, must settle.
-        if not inactivePresentationEvent(event) then return false, 'Waiting for queued game events' end
+        -- The original manager processes nonblocking events even behind a
+        -- blocker. Waiting for them can deadlock on self-renewing presentation
+        -- callbacks such as DNA's first-hand hint; only blocking events hold
+        -- the decision boundary.
+        if event.blocking ~= false then return false, 'Waiting for queued game events' end
       end
     end
     if phase ~= 'MENU' and not G.STATE_COMPLETE then return false, 'Waiting for the phase to initialize' end

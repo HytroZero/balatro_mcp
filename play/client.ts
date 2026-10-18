@@ -28,6 +28,7 @@ export class ForgeBridgeBackend implements Backend {
   private requestId = 0;
   private instanceId?: string;
   private uncertain = false;
+  private lastActionWasPlay = false;
   private busy = false;
   private endpoint: URL;
   private timeoutMs: number;
@@ -113,8 +114,8 @@ export class ForgeBridgeBackend implements Backend {
       try {
         const operation = await this.inspectOperation(undefined,context);
         if (operation.actionId === this.lastActionId && operation.status === 'completed' && operation.applied === true) {
-          this.observation(operation.observation); // Validate the correlated completion before releasing the client lock.
-          this.uncertain = false;
+          const completed = this.observation(operation.observation);
+          if (completed.ready && (!this.lastActionWasPlay || typeof operation.effects === 'string')) this.uncertain = false;
         }
       } catch { /* Observation remains usable; an unverified operation keeps mutations locked. */ }
     }
@@ -165,10 +166,11 @@ export class ForgeBridgeBackend implements Backend {
       if (before.ready === false || !before.availableMethods.includes(action.method)) throw new BackendError('illegal_action','Game is not ready for this action.');
       this.remaining(context);
       this.lastActionId = nextId('action');
+      this.lastActionWasPlay = action.method === 'play';
       let result = record(await this.rpc('sf.act',{action,revision,instanceId:this.instanceId,actionId:this.lastActionId},true,context));
       dispatched = true;
       while (true) {
-        if (result.actionId !== this.lastActionId || !['pending','completed','failed','retired'].includes(String(result.status))) throw new BackendError('uncertain_outcome','Invalid operation response.','unknown');
+        if (result.actionId !== this.lastActionId || !['pending','timed_out','completed','failed','retired'].includes(String(result.status))) throw new BackendError('uncertain_outcome','Invalid operation response.','unknown');
         if (result.applied === true) applied = true;
         if (result.status === 'completed') {
           const outcome = this.observation(result.observation);
@@ -176,7 +178,7 @@ export class ForgeBridgeBackend implements Backend {
           if (action.method === 'play' && typeof result.effects !== 'string') throw new BackendError('uncertain_outcome','Invalid play effects contract.',true);
           return {...outcome,actionId:this.lastActionId,...(action.method === 'play' ? {effects:result.effects as string} : {})};
         }
-        if (result.status !== 'pending') throw new BackendError('uncertain_outcome',String(result.message ?? 'Operation requires manual inspection.'),result.applied === true ? true : 'unknown');
+        if (result.status !== 'pending') throw new BackendError('uncertain_outcome',String(result.message ?? 'Operation is unresolved; inspect game_operation before observing again. Do not replay the action.'),result.applied === true ? true : 'unknown');
         await delay(Math.min(40,this.remaining(context)),undefined,{signal:context.signal});
         result = record(await this.rpc('sf.operation',{actionId:this.lastActionId,instanceId:this.instanceId},false,context));
       }

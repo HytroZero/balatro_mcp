@@ -1922,3 +1922,115 @@ Packaging verification: `npm run stage-mod` staged the repaired standalone mod
 under `build/balatro-mcp-mod/balatro_mcp_mod`; `npm run release:check` passed
 for all 123 exported source files. Staging did not install the mod or restart
 the game.
+
+## Recover late action completion without replay — 2026-10-18
+
+The previous deadline path cleared the pending operation and permanently poisoned
+the bridge. A live select reached `SELECTING_HAND`, with cards dealt and play
+controls available, but remained locked. An isolated execution of the original
+bridge reproduced the lock even after the underlying readiness predicate became
+true. The original timeout's specific readiness blocker was not recorded, so its
+initiating cause remains unknown.
+
+`play/mod/bridge.lua` now distinguishes recoverable `timed_out` operations from
+handler failures. A timeout retains the original operation and effect capture;
+two consecutive ready game updates complete that same action without invoking it
+again. Handler exceptions still freeze partial effects and retain a hard lock.
+Health reports game readiness separately from bridge readiness and lock type.
+Operations expose current readiness, consecutive ready frames and an immutable
+timeout reason, retained on late completion.
+
+The TypeScript client recognizes the new status and continues requiring a
+correlated, applied, ready completion before releasing uncertainty on observation.
+A recovered play must also carry its final effects string. Inspection alone does
+not unlock or establish a new action revision. The model-facing protocol, guide,
+operation description and README explain the recovery path and old-mod limits.
+
+Validation:
+
+- `npm run check` — passed.
+- `node --test tests/bridge.test.ts` — all 26 tests passed, including mod timeout
+  recovery, stale revision rejection, no replay, and rejection of failed,
+  mismatched, unapplied, foreign, unready or effects-incomplete completions.
+- `luajit tests/effects.test.lua` — 81 checks passed, including changing blockers,
+  preserved timeout cause, interrupted ready-frame streaks, late effects,
+  duplicate suppression, handler hard locks and first-ready-frame deadline
+  recovery.
+- `luajit tests/observation.test.lua`, `luajit tests/decision.test.lua` and
+  `luajit tests/score-snapshot.test.lua` — 88, 127 and 38 checks passed.
+- `npm test` — build passed; 135 tests passed, two Windows-only tests skipped,
+  zero failures.
+- An in-memory cross-language smoke run connected the real Lua readiness
+  predicate, codec and bridge lifecycle to `ForgeBridgeBackend` over loopback
+  HTTP. Fixture bindings supplied game state and a deliberately delayed event.
+  The client received `uncertain_outcome` with the queued-event cause, refused
+  another mutation, remained locked after one ready frame, verified completion
+  of the original action after the second frame, rejected the old revision and
+  accepted one fresh action. Total dispatches were exactly two: the original
+  select and the subsequent new action.
+- `npm run stage-mod` — staged the repaired standalone mod under
+  `build/balatro-mcp-mod/balatro_mcp_mod`.
+
+The repaired behavior was exercised offline, not inside the running game. No
+gameplay mutation, mod installation or game restart was performed for this fix.
+Installing the updated mod and restarting Balatro and the MCP server are required;
+the old mod's already-poisoned in-memory operation cannot recover retroactively.
+
+Packaging verification: `npm run release:check` passed for all 123 exported
+source files.
+
+## Nonblocking callbacks cannot hold readiness — 2026-10-18
+
+A live timed-out `select` (round 8, Big Blind, `SELECTING_HAND`) kept
+`gameReady=false` with `notReadyReason=Waiting for queued game events` and
+`quietFrames=0`, so the timeout-recovery path could not complete. The running
+mod was inspected read-only through the game's own LuaJIT 2.1.1700008891 via
+`lldb`; the base queue contained exactly three events:
+
+1. the permanent background-spin callback (`game.lua:2377`);
+2. the inactive deck-preview watcher (`game.lua:3208`, `G.deck_preview=nil`);
+3. DNA's first-hand hint (`functions/common_events.lua:1403`,
+   `juice_card_until`, `G.GAME.current_round.hands_played=0`).
+
+`inactivePresentationEvent` correctly returned true for the first two. The
+watcher's cached bytecode fingerprint matched the live callback; the earlier
+prototype-flag fix was not failing. The remaining blocker was DNA's event,
+which is `blocking=false, blockable=false` and requeues itself every 0.8 seconds
+while `hands_played == 0`. Waiting for it deadlocks: the bridge must play the
+first hand to stop the animation, but it refuses to act while the animation is
+queued.
+
+`play/mod/game.lua` now follows the original event manager's blocking contract:
+readiness ignores every base event with `blocking = false`, and never executes a
+queued callback. An active `G.deck_preview` is checked directly and still
+blocks, as do dialogs, controller locks, drags, `STOP_USE`, screen wipes and
+phase initialization. The fragile stripped-bytecode comparison for the
+background spin and hover watcher was deleted. The regression test uses a
+self-renewing nonblocking callback, an active preview, default-blocking and
+unblockable events, dialogs, locks and incomplete phase setup.
+
+Validation:
+
+- Live predicate replay over the stuck queue: the new logic returns ready=true
+  with all three events present; the running old mod still returns
+  `false, Waiting for queued game events`. This confirms the cause without
+  mutating the run.
+- `luajit tests/decision.test.lua` — 61 checks passed (the bytecode-repetition
+  checks were replaced by the blocking-contract checks).
+- `luajit tests/effects.test.lua`, `luajit tests/observation.test.lua` and
+  `luajit tests/score-snapshot.test.lua` — 81, 88 and 38 checks passed.
+- `npm run check` — passed.
+- `npm test` — build passed; 135 tests passed, two Windows-only tests skipped,
+  zero failures.
+- `npm run stage-mod` — staged the updated mod under
+  `build/balatro-mcp-mod/balatro_mcp_mod`.
+- `npm run release:check` — distribution audit passed for 123 source files.
+
+The running game still has the old mod loaded. Immediate recovery without a
+restart is to play the first hand of the round manually; `hands_played` becomes
+1, DNA's hint stops requeueing, the old predicate becomes ready, and the timed-out
+`select` completes through the existing late-completion path. Otherwise close
+Balatro, install the staged mod, restart, and observe a fresh snapshot.
+No gameplay mutation, mod installation or game restart was performed for this
+diagnosis; the live inspection outside the normal MCP read path is recorded
+above.

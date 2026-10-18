@@ -3,13 +3,19 @@ return function(json, game, clock, instance, timeout, analysis, effects)
   local bridge = {}
   local serial, runSerial, previousRun, fingerprint = 0, 0, nil, ''
   local pending, poisoned, operations, order = nil, false, {}, {}
-  local function blocked()
-    return type(poisoned) == 'string' and poisoned or poisoned and 'Previous action needs manual inspection' or pending and 'Waiting for the current action' or nil
+  local function blocked(reason)
+    if poisoned then return 'Original game handler failed after dispatch; restart Balatro to reset the bridge' end
+    if pending then
+      local waiting = pending.result.status == 'timed_out' and 'Waiting for timed-out action to settle' or 'Waiting for the current action'
+      return waiting .. ': ' .. (reason or 'Waiting for consecutive ready frames')
+    end
+  end
+  local function readiness()
+    local gameReady, reason = game.ready()
+    return not pending and not poisoned and gameReady, blocked(reason) or not gameReady and reason or nil, gameReady, reason
   end
   local function read()
-    local state = game.state(); local gameReady, reason = game.ready()
-    local ready = not pending and not poisoned and gameReady
-    reason = blocked() or not ready and reason or nil
+    local state = game.state(); local ready, reason = readiness()
     -- Deck-only edits also invalidate action references, without adding deck
     -- composition to ordinary observations or model context.
     return state, ready, reason, json.encode({state=state,ready=ready,notReadyReason=reason,cards=game.cards()})
@@ -31,11 +37,10 @@ return function(json, game, clock, instance, timeout, analysis, effects)
   function bridge.dispatch(method, params)
     if method == 'sf.health' then
       exact(params, {})
-      local ready, reason = game.ready()
-      ready = not pending and not poisoned and ready
-      reason = blocked() or not ready and reason or nil
+      local ready, reason, gameReady, gameReason = readiness()
       return {status='ok',bridge='balatro_mcp_mod',protocol=1,instanceId=instance,gameVersion=G.VERSION,luaRuntime=jit and jit.version,
-        ready=ready,notReadyReason=reason,preservesTiming=true,transport='http-jsonrpc',
+        ready=ready,notReadyReason=reason,gameReady=gameReady,gameNotReadyReason=not gameReady and gameReason or nil,
+        mutationLock=poisoned and 'handler_failed' or pending and pending.result.status or nil,preservesTiming=true,transport='http-jsonrpc',
         capabilities=json.array({'observe','deck_observe','act','operation','reroll_boss','buy_and_use','decision_state','analysis_snapshot'})}
     elseif method == 'sf.observe' then exact(params, {}); return snapshot()
     elseif method == 'sf.deck_observe' then
@@ -76,7 +81,7 @@ return function(json, game, clock, instance, timeout, analysis, effects)
       local ok = pcall(invoke)
       if not ok then
         poisoned = true; pending = nil
-        operation.result = {actionId=id,status='failed',applied='unknown',code='uncertain_outcome',message='Original game handler failed after dispatch; inspect current state'}
+        operation.result = {actionId=id,status='failed',applied='unknown',code='uncertain_outcome',message=blocked()}
         if operation.recordEffects then operation.result.effects = effects.finish() end
       else operation.result.applied = true end
       return operation.result
@@ -86,19 +91,29 @@ return function(json, game, clock, instance, timeout, analysis, effects)
   function bridge.update()
     if not pending then return end
     local operation = pending
-    if game.ready() then operation.quiet = operation.quiet + 1 else operation.quiet = 0 end
+    local gameReady, reason = game.ready()
+    if gameReady then operation.quiet = operation.quiet + 1 else operation.quiet = 0 end
     if operation.quiet >= 2 then
       pending = nil; serial = serial + 1
-      operation.result = {actionId=operation.result.actionId,status='completed',applied=true,observation=snapshot()}
+      operation.result = {actionId=operation.result.actionId,status='completed',applied=true,observation=snapshot(),
+        timeoutReason=operation.result.timeoutReason}
       if operation.recordEffects then operation.result.effects = effects.finish() end
       if #order > 128 then
         local old = operations[order[#order - 128]]
         if old and old ~= operation and old.result.status == 'completed' then old.result={actionId=old.result.actionId,status='retired',applied=true} end
       end
-    elseif clock() >= operation.deadline then
-      poisoned = true; pending = nil
-      operation.result = {actionId=operation.result.actionId,status='failed',applied=true,code='uncertain_outcome',message='Game did not reach a ready state before deadline; inspect the run'}
-      if operation.recordEffects then operation.result.effects = effects.finish() end
+    elseif clock() >= operation.deadline and operation.result.status == 'pending' then
+      -- A deadline ends the caller's wait, not the original game's operation.
+      -- Keep tracking it and capturing play effects; never invoke it again.
+      local timeoutReason = reason or 'Waiting for consecutive ready frames'
+      operation.result = {actionId=operation.result.actionId,status='timed_out',applied=true,code='uncertain_outcome',
+        message='Game did not settle before deadline: ' .. timeoutReason .. '. Inspect game_operation, then observe after it settles; do not replay the action',
+        timeoutReason=timeoutReason}
+    end
+    if pending then
+      operation.result.gameReady = gameReady
+      operation.result.notReadyReason = not gameReady and reason or nil
+      operation.result.quietFrames = operation.quiet
     end
   end
   return bridge

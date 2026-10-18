@@ -223,6 +223,73 @@ test('observation verifies a late correlated completion before allowing a fresh 
     await client.act({method:'select'},fresh.revision); assert.equal(mutations,2);
   } finally {await mock.close();}
 });
+test('a mod timeout preserves its cause and only a verified late completion permits a fresh mutation',async () => {
+  let mutations=0, completed=false, id='', revision='instance-a:1';
+  const reason='Waiting for queued game events';
+  const message='Game did not settle before deadline: '+reason;
+  const raw=() => ({...observation(revision,mutations?'SELECTING_HAND':'BLIND_SELECT'),
+    ready:mutations===0 || completed,availableMethods:mutations===0?['select']:completed?['play']:[],
+    ...(mutations>0 && !completed?{notReadyReason:reason}:{})});
+  const operation=() => ({actionId:id,status:completed?'completed':'timed_out',applied:true,
+    ...(completed?{observation:raw()}:{message,timeoutReason:reason,gameReady:false,notReadyReason:reason,quietFrames:0})});
+  const mock=await server((req,res) => {
+    if(req.method==='sf.health') return result(res,req,health);
+    if(req.method==='sf.observe') return result(res,req,raw());
+    if(req.method==='sf.operation') return result(res,req,operation());
+    mutations++; id=String((req.params as Data).actionId); revision='instance-a:'+(mutations+1);
+    result(res,req,mutations===1?operation():{actionId:id,status:'completed',applied:true,observation:raw(),effects:''});
+  });
+  const client=new ForgeBridgeBackend(mock.endpoint,1000);
+  try {
+    const before=await client.observe();
+    await assert.rejects(client.act({method:'select'},before.revision),
+      error => error instanceof BackendError && error.code==='uncertain_outcome' && error.applied===true && error.message===message);
+    const timedout=await client.inspectOperation();
+    assert.equal(timedout.status,'timed_out'); assert.equal(timedout.timeoutReason,reason);
+    assert.equal((await client.observe()).ready,false);
+    await assert.rejects(client.act({method:'play',cards:[0]},revision),/unresolved/);
+    assert.equal(mutations,1);
+    completed=true; revision='instance-a:3';
+    assert.equal((await client.inspectOperation()).status,'completed');
+    await assert.rejects(client.analysisSnapshot(),/unresolved/); // Inspection alone does not unlock.
+    const fresh=await client.observe();
+    await assert.rejects(client.act({method:'play',cards:[0]},before.revision),/State changed/);
+    await client.act({method:'play',cards:[0]},fresh.revision);
+    assert.equal(mutations,2);
+    assert.deepEqual(mock.requests.filter(req => req.method==='sf.act').map(req => ((req.params as Data).action as Data).method),['select','play']);
+  } finally {await client.close(); await mock.close();}
+});
+
+test('ready observations cannot release a lock without a valid completion of the original play',async () => {
+  for(const mode of ['handler-failed','wrong-action','not-applied','foreign-snapshot','not-ready','missing-effects']) {
+    let id='', mutations=0, inspecting=false;
+    const raw=() => ({...observation('instance-a:2','SELECTING_HAND'),availableMethods:['play']});
+    const mock=await server((req,res) => {
+      if(req.method==='sf.health') return result(res,req,health);
+      if(req.method==='sf.observe') return result(res,req,raw());
+      if(req.method==='sf.act') {
+        mutations++; id=String((req.params as Data).actionId);
+        return result(res,req,{actionId:id,status:'timed_out',applied:true,message:'Await original play completion'});
+      }
+      inspecting=true;
+      result(res,req,{actionId:mode==='wrong-action'?'other-action':id,
+        status:mode==='handler-failed'?'failed':'completed',applied:mode!=='not-applied',
+        observation:mode==='foreign-snapshot'?observation('other-instance:2'):
+          mode==='not-ready'?{...raw(),ready:false,availableMethods:[]}:raw(),
+        ...(mode!=='missing-effects'?{effects:''}:{})});
+    });
+    const client=new ForgeBridgeBackend(mock.endpoint,1000);
+    try {
+      await assert.rejects(client.act({method:'play',cards:[0]},(await client.observe()).revision),
+        error => error instanceof BackendError && error.code==='uncertain_outcome' && error.applied===true);
+      const current=await client.observe();
+      assert.equal(inspecting,true);
+      await assert.rejects(client.act({method:'play',cards:[0]},current.revision),/unresolved/);
+      assert.equal(mutations,1,mode+' must not authorize another dispatch');
+    } finally {await client.close(); await mock.close();}
+  }
+});
+
 test('a bridge restart clears an unresolved client lock and requires a new revision without replaying the old action',async () => {
   let instance='instance-a', mutations=0;
   const mock=await server((req,res)=>{

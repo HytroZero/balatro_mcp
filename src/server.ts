@@ -46,7 +46,7 @@ export async function createBalatroServer(options: Options, backend: Backend = n
       } catch (error) { return failure(error); }
     }));
     server.registerTool('game_operation', {
-      title: 'Inspect game operation', description: 'Inspect a pending/completed/failed action; omit actionId for this connection\'s last action. Never replays an action or clears its mutation lock. Recovery: balatro://protocol.',
+      title: 'Inspect game operation', description: 'Inspect a pending/timed_out/completed/failed action and readiness diagnostics; omit actionId for this connection\'s last action. Never replays an action or clears its mutation lock. Recovery: balatro://protocol.',
       inputSchema: z.object({ actionId: z.string().min(1).optional() }).strict(), outputSchema: envelopeSchema,
       annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false },
     }, async ({ actionId },context) => sequential(async () => {
